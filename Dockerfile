@@ -1,7 +1,16 @@
 FROM php:8.2-apache
 
-# MySQL üçün lazımi PHP uzantıları
-RUN docker-php-ext-install pdo pdo_mysql mysqli
+# MySQL və Excel (.xlsx) faylları oxumaq üçün lazımi uzantılar
+RUN apt-get update && apt-get install -y libzip-dev && rm -rf /var/lib/apt/lists/*
+RUN docker-php-ext-install pdo pdo_mysql mysqli zip
+
+# Böyük Excel fayllarının yüklənə bilməsi üçün limitləri artırırıq
+RUN { \
+    echo 'upload_max_filesize = 25M'; \
+    echo 'post_max_size = 25M'; \
+    echo 'max_execution_time = 300'; \
+    echo 'memory_limit = 512M'; \
+    } > /usr/local/etc/php/conf.d/uploads.ini
 
 # .htaccess-lərin işləməsi üçün
 # (bəzi php:apache image-lərində birdən çox MPM modulu aktiv simlink kimi qalır —

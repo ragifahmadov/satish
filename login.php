@@ -42,5 +42,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <button type="submit">Daxil ol</button>
   </form>
 </div>
+<script>
+document.querySelector('form').addEventListener('submit', (e)=>{
+  const btn=e.target.querySelector('button[type="submit"]');
+  if(btn){ btn.disabled=true; btn.textContent='Gözləyin…'; }
+});
+</script>
 </body>
 </html>

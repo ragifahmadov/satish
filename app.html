@@ -1180,20 +1180,20 @@ document.addEventListener('click', async (e)=>{
   if(action==='close-modal'){ closeModal(); return; }
   if(action==='add-salespeople'){ openSimpleForm('salespeople'); return; }
   if(action==='edit-salespeople'){ openSimpleForm('salespeople', id); return; }
-  if(action==='delete-salespeople'){ await deleteRecord('salespeople', id, 'satıcı'); return; }
+  if(action==='delete-salespeople'){ await withButtonLoading(btn, ()=>deleteRecord('salespeople', id, 'satıcı')); return; }
   if(action==='add-collectors'){ openSimpleForm('collectors'); return; }
   if(action==='edit-collectors'){ openSimpleForm('collectors', id); return; }
-  if(action==='delete-collectors'){ await deleteRecord('collectors', id, 'təhsilatçı'); return; }
+  if(action==='delete-collectors'){ await withButtonLoading(btn, ()=>deleteRecord('collectors', id, 'təhsilatçı')); return; }
   if(action==='add-customers'){ openCustomerForm(); return; }
   if(action==='edit-customers'){ openCustomerForm(id); return; }
-  if(action==='delete-customers'){ await deleteRecord('customers', id, 'müştəri'); return; }
+  if(action==='delete-customers'){ await withButtonLoading(btn, ()=>deleteRecord('customers', id, 'müştəri')); return; }
   if(action==='add-contracts'){ openContractForm(); return; }
   if(action==='edit-contracts'){ openContractForm(id); return; }
-  if(action==='delete-contracts'){ await deleteRecord('contracts', id, 'müqavilə'); return; }
+  if(action==='delete-contracts'){ await withButtonLoading(btn, ()=>deleteRecord('contracts', id, 'müqavilə')); return; }
   if(action==='pay-change-contract'){ paymentsContractId=null; renderPayments(); return; }
-  if(action==='record-payment'){ await recordQuickPayment(btn.dataset.contractId); return; }
+  if(action==='record-payment'){ await withButtonLoading(btn, ()=>recordQuickPayment(btn.dataset.contractId)); return; }
   if(action==='remove-reassign'){ removeReassignContract(id); return; }
-  if(action==='apply-reassign'){ await applyReassign(); return; }
+  if(action==='apply-reassign'){ await withButtonLoading(btn, ()=>applyReassign()); return; }
   if(action==='page-prev' || action==='page-next'){
     const key=btn.dataset.key;
     pageNum[key]=(pageNum[key]||1)+(action==='page-prev'?-1:1);
@@ -1219,10 +1219,25 @@ document.addEventListener('click', async (e)=>{
   if(action==='show-assignments'){ openAssignmentsInfo(id); return; }
   if(action==='show-schedule'){ openScheduleModal(id); return; }
 });
+async function withButtonLoading(btn, fn){
+  if(!btn) return fn();
+  const prevDisabled=btn.disabled;
+  btn.disabled=true;
+  btn.style.opacity='.6';
+  btn.style.cursor='not-allowed';
+  try{
+    return await fn();
+  } finally {
+    btn.disabled=prevDisabled;
+    btn.style.opacity='';
+    btn.style.cursor='';
+  }
+}
 document.addEventListener('submit', async (e)=>{
-  if(e.target.id==='simple-form'){ e.preventDefault(); await submitSimpleForm(e.target); }
-  if(e.target.id==='customer-form'){ e.preventDefault(); await submitCustomerForm(e.target); }
-  if(e.target.id==='contract-form'){ e.preventDefault(); await submitContractForm(e.target); }
+  const submitBtn=e.target.querySelector('button[type="submit"]');
+  if(e.target.id==='simple-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitSimpleForm(e.target)); }
+  if(e.target.id==='customer-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCustomerForm(e.target)); }
+  if(e.target.id==='contract-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitContractForm(e.target)); }
 });
 document.addEventListener('input', (e)=>{
   const map={'search-salespeople':'salespeople','search-collectors':'collectors','search-customers':'customers','search-contracts':'contracts'};

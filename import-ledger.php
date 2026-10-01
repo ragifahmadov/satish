@@ -328,6 +328,12 @@ $me = current_user();
       <button type="submit">İdxal et</button>
     </form>
   </div>
+<script>
+document.querySelector('form').addEventListener('submit', (e)=>{
+  const btn=e.target.querySelector('button[type="submit"]');
+  if(btn){ btn.disabled=true; btn.textContent='İdxal olunur… (bir neçə dəqiqə çəkə bilər)'; }
+});
+</script>
 
   <?php if ($result !== null): ?>
     <h3 style="max-width:720px;">Nəticə</h3>

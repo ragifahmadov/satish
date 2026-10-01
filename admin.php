@@ -133,5 +133,13 @@ $me = current_user();
       </tbody>
     </table>
   </div>
+<script>
+document.querySelectorAll('form').forEach(f=>{
+  f.addEventListener('submit', ()=>{
+    const btn=f.querySelector('button[type="submit"]');
+    if(btn){ btn.disabled=true; btn.dataset.orig=btn.textContent; btn.textContent='Gözləyin…'; }
+  });
+});
+</script>
 </body>
 </html>

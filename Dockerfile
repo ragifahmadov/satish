@@ -24,4 +24,5 @@ RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/Allo
 EXPOSE 8080
 
 # Railway konteynerə PORT environment variable-ı verir — Apache-ı ona uyğunlaşdırırıq
-CMD sh -c "sed -i \"s/80/\$PORT/g\" /etc/apache2/ports.conf /etc/apache2/sites-enabled/000-default.conf && apache2-foreground"
+# (dəqiq "Listen 80" sətrini hədəfləyirik ki, başqa heç nəyə təsir etməsin)
+CMD ["sh", "-c", "sed -i \"s/Listen 80/Listen ${PORT:-8080}/\" /etc/apache2/ports.conf && sed -i \"s/:80>/:${PORT:-8080}>/\" /etc/apache2/sites-enabled/000-default.conf && apache2-foreground"]

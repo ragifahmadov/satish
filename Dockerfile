@@ -21,8 +21,11 @@ RUN chown -R www-data:www-data /var/www/html \
 # .htaccess-lərin AllowOverride ilə oxunması üçün
 RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 EXPOSE 8080
 
-# Railway konteynerə PORT environment variable-ı verir — Apache-ı ona uyğunlaşdırırıq
-# (dəqiq "Listen 80" sətrini hədəfləyirik ki, başqa heç nəyə təsir etməsin)
-CMD ["sh", "-c", "sed -i \"s/Listen 80/Listen ${PORT:-8080}/\" /etc/apache2/ports.conf && sed -i \"s/:80>/:${PORT:-8080}>/\" /etc/apache2/sites-enabled/000-default.conf && apache2-foreground"]
+# Konteyner hər başlayanda MPM konfliktini təmizləyib, portu Railway-in
+# verdiyi $PORT-a uyğunlaşdırıb, Apache-ı işə salan skript.
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

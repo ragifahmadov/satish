@@ -185,6 +185,14 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M4.5 20c0-3.3 3-5.3 7.5-5.3s7.5 2 7.5 5.3"/><path d="M19 4l1.3 1.3L17 8.5"/></svg>
       <span>Admin paneli</span>
     </a>
+    <a href="import-ledger.php" class="navbtn" id="import-link" style="display:none;text-decoration:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+      <span>İdxal</span>
+    </a>
+    <a href="reset.php" class="navbtn" id="reset-link" style="display:none;text-decoration:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7"/></svg>
+      <span>Bazanı təmizlə</span>
+    </a>
     <a href="logout.php" class="navbtn" style="text-decoration:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 19H5a2 2 0 01-2-2V7a2 2 0 012-2h7"/></svg>
       <span>Çıxış</span>
@@ -1292,7 +1300,7 @@ loadAll().catch(err=>{
 fetch('whoami.php').then(r=>r.json()).then(u=>{
   if(!u || !u.username) return;
   document.getElementById('user-info').textContent = u.username + ' (' + (u.role==='admin'?'Admin':'İstifadəçi') + ')';
-  if(u.role==='admin'){ document.getElementById('admin-link').style.display='flex'; }
+  if(u.role==='admin'){ document.getElementById('admin-link').style.display='flex'; document.getElementById('import-link').style.display='flex'; document.getElementById('reset-link').style.display='flex'; }
 }).catch(()=>{});
 </script>
 </body>

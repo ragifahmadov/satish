@@ -4,7 +4,9 @@ FROM php:8.2-apache
 RUN docker-php-ext-install pdo pdo_mysql mysqli
 
 # .htaccess-lərin işləməsi üçün
-RUN a2enmod rewrite headers
+# (bəzi php:apache image-lərində default olaraq birdən çox MPM aktiv ola bilir —
+# bu, Apache-ı işə düşməyə qoymur, ona görə əvvəlcə yalnız mpm_prefork saxlayırıq)
+RUN a2dismod mpm_event mpm_worker 2>/dev/null; a2enmod mpm_prefork rewrite headers
 
 COPY . /var/www/html/
 WORKDIR /var/www/html

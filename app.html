@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Satış və Toplama İdarəetməsi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-sidebar:#141B22;
+    --bg-sidebar-hover:#1E2731;
+    --bg-sidebar-active:#232E38;
+    --text-sidebar:#AEB7C0;
+    --text-sidebar-active:#F3EFE4;
+    --accent:#B8863B;
+    --accent-dark:#8A6530;
+    --accent-text:#3B2B11;
+    --bg-page:#F5F2EA;
+    --bg-card:#FFFFFF;
+    --border:#E3DDCB;
+    --text:#241F17;
+    --text-muted:#7A7263;
+    --red:#A9402F;
+    --red-bg:#F5E4DF;
+    --green:#3E7856;
+    --green-bg:#E4EEE7;
+    --font-ui:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+    --font-mono:'IBM Plex Mono','SF Mono',Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg-sidebar:#0F1216;
+      --bg-page:#191510;
+      --bg-card:#241F17;
+      --border:#3A3226;
+      --text:#EDE7DA;
+      --text-muted:#A89F8C;
+      --red-bg:#3A2420;
+      --green-bg:#1F3126;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg-sidebar:#0F1216;
+    --bg-page:#191510;
+    --bg-card:#241F17;
+    --border:#3A3226;
+    --text:#EDE7DA;
+    --text-muted:#A89F8C;
+    --red-bg:#3A2420;
+    --green-bg:#1F3126;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--font-ui);
+    background:var(--bg-page);
+    color:var(--text);
+    min-height:100vh;
+  }
+  #layout{display:flex;min-height:100vh;}
+  #sidebar{
+    width:246px;flex-shrink:0;background:var(--bg-sidebar);
+    display:flex;flex-direction:column;padding:20px 12px;
+    position:sticky;top:0;height:100vh;overflow-y:auto;
+  }
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 10px 22px;}
+  .brand-mark{
+    width:34px;height:34px;border-radius:8px;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    color:#241705;font-family:var(--font-mono);font-weight:600;font-size:15px;flex-shrink:0;
+  }
+  .brand-text{line-height:1.2;}
+  .brand-text .t1{color:var(--text-sidebar-active);font-weight:600;font-size:14.5px;}
+  .brand-text .t2{color:var(--text-sidebar);font-size:11.5px;}
+  nav{display:flex;flex-direction:column;gap:2px;flex:1;}
+  .navbtn{
+    display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:8px;
+    color:var(--text-sidebar);background:transparent;border:none;text-align:left;
+    font-family:var(--font-ui);font-size:14px;cursor:pointer;width:100%;
+  }
+  .navbtn svg{width:18px;height:18px;flex-shrink:0;}
+  .navbtn:hover{background:var(--bg-sidebar-hover);}
+  .navbtn.active{background:var(--bg-sidebar-active);color:var(--text-sidebar-active);box-shadow:inset 2px 0 0 var(--accent);}
+  .sidebar-foot{color:var(--text-sidebar);font-size:11px;padding:10px 12px 2px;opacity:.6;}
+  #content{flex:1;padding:32px 40px 60px;min-width:0;}
+  .topbar{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap;}
+  .topbar h1{font-size:22px;font-weight:600;margin:0;letter-spacing:-.2px;}
+  .topbar .sub{color:var(--text-muted);font-size:13.5px;margin-top:4px;}
+  .btn{
+    font-family:var(--font-ui);font-size:13.5px;font-weight:500;border-radius:7px;
+    padding:9px 16px;cursor:pointer;border:1px solid transparent;
+  }
+  .btn-primary{background:var(--accent);color:#2A1D08;}
+  .btn-primary:hover{background:var(--accent-dark);}
+  .btn svg{width:16px;height:16px;flex-shrink:0;vertical-align:-3px;}
+  .btn-ghost{background:transparent;color:var(--text);border-color:var(--border);}
+  .btn-ghost:hover{background:var(--bg-card);}
+  .btn-danger{background:transparent;color:var(--red);border-color:var(--red);}
+  .btn-sm{padding:5px 10px;font-size:12.5px;}
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;}
+  .toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
+  input[type=text],input[type=search],input[type=number],input[type=date],input[type=tel],select,textarea{
+    font-family:var(--font-ui);font-size:13.5px;color:var(--text);
+    background:var(--bg-card);border:1px solid var(--border);border-radius:7px;
+    padding:9px 11px;width:100%;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  .searchbox{max-width:280px;}
+  label{font-size:12.5px;color:var(--text-muted);display:block;margin-bottom:5px;font-weight:500;}
+  .field{margin-bottom:14px;}
+  .input-error{border-color:var(--red) !important;}
+  .field-err{color:var(--red);font-size:11.5px;margin-top:5px;display:none;}
+  .search-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:50;display:none;box-shadow:0 8px 24px rgba(0,0,0,.15);}
+  .search-item{padding:9px 12px;font-size:13.5px;cursor:pointer;}
+  .search-item:hover{background:rgba(184,134,63,.1);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+  .grid2 .field,.grid3 .field{display:flex;flex-direction:column;justify-content:flex-end;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .table-scroll table{min-width:640px;}
+  thead th{
+    text-align:left;font-size:11.5px;color:var(--text-muted);font-weight:500;
+    padding:0 14px 10px;border-bottom:1px solid var(--border);white-space:nowrap;
+  }
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:top;}
+  tbody tr:last-child td{border-bottom:none;}
+  .table-compact thead th{padding:0 10px 6px;}
+  .table-compact tbody td{padding:6px 10px;font-size:12.5px;}
+  tbody tr:hover{background:rgba(184,134,63,.05);}
+  .num{font-family:var(--font-mono);text-align:right;white-space:nowrap;}
+  .muted{color:var(--text-muted);}
+  .tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;font-family:var(--font-mono);}
+  .tag-red{background:var(--red-bg);color:var(--red);}
+  .tag-green{background:var(--green-bg);color:var(--green);}
+  .rowactions{display:flex;gap:6px;justify-content:flex-end;}
+  .iconbtn{background:var(--bg-page);border:1px solid var(--border);cursor:pointer;padding:7px;color:var(--text);border-radius:7px;line-height:0;}
+  .iconbtn svg{width:18px;height:18px;display:block;stroke-width:2;}
+  .iconbtn:hover{background:var(--accent);border-color:var(--accent);color:#2A1D08;}
+  .empty{padding:60px 20px;text-align:center;color:var(--text-muted);}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:28px;}
+  .kpi{padding:18px 18px;}
+  .kpi .lbl{font-size:12.5px;color:var(--text-muted);margin-bottom:8px;}
+  .kpi .val{font-family:var(--font-mono);font-size:22px;font-weight:600;}
+  .section-title{font-size:14px;font-weight:600;margin:26px 0 12px;}
+  /* modal */
+  #modal-root{position:fixed;inset:0;display:none;align-items:flex-start;justify-content:center;z-index:100;overflow-y:auto;padding:40px 16px;}
+  #modal-root.open{display:flex;}
+  .backdrop{position:fixed;inset:0;background:rgba(20,16,10,.5);}
+  .modal-panel{position:relative;background:var(--bg-card);border-radius:12px;max-width:560px;width:100%;padding:26px 26px 22px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .modal-panel h2{margin:0 0 18px;font-size:17px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+  .assign-row{display:flex;gap:8px;align-items:end;margin-bottom:8px;}
+  .assign-row .field{margin-bottom:0;flex:1;}
+  .banner{background:var(--red-bg);color:var(--red);padding:11px 16px;border-radius:8px;font-size:13px;margin-bottom:18px;}
+  .placeholder-box{padding:70px 30px;text-align:center;color:var(--text-muted);border:1px dashed var(--border);border-radius:10px;}
+  @media (max-width:820px){
+    #layout{flex-direction:column;}
+    #sidebar{width:100%;height:auto;position:relative;flex-direction:row;overflow-x:auto;padding:12px;}
+    .brand{padding:4px 10px;}
+    nav{flex-direction:row;}
+    .navbtn{white-space:nowrap;}
+    .sidebar-foot{display:none;}
+    #content{padding:20px;}
+    .grid2,.grid3{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div id="layout">
+  <div id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">TS</div>
+      <div class="brand-text"><div class="t1">Satış &amp; Toplama</div><div class="t2">İdarəetmə sistemi</div></div>
+    </div>
+    <nav id="nav"></nav>
+    <button class="navbtn" id="manual-refresh-btn" data-action="manual-refresh" style="margin-top:6px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 11A8 8 0 105.5 6.5M20 11V5M20 11h-6"/></svg>
+      <span>Yenilə</span>
+    </button>
+    <div class="sidebar-foot" id="user-info">Ortaq baza</div>
+    <a href="admin.php" class="navbtn" id="admin-link" style="display:none;text-decoration:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M4.5 20c0-3.3 3-5.3 7.5-5.3s7.5 2 7.5 5.3"/><path d="M19 4l1.3 1.3L17 8.5"/></svg>
+      <span>Admin paneli</span>
+    </a>
+    <a href="logout.php" class="navbtn" style="text-decoration:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 19H5a2 2 0 01-2-2V7a2 2 0 012-2h7"/></svg>
+      <span>Çıxış</span>
+    </a>
+  </div>
+  <div id="content"></div>
+</div>
+<div id="modal-root"><div class="backdrop" data-action="close-modal"></div><div class="modal-panel" id="modal-panel"></div></div>
+<script>
+/* ============ ICONS ============ */
+const ICONS = {
+  dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="9" rx="1.3"/><rect x="14" y="3" width="7" height="5" rx="1.3"/><rect x="14" y="12" width="7" height="9" rx="1.3"/><rect x="3" y="16" width="7" height="5" rx="1.3"/></svg>',
+  sales:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.4"/><path d="M5 21c0-4 3-6 7-6s7 2 7 6"/></svg>',
+  collector:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M16 7V5.5A2.5 2.5 0 0013.5 3h-3A2.5 2.5 0 008 5.5V7"/><circle cx="12" cy="13" r="1.6"/></svg>',
+  customers:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M2.5 20c0-3.5 2.7-5.6 6.5-5.6s6.5 2.1 6.5 5.6"/><circle cx="17.5" cy="7.5" r="2.4"/><path d="M15.5 14.6c2.9.4 4.9 2.3 4.9 5.4"/></svg>',
+  contract:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h9l4 4v13a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 3v5h5"/><path d="M8.5 12h7M8.5 15.5h7M8.5 18.5h4"/></svg>',
+  payment:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="6" width="19" height="13" rx="2"/><path d="M2.5 10.5h19"/><circle cx="7" cy="14.7" r="1.2" fill="currentColor" stroke="none"/></svg>',
+  reassign:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>',
+  inquiry:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/><path d="M8.2 10.5h4.6M10.5 8.2v4.6"/></svg>',
+  calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v4M16 3v4"/><path d="M8.5 14l1.8 1.8L13.5 12.3"/></svg>',
+  reports:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20V10M11 20V4M18 20v-7"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7"/></svg>',
+};
+const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust','Sentyabr','Oktyabr','Noyabr','Dekabr'];
+
+/* ============ STATE ============ */
+let dbReady=false;
+const state={salespeople:[],collectors:[],customers:[],contracts:[],payments:[]};
+let currentScreen='dashboard';
+
+const SCREENS=[
+  {id:'dashboard',label:'İdarə paneli',icon:'dashboard'},
+  {id:'salespeople',label:'Satıcılar',icon:'sales'},
+  {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
+  {id:'customers',label:'Müştərilər',icon:'customers'},
+  {id:'contracts',label:'Müqavilələr',icon:'contract'},
+  {id:'payments',label:'Ödənişlər',icon:'payment'},
+  {id:'reassign',label:'Təhsilatçı dəyişikliyi',icon:'reassign'},
+  {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
+  {id:'reports',label:'Hesabatlar',icon:'reports'},
+];
+
+/* ============ HELPERS ============ */
+function fmtMoney(n){ n=Number(n)||0; return n.toLocaleString('az-AZ',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₼'; }
+function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso+'T00:00:00'); if(isNaN(d)) return iso; return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear(); }
+function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fullName(o){ if(!o) return ''; return [o.soyad,o.ad,o.ataAdi].filter(Boolean).join(' '); }
+function byId(arr,id){ return arr.find(x=>x.id===id); }
+function phonesToArr(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
+
+function customerName(id){ const c=byId(state.customers,id); return c?fullName(c):'—'; }
+function salespersonName(id){ const s=byId(state.salespeople,id); return s?fullName(s):'—'; }
+function collectorName(id){ const c=byId(state.collectors,id); return c?fullName(c):'—'; }
+
+function scheduleMonths(contract){
+  const out=[]; if(!contract.tarix||!contract.muddet) return out;
+  const start=new Date(contract.tarix+'T00:00:00');
+  for(let i=1;i<=Number(contract.muddet);i++){
+    const d=new Date(start.getFullYear(), start.getMonth()+i, 1);
+    out.push({index:i,label:'Ay '+i+' — '+AZ_MONTHS[d.getMonth()]+' '+d.getFullYear(),date:d});
+  }
+  return out;
+}
+function contractPaidSum(contractId){
+  return state.payments.filter(p=>p.contractId===contractId).reduce((s,p)=>s+(Number(p.meblag)||0),0);
+}
+function contractDebt(contract){
+  return (Number(contract.meblag)||0) - (Number(contract.ilkinOdenis)||0) - contractPaidSum(contract.id);
+}
+function currentCollectorForContract(contract,onDate){
+  const d=onDate?new Date(onDate):new Date();
+  const list=contract.tehsilatciTeyinatlari||[];
+  const hit=list.find(a=>{
+    const s=a.baslama?new Date(a.baslama):null;
+    const e=a.son?new Date(a.son):null;
+    return (!s||d>=s)&&(!e||d<=e);
+  });
+  return hit?hit.collectorId:(list.length?list[list.length-1].collectorId:null);
+}
+// Müqavilələr siyahısında göstərilən təhsilatçı: "Son" xanası boş olan təyinat (davam edən təyinat)
+function activeCollectorForContract(contract){
+  const list=contract.tehsilatciTeyinatlari||[];
+  const hit=list.find(a=>!a.son);
+  return hit?hit.collectorId:(list.length?list[list.length-1].collectorId:null);
+}
+
+/* ============ RENDER SHELL ============ */
+function renderNav(){
+  const nav=document.getElementById('nav');
+  nav.innerHTML=SCREENS.map(s=>
+    `<button class="navbtn${s.id===currentScreen?' active':''}" data-action="nav" data-screen="${s.id}">${ICONS[s.icon]}<span>${s.label}</span></button>`
+  ).join('');
+}
+function setContent(html){ document.getElementById('content').innerHTML=html; }
+
+function renderScreen(){
+  renderNav();
+  if(!dbReady){
+    setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Ortaq bazaya qoşulur</div></div></div>`);
+    return;
+  }
+  switch(currentScreen){
+    case 'dashboard': return renderDashboard();
+    case 'salespeople': return renderSimpleList('salespeople');
+    case 'collectors': return renderSimpleList('collectors');
+    case 'customers': return renderCustomers();
+    case 'contracts': return renderContracts();
+    case 'payments': return renderPayments();
+    case 'reassign': return renderReassign();
+    case 'debt-inquiry': return renderDebtInquiry();
+    case 'reports': return renderReports();
+  }
+}
+
+/* ============ DASHBOARD ============ */
+function renderDashboard(){
+  const totalSales=state.contracts.reduce((s,c)=>s+(Number(c.meblag)||0),0);
+  const totalPaid=state.payments.reduce((s,p)=>s+(Number(p.meblag)||0),0);
+  const totalIlkin=state.contracts.reduce((s,c)=>s+(Number(c.ilkinOdenis)||0),0);
+  const totalDebt=state.contracts.reduce((s,c)=>s+contractDebt(c),0);
+  const now=new Date(); const ym=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const thisMonth=state.payments.filter(p=>(p.odemeTarixi||'').slice(0,7)===ym).reduce((s,p)=>s+(Number(p.meblag)||0),0);
+  setContent(`
+    <div class="topbar"><div><h1>İdarə paneli</h1><div class="sub">Ümumi vəziyyətə baxış</div></div></div>
+    <div class="kpis">
+      <div class="card kpi"><div class="lbl">Aktiv müqavilələr</div><div class="val">${state.contracts.length}</div></div>
+      <div class="card kpi"><div class="lbl">Ümumi satış məbləği</div><div class="val">${fmtMoney(totalSales)}</div></div>
+      <div class="card kpi"><div class="lbl">Toplanmış məbləğ</div><div class="val">${fmtMoney(totalPaid+totalIlkin)}</div></div>
+      <div class="card kpi"><div class="lbl">Qalan ümumi borc</div><div class="val" style="color:var(--red)">${fmtMoney(totalDebt)}</div></div>
+      <div class="card kpi"><div class="lbl">Bu ay toplanan</div><div class="val" style="color:var(--green)">${fmtMoney(thisMonth)}</div></div>
+    </div>
+    <div class="section-title">Son müqavilələr</div>
+    <div class="card">
+      <div class="table-scroll"><table><thead><tr><th>Müqavilə №</th><th>Müştəri</th><th>Tarix</th><th class="num">Məbləğ</th><th class="num">Qalıq borc</th></tr></thead>
+      <tbody>${
+        state.contracts.slice().sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'')).slice(0,6).map(c=>{
+          const debt=contractDebt(c);
+          return `<tr><td>${esc(c.nomre)}</td><td>${esc(customerName(c.customerId))}</td><td>${fmtDate(c.tarix)}</td><td class="num">${fmtMoney(c.meblag)}</td><td class="num"><span class="tag ${debt>0?'tag-red':'tag-green'}">${fmtMoney(debt)}</span></td></tr>`;
+        }).join('') || '<tr><td colspan="5" class="empty">Hələ müqavilə yoxdur</td></tr>'
+      }</tbody></table></div>
+    </div>
+  `);
+}
+
+function clearFieldErrors(form){
+  form.querySelectorAll('.field-err').forEach(e=>{ e.textContent=''; e.style.display='none'; });
+  form.querySelectorAll('.input-error').forEach(e=>e.classList.remove('input-error'));
+}
+function setFieldError(form, name, msg){
+  const input=form.querySelector(`[name="${name}"]`);
+  if(input) input.classList.add('input-error');
+  const errEl=form.querySelector(`.field-err[data-err-for="${name}"]`);
+  if(errEl){ errEl.textContent=msg; errEl.style.display='block'; }
+}
+function isDuplicate(list, field, value, excludeId){
+  if(!value) return false;
+  const v=value.trim().toLowerCase();
+  return list.some(item=>item.id!==excludeId && (item[field]||'').toString().trim().toLowerCase()===v);
+}
+function calcAge(dateStr){
+  const b=new Date(dateStr+'T00:00:00');
+  if(isNaN(b)) return null;
+  const now=new Date();
+  let age=now.getFullYear()-b.getFullYear();
+  const mDiff=now.getMonth()-b.getMonth();
+  if(mDiff<0 || (mDiff===0 && now.getDate()<b.getDate())) age--;
+  return age;
+}
+function bindDigitsOnly(form){
+  ['elaqeNomre1','elaqeNomre2'].forEach(n=>{
+    const el=form.querySelector(`[name="${n}"]`);
+    if(el) el.addEventListener('input', ()=>{ el.value=el.value.replace(/\D/g,'').slice(0,9); });
+  });
+}
+
+/* ============ SALESPEOPLE / COLLECTORS (shared shape) ============ */
+const SIMPLE_META={
+  salespeople:{title:'Satıcılar',singular:'satıcı',col:'salespeople'},
+  collectors:{title:'Təhsilatçılar',singular:'təhsilatçı',col:'collectors'},
+};
+const PAGE_SIZE=20;
+const pageNum={salespeople:1,collectors:1,customers:1,contracts:1};
+function paginateArr(array, key){
+  const total=array.length;
+  const totalPages=Math.max(1, Math.ceil(total/PAGE_SIZE));
+  if(pageNum[key]>totalPages) pageNum[key]=totalPages;
+  if(pageNum[key]<1) pageNum[key]=1;
+  const start=(pageNum[key]-1)*PAGE_SIZE;
+  return {pageRows:array.slice(start,start+PAGE_SIZE), totalPages, total};
+}
+function paginationHtml(key, totalPages, total){
+  if(total===0) return '';
+  return `<div class="pagination" style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:12px;">
+    <span class="muted" style="font-size:12.5px;">${total} nəticə</span>
+    <button class="btn btn-ghost btn-sm" data-action="page-prev" data-key="${key}" ${pageNum[key]<=1?'disabled':''}>‹ Əvvəlki</button>
+    <span class="muted" style="font-size:12.5px;">Səhifə ${pageNum[key]} / ${totalPages}</span>
+    <button class="btn btn-ghost btn-sm" data-action="page-next" data-key="${key}" ${pageNum[key]>=totalPages?'disabled':''}>Növbəti ›</button>
+  </div>`;
+}
+
+function renderSimpleList(key, filter){
+  const meta=SIMPLE_META[key];
+  const q=(filter||'').toLowerCase();
+  const rows=state[key].filter(p=>!q || (p.kod+p.soyad+p.ad+p.ataAdi+(p.finKod||'')+(p.elaqeNomre1||'')).toLowerCase().includes(q));
+  const {pageRows, totalPages, total}=paginateArr(rows, key);
+  setContent(`
+    <div class="topbar"><div><h1>${meta.title}</h1><div class="sub">${state[key].length} qeyd</div></div>
+      <button class="btn btn-primary" data-action="add-${key}">${ICONS.plus}&nbsp; Yeni ${meta.singular}</button></div>
+    <div class="toolbar"><input class="searchbox" type="search" id="search-${key}" placeholder="Axtar…" value="${esc(filter||'')}"></div>
+    <div class="card"><div class="table-scroll"><table>
+      <thead><tr><th>Kod</th><th>Soyad</th><th>Ad</th><th>Ata adı</th><th>Vəsiqə seriyası</th><th>Vəsiqə nömrəsi</th><th>FIN</th><th>Qeydiyyat ünvanı</th><th>Faktiki ünvan</th><th>Əlaqə nömrə 1</th><th>Əlaqə nömrə 2</th><th>Qeyd</th><th></th></tr></thead>
+      <tbody id="tbody-${key}">${renderSimpleRows(key, pageRows)}</tbody>
+    </table></div>
+    <div id="pagination-${key}">${paginationHtml(key, totalPages, total)}</div>
+    </div>
+  `);
+}
+function renderSimpleRows(key, rows){
+  if(!rows.length) return `<tr><td colspan="13" class="empty">Nəticə tapılmadı</td></tr>`;
+  return rows.map(p=>`<tr>
+    <td class="muted">${esc(p.kod||'—')}</td>
+    <td>${esc(p.soyad||'—')}</td>
+    <td>${esc(p.ad||'—')}</td>
+    <td class="muted">${esc(p.ataAdi||'—')}</td>
+    <td class="muted">${esc(p.vesiqeSeriya||'—')}</td>
+    <td class="muted">${esc(p.vesiqeNomre||'—')}</td>
+    <td class="muted">${esc(p.finKod||'—')}</td>
+    <td class="muted">${esc(p.qeydiyyatUnvani||'—')}</td>
+    <td class="muted">${esc(p.faktikiUnvan||'—')}</td>
+    <td>${esc(p.elaqeNomre1||'—')}</td>
+    <td>${esc(p.elaqeNomre2||'—')}</td>
+    <td class="muted">${esc(p.qeyd||'—')}</td>
+    <td><div class="rowactions">
+      <button class="iconbtn" data-action="edit-${key}" data-id="${p.id}" title="Redaktə et">${ICONS.edit}</button>
+      <button class="iconbtn" data-action="delete-${key}" data-id="${p.id}" title="Sil">${ICONS.trash}</button>
+    </div></td></tr>`).join('');
+}
+function openSimpleForm(key, id){
+  const meta=SIMPLE_META[key];
+  const rec=id?byId(state[key],id):null;
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>${rec?'Redaktə et':'Yeni '+meta.singular}</h2>
+    <form id="simple-form" data-key="${key}" data-id="${id||''}">
+      <div class="grid3">
+        <div class="field" style="max-width:90px">
+          <label>Kod</label>
+          <input type="text" name="kod" maxlength="3" style="width:90px" value="${esc(rec?.kod||'')}">
+          <div class="field-err" data-err-for="kod"></div>
+        </div>
+        <div class="field"><label>Soyad</label><input type="text" name="soyad" maxlength="15" value="${esc(rec?.soyad||'')}"></div>
+        <div class="field"><label>Ad</label><input type="text" name="ad" maxlength="15" value="${esc(rec?.ad||'')}"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Ata adı</label><input type="text" name="ataAdi" maxlength="15" value="${esc(rec?.ataAdi||'')}"></div>
+        <div class="field" style="max-width:110px"><label>Vəsiqə seriyası</label><input type="text" name="vesiqeSeriya" maxlength="3" style="width:110px" value="${esc(rec?.vesiqeSeriya||'')}"></div>
+        <div class="field" style="max-width:140px"><label>Vəsiqə nömrəsi</label><input type="text" name="vesiqeNomre" maxlength="10" style="width:140px" value="${esc(rec?.vesiqeNomre||'')}"></div>
+      </div>
+      <div class="field" style="max-width:140px">
+        <label>FIN</label>
+        <input type="text" name="finKod" maxlength="7" style="width:140px" value="${esc(rec?.finKod||'')}">
+        <div class="field-err" data-err-for="finKod"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Qeydiyyatda olduğu ünvan</label><input type="text" name="qeydiyyatUnvani" value="${esc(rec?.qeydiyyatUnvani||'')}"></div>
+        <div class="field"><label>Faktiki ünvan</label><input type="text" name="faktikiUnvan" value="${esc(rec?.faktikiUnvan||'')}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>Əlaqə üçün nömrə 1</label>
+          <input type="tel" inputmode="numeric" name="elaqeNomre1" maxlength="9" value="${esc(rec?.elaqeNomre1||'')}">
+          <div class="field-err" data-err-for="elaqeNomre1"></div>
+        </div>
+        <div class="field">
+          <label>Əlaqə üçün nömrə 2</label>
+          <input type="tel" inputmode="numeric" name="elaqeNomre2" maxlength="9" value="${esc(rec?.elaqeNomre2||'')}">
+          <div class="field-err" data-err-for="elaqeNomre2"></div>
+        </div>
+      </div>
+      <div class="field"><label>Qeyd</label><textarea name="qeyd" rows="2">${esc(rec?.qeyd||'')}</textarea></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+        <button type="submit" class="btn btn-primary">Yadda saxla</button>
+      </div>
+    </form>`;
+  openModal();
+  bindDigitsOnly(document.getElementById('simple-form'));
+}
+async function submitSimpleForm(form){
+  clearFieldErrors(form);
+  const key=form.dataset.key, id=form.dataset.id;
+  const fd=new FormData(form);
+  const data={
+    kod:fd.get('kod')||'', soyad:fd.get('soyad')||'', ad:fd.get('ad')||'', ataAdi:fd.get('ataAdi')||'',
+    vesiqeSeriya:fd.get('vesiqeSeriya')||'', vesiqeNomre:fd.get('vesiqeNomre')||'',
+    finKod:fd.get('finKod')||'', qeydiyyatUnvani:fd.get('qeydiyyatUnvani')||'', faktikiUnvan:fd.get('faktikiUnvan')||'',
+    elaqeNomre1:fd.get('elaqeNomre1')||'', elaqeNomre2:fd.get('elaqeNomre2')||'', qeyd:fd.get('qeyd')||'',
+  };
+  let ok=true;
+  if(data.finKod.length!==7){ setFieldError(form,'finKod','Fini tam daxil edin'); ok=false; }
+  else if(!id && isDuplicate(state[key],'finKod',data.finKod,id)){ setFieldError(form,'finKod','Daxil etdiyiniz fin təkrarlanır'); ok=false; }
+  if(!id && isDuplicate(state[key],'kod',data.kod,id)){ setFieldError(form,'kod','Daxil etdiyiniz kod təkrarlanır'); ok=false; }
+  if(data.elaqeNomre1.length!==9){ setFieldError(form,'elaqeNomre1','Əlaqə nömrəsini tam daxil edin'); ok=false; }
+  if(data.elaqeNomre2.length!==9){ setFieldError(form,'elaqeNomre2','Əlaqə nömrəsini tam daxil edin'); ok=false; }
+  if(!ok) return;
+  if(id){ await apiUpdate(key,id,data); } else { await apiAdd(key,data); }
+  closeModal();
+  await loadAll();
+}
+
+/* ============ CUSTOMERS ============ */
+function renderCustomers(filter){
+  const q=(filter||'').toLowerCase();
+  const rows=state.customers.filter(c=>!q || (fullName(c)+' '+(c.kod||'')+' '+(c.finKod||'')+' '+(c.elaqeNomre1||'')).toLowerCase().includes(q));
+  const {pageRows, totalPages, total}=paginateArr(rows, 'customers');
+  setContent(`
+    <div class="topbar"><div><h1>Müştərilər</h1><div class="sub">${state.customers.length} qeyd</div></div>
+      <button class="btn btn-primary" data-action="add-customers">${ICONS.plus}&nbsp; Yeni müştəri</button></div>
+    <div class="toolbar"><input class="searchbox" type="search" id="search-customers" placeholder="Ad, FIN və ya telefon…" value="${esc(filter||'')}"></div>
+    <div class="card"><div class="table-scroll"><table>
+      <thead><tr><th>Kod</th><th>Soyad Ad Ata adı</th><th>Doğum tarixi</th><th>Cinsiyyət</th><th>Vəsiqə seriyası</th><th>Vəsiqə nömrəsi</th><th>FIN</th><th>Qeydiyyat ünvanı</th><th>Faktiki ünvan</th><th>Əlaqə nömrə 1</th><th>Əlaqə nömrə 2</th><th>Qeyd</th><th></th></tr></thead>
+      <tbody id="tbody-customers">${renderCustomerRows(pageRows)}</tbody>
+    </table></div>
+    <div id="pagination-customers">${paginationHtml('customers', totalPages, total)}</div>
+    </div>
+  `);
+}
+function renderCustomerRows(rows){
+  if(!rows.length) return `<tr><td colspan="13" class="empty">Nəticə tapılmadı</td></tr>`;
+  return rows.map(c=>`<tr>
+    <td class="muted">${esc(c.kod||'—')}</td>
+    <td>${esc(fullName(c)||'—')}</td>
+    <td class="muted">${fmtDate(c.dogumTarixi)}</td>
+    <td class="muted">${esc(c.cinsiyet||'—')}</td>
+    <td class="muted">${esc(c.vesiqeSeriya||'—')}</td>
+    <td class="muted">${esc(c.vesiqeNomre||'—')}</td>
+    <td class="muted">${esc(c.finKod||'—')}</td>
+    <td class="muted">${esc(c.qeydiyyatUnvani||'—')}</td>
+    <td class="muted">${esc(c.faktikiUnvan||'—')}</td>
+    <td>${esc(c.elaqeNomre1||'—')}</td>
+    <td>${esc(c.elaqeNomre2||'—')}</td>
+    <td class="muted">${esc(c.qeyd||'—')}</td>
+    <td><div class="rowactions">
+      <button class="iconbtn" data-action="edit-customers" data-id="${c.id}" title="Redaktə et">${ICONS.edit}</button>
+      <button class="iconbtn" data-action="delete-customers" data-id="${c.id}" title="Sil">${ICONS.trash}</button>
+    </div></td></tr>`).join('');
+}
+function openCustomerForm(id){
+  const rec=id?byId(state.customers,id):null;
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>${rec?'Müştərini redaktə et':'Yeni müştəri'}</h2>
+    <form id="customer-form" data-id="${id||''}">
+      <div class="grid3">
+        <div class="field" style="max-width:110px">
+          <label>Kod</label>
+          <input type="text" name="kod" maxlength="6" style="width:110px" value="${esc(rec?.kod||'')}">
+          <div class="field-err" data-err-for="kod"></div>
+        </div>
+        <div class="field"><label>Soyad</label><input type="text" name="soyad" maxlength="15" value="${esc(rec?.soyad||'')}"></div>
+        <div class="field"><label>Ad</label><input type="text" name="ad" maxlength="15" value="${esc(rec?.ad||'')}"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Ata adı</label><input type="text" name="ataAdi" maxlength="15" value="${esc(rec?.ataAdi||'')}"></div>
+        <div class="field">
+          <label>Doğum tarixi</label>
+          <input type="date" name="dogumTarixi" value="${esc(rec?.dogumTarixi||'')}">
+          <div class="field-err" data-err-for="dogumTarixi"></div>
+        </div>
+        <div class="field"><label>Cinsiyyət</label><select name="cinsiyet">
+          <option value="">— seçin —</option>
+          <option value="Kişi" ${rec?.cinsiyet==='Kişi'?'selected':''}>Kişi</option>
+          <option value="Qadın" ${rec?.cinsiyet==='Qadın'?'selected':''}>Qadın</option>
+        </select></div>
+      </div>
+      <div class="grid3">
+        <div class="field" style="max-width:110px"><label>Vəsiqə seriyası</label><input type="text" name="vesiqeSeriya" maxlength="3" style="width:110px" value="${esc(rec?.vesiqeSeriya||'')}"></div>
+        <div class="field" style="max-width:140px"><label>Vəsiqə nömrəsi</label><input type="text" name="vesiqeNomre" maxlength="10" style="width:140px" value="${esc(rec?.vesiqeNomre||'')}"></div>
+        <div class="field" style="max-width:140px">
+          <label>FIN</label>
+          <input type="text" name="finKod" maxlength="7" style="width:140px" value="${esc(rec?.finKod||'')}">
+          <div class="field-err" data-err-for="finKod"></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Qeydiyyatda olduğu ünvan</label><input type="text" name="qeydiyyatUnvani" value="${esc(rec?.qeydiyyatUnvani||'')}"></div>
+        <div class="field"><label>Faktiki ünvan</label><input type="text" name="faktikiUnvan" value="${esc(rec?.faktikiUnvan||'')}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>Əlaqə üçün nömrə 1</label>
+          <input type="tel" inputmode="numeric" name="elaqeNomre1" maxlength="9" value="${esc(rec?.elaqeNomre1||'')}">
+          <div class="field-err" data-err-for="elaqeNomre1"></div>
+        </div>
+        <div class="field">
+          <label>Əlaqə üçün nömrə 2</label>
+          <input type="tel" inputmode="numeric" name="elaqeNomre2" maxlength="9" value="${esc(rec?.elaqeNomre2||'')}">
+          <div class="field-err" data-err-for="elaqeNomre2"></div>
+        </div>
+      </div>
+      <div class="field"><label>Qeyd</label><textarea name="qeyd" rows="2">${esc(rec?.qeyd||'')}</textarea></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+        <button type="submit" class="btn btn-primary">Yadda saxla</button>
+      </div>
+    </form>`;
+  openModal();
+  bindDigitsOnly(document.getElementById('customer-form'));
+}
+async function submitCustomerForm(form){
+  clearFieldErrors(form);
+  const id=form.dataset.id; const fd=new FormData(form);
+  const data={};
+  ['kod','soyad','ad','ataAdi','dogumTarixi','cinsiyet','vesiqeSeriya','vesiqeNomre','finKod','qeydiyyatUnvani','faktikiUnvan','elaqeNomre1','elaqeNomre2','qeyd'].forEach(k=>data[k]=fd.get(k)||'');
+  let ok=true;
+  if(data.finKod.length!==7){ setFieldError(form,'finKod','Fini tam daxil edin'); ok=false; }
+  else if(!id && isDuplicate(state.customers,'finKod',data.finKod,id)){ setFieldError(form,'finKod','Daxil etdiyiniz fin təkrarlanır'); ok=false; }
+  if(!id && isDuplicate(state.customers,'kod',data.kod,id)){ setFieldError(form,'kod','Daxil etdiyiniz kod təkrarlanır'); ok=false; }
+  if(data.elaqeNomre1.length!==9){ setFieldError(form,'elaqeNomre1','Əlaqə nömrəsini tam daxil edin'); ok=false; }
+  if(data.elaqeNomre2.length!==9){ setFieldError(form,'elaqeNomre2','Əlaqə nömrəsini tam daxil edin'); ok=false; }
+  if(data.dogumTarixi && calcAge(data.dogumTarixi)<17){ setFieldError(form,'dogumTarixi','17 yaşından kiçiklərə satış etmək olmaz'); ok=false; }
+  if(!ok) return;
+  if(id){ await apiUpdate('customers',id,data); } else { await apiAdd('customers',data); }
+  closeModal();
+  await loadAll();
+}
+
+/* ============ CONTRACTS ============ */
+function renderContracts(filter){
+  const q=(filter||'').toLowerCase();
+  const rows=state.contracts.filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q));
+  const {pageRows, totalPages, total}=paginateArr(rows, 'contracts');
+  setContent(`
+    <div class="topbar" style="align-items:center;margin-bottom:8px;">
+      <div><h1>Müqavilələr</h1><div class="sub">${state.contracts.length} qeyd</div></div>
+      <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;">
+        <input class="searchbox" type="search" id="search-contracts" placeholder="Müqavilə № və ya müştəri…" style="width:220px;" value="${esc(filter||'')}">
+        <button class="btn btn-primary" data-action="add-contracts" title="Yeni müqavilə" style="width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${ICONS.plus}</button>
+      </div>
+    </div>
+    <div class="card" style="margin-left:-24px;width:calc(100% + 48px);min-height:calc(100vh - 190px);">
+      <div class="table-scroll"><table>
+      <thead><tr><th>Müqavilə №</th><th>Müştəri</th><th>Tarix</th><th>Satıcı</th><th>Təhsilatçı</th><th class="num" style="width:52px;">Məbləğ</th><th class="num" style="width:52px;">İlkin ödəniş</th><th class="num" style="width:52px;">Aylıq</th><th class="num">Qalıq borc</th><th></th></tr></thead>
+      <tbody id="tbody-contracts">${renderContractRows(pageRows)}</tbody>
+    </table></div>
+    <div id="pagination-contracts" style="padding:0 14px 14px;">${paginationHtml('contracts', totalPages, total)}</div>
+    </div>
+  `);
+}
+function renderContractRows(rows){
+  if(!rows.length) return `<tr><td colspan="10" class="empty">Nəticə tapılmadı</td></tr>`;
+  return rows.slice().sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'')).map(c=>{
+    const debt=contractDebt(c);
+    const monthly=c.muddet?((Number(c.meblag)-Number(c.ilkinOdenis||0))/Number(c.muddet)):0;
+    const curCollector=activeCollectorForContract(c);
+    return `<tr>
+      <td>${esc(c.nomre)}</td>
+      <td>${esc(customerName(c.customerId))}</td>
+      <td>${fmtDate(c.tarix)}</td>
+      <td class="muted">${esc(salespersonName(c.salespersonId))}</td>
+      <td class="muted">${esc(collectorName(curCollector))}</td>
+      <td class="num" style="font-size:11px;">${fmtMoney(c.meblag)}</td>
+      <td class="num muted" style="font-size:11px;">${fmtMoney(c.ilkinOdenis)}</td>
+      <td class="num" style="font-size:11px;">${fmtMoney(monthly)}</td>
+      <td class="num"><span class="tag ${debt>0?'tag-red':'tag-green'}">${fmtMoney(debt)}</span></td>
+      <td><div class="rowactions">
+        <button class="iconbtn" data-action="edit-contracts" data-id="${c.id}" title="Redaktə et">${ICONS.edit}</button>
+        <button class="iconbtn" data-action="show-schedule" data-id="${c.id}" title="Ödəniş qrafiki">${ICONS.calendar}</button>
+        <button class="iconbtn" data-action="show-assignments" data-id="${c.id}" title="Təhsilatçı təyinatları">${ICONS.reassign}</button>
+        <button class="iconbtn" data-action="delete-contracts" data-id="${c.id}">${ICONS.trash}</button>
+      </div></td></tr>`;
+  }).join('');
+}
+function openContractForm(id){
+  if(!state.customers.length){ alert('Əvvəlcə ən azı bir müştəri əlavə edin.'); return; }
+  if(!state.salespeople.length){ alert('Əvvəlcə ən azı bir satıcı əlavə edin.'); return; }
+  const rec=id?byId(state.contracts,id):null;
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>${rec?'Müqaviləni redaktə et':'Yeni müqavilə'}</h2>
+    <form id="contract-form" data-id="${id||''}">
+      <div class="grid2">
+        <div class="field">
+          <label>Müqavilə nömrəsi</label>
+          <input required type="text" name="nomre" value="${esc(rec?.nomre||'')}">
+          <div class="field-err" data-err-for="nomre"></div>
+        </div>
+        <div class="field"><label>Tarix</label><input required type="date" name="tarix" value="${esc(rec?.tarix||'')}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field" style="position:relative;">
+          <label>Müştəri</label>
+          <input type="text" id="customer-search" autocomplete="off" placeholder="Ad, soyad və ya kod ilə axtar…"
+            value="${rec?esc(fullName(byId(state.customers,rec.customerId)||{})+((byId(state.customers,rec.customerId)||{}).kod?' — '+(byId(state.customers,rec.customerId)||{}).kod:'')):''}">
+          <input type="hidden" name="customerId" id="customer-search-hidden" value="${esc(rec?.customerId||'')}">
+          <div id="customer-search-results" class="search-dropdown"></div>
+        </div>
+        <div class="field"><label>Satıcı</label><select required name="salespersonId">
+          <option value="">— seçin —</option>
+          ${state.salespeople.map(s=>`<option value="${s.id}" ${rec?.salespersonId===s.id?'selected':''}>${esc(fullName(s))}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Satışın məbləği (₼)</label><input required type="number" step="0.01" min="0" name="meblag" value="${esc(rec?.meblag??'')}"></div>
+        <div class="field"><label>İlkin ödəniş/çatdırılma xidməti (₼)</label><input required type="number" step="0.01" min="0" name="ilkinOdenis" value="${esc(rec?.ilkinOdenis??'')}"></div>
+        <div class="field"><label>Müddət (ay)</label><input required type="number" step="1" min="1" name="muddet" value="${esc(rec?.muddet??'')}"></div>
+      </div>
+      <div class="field"><label>Qeyd</label><textarea name="qeyd" rows="2">${esc(rec?.qeyd||'')}</textarea></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+        <button type="submit" class="btn btn-primary">Yadda saxla</button>
+      </div>
+    </form>`;
+  openModal();
+  bindCustomerSearch(document.getElementById('contract-form'));
+}
+function bindCustomerSearch(form){
+  const input=form.querySelector('#customer-search');
+  const hidden=form.querySelector('#customer-search-hidden');
+  const results=form.querySelector('#customer-search-results');
+  function renderList(q){
+    const query=(q||'').toLowerCase();
+    if(query.length<3){ results.innerHTML=`<div class="search-item muted">Ən azı 3 simvol yazın…</div>`; results.style.display='block'; return; }
+    const matches=state.customers.filter(c=>(fullName(c)+' '+(c.kod||'')+' '+(c.finKod||'')).toLowerCase().includes(query)).slice(0,30);
+    results.innerHTML = matches.length
+      ? matches.map(c=>`<div class="search-item" data-id="${c.id}">${esc(fullName(c))}${c.kod?' <span class="muted">— '+esc(c.kod)+'</span>':''}</div>`).join('')
+      : `<div class="search-item muted">Nəticə tapılmadı</div>`;
+    results.style.display='block';
+  }
+  input.addEventListener('focus', ()=>renderList(input.value));
+  input.addEventListener('input', ()=>{ hidden.value=''; renderList(input.value); });
+  input.addEventListener('blur', ()=>{ setTimeout(()=>{ results.style.display='none'; }, 150); });
+  results.addEventListener('mousedown', (e)=>{
+    const item=e.target.closest('.search-item[data-id]');
+    if(!item) return;
+    const c=byId(state.customers, item.dataset.id);
+    if(c){ input.value=fullName(c)+(c.kod?' — '+c.kod:''); hidden.value=c.id; }
+    results.style.display='none';
+  });
+}
+function openAssignmentsInfo(contractId){
+  const c=byId(state.contracts,contractId);
+  if(!c) return;
+  const list=c.tehsilatciTeyinatlari||[];
+  const sorted=[...list].sort((a,b)=>{
+    const aActive=!a.son, bActive=!b.son;
+    if(aActive && !bActive) return -1;
+    if(!aActive && bActive) return 1;
+    return (b.baslama||'').localeCompare(a.baslama||'');
+  });
+  const rowsHtml=sorted.length ? sorted.map(a=>{
+    const active=!a.son;
+    return `<div style="padding:10px 12px;border-radius:8px;margin-bottom:8px;${active?'background:rgba(184,134,63,.12);border:1px solid var(--accent);':'background:var(--bg-page);border:1px solid var(--border);'}">
+      <div style="font-weight:${active?600:500};">${esc(collectorName(a.collectorId))}${active?' <span class="tag" style="background:var(--accent);color:#2A1D08;">Aktiv</span>':''}</div>
+      <div class="muted" style="font-size:12.5px;margin-top:4px;">Başlama: ${fmtDate(a.baslama)} — Son: ${a.son?fmtDate(a.son):'davam edir'}</div>
+    </div>`;
+  }).join('') : `<div class="muted">Bu müqaviləyə hələ təhsilatçı təyin olunmayıb.</div>`;
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>Təhsilatçı təyinatları — ${esc(c.nomre)}</h2>
+    <div>${rowsHtml}</div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button>
+    </div>`;
+  openModal();
+}
+
+async function submitContractForm(form){
+  clearFieldErrors(form);
+  const id=form.dataset.id; const fd=new FormData(form);
+  const data={
+    nomre:fd.get('nomre')||'', tarix:fd.get('tarix')||'', customerId:fd.get('customerId')||'',
+    salespersonId:fd.get('salespersonId')||'', meblag:Number(fd.get('meblag'))||0, ilkinOdenis:Number(fd.get('ilkinOdenis'))||0, muddet:Number(fd.get('muddet'))||0,
+    qeyd:fd.get('qeyd')||'',
+  };
+  let ok=true;
+  if(isDuplicate(state.contracts,'nomre',data.nomre,id)){ setFieldError(form,'nomre','Daxil etdiyiniz müqavilə nömrəsi təkrarlanır'); ok=false; }
+  if(!data.customerId){ alert('Zəhmət olmasa müştərini axtarıb siyahıdan seçin.'); ok=false; }
+  if(!ok) return;
+  if(id){ await apiUpdate('contracts',id,data); } else { await apiAdd('contracts',data); }
+  closeModal();
+  await loadAll();
+}
+
+/* ============ PAYMENTS ============ */
+let paymentsContractId=null;
+
+function scheduleDueCount(contract){
+  const months=scheduleMonths(contract);
+  const today=new Date(); today.setHours(0,0,0,0);
+  let due=0;
+  for(const m of months){ if(m.date<=today) due=m.index; else break; }
+  return due;
+}
+function currentScheduleIndex(contract){
+  const due=scheduleDueCount(contract);
+  const muddet=Number(contract.muddet)||1;
+  return Math.min(Math.max(due,1), muddet);
+}
+function todayIso(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function renderPayments(){
+  const contract=paymentsContractId?byId(state.contracts,paymentsContractId):null;
+  if(!contract){ paymentsContractId=null; renderPaymentsPicker(); return; }
+  renderPaymentsPanel(contract);
+}
+
+function renderPaymentsPicker(filter){
+  setContent(`
+    <div class="topbar"><div><h1>Ödənişlər</h1><div class="sub">Ödəniş qeyd etmək üçün müqavilə seçin</div></div></div>
+    <div class="card" style="padding:22px;max-width:540px;">
+      <label>Müqavilə axtar</label>
+      <div style="position:relative;">
+        <input type="text" id="pay-pick-search" autocomplete="off" placeholder="Müştəri adı, soyadı və ya müqavilə № ilə axtar…" value="${esc(filter||'')}">
+        <div id="pay-pick-results" class="search-dropdown"></div>
+      </div>
+    </div>
+  `);
+  const input=document.getElementById('pay-pick-search');
+  const results=document.getElementById('pay-pick-results');
+  function renderList(q){
+    const query=(q||'').toLowerCase();
+    if(query.length<3){ results.innerHTML=`<div class="search-item muted">Ən azı 3 simvol yazın…</div>`; results.style.display='block'; return; }
+    const matches=state.contracts.filter(c=>{
+      const cust=byId(state.customers,c.customerId);
+      return (c.nomre+' '+(cust?fullName(cust):'')).toLowerCase().includes(query);
+    }).slice(0,30);
+    results.innerHTML = matches.length
+      ? matches.map(c=>`<div class="search-item" data-id="${c.id}">${esc(c.nomre)} — ${esc(customerName(c.customerId))}</div>`).join('')
+      : `<div class="search-item muted">Nəticə tapılmadı</div>`;
+    results.style.display='block';
+  }
+  input.addEventListener('focus', ()=>renderList(input.value));
+  input.addEventListener('input', ()=>renderList(input.value));
+  input.addEventListener('blur', ()=>{ setTimeout(()=>{ results.style.display='none'; }, 150); });
+  results.addEventListener('mousedown', (e)=>{
+    const item=e.target.closest('.search-item[data-id]');
+    if(!item) return;
+    paymentsContractId=item.dataset.id;
+    renderPayments();
+  });
+  if(filter) renderList(filter);
+}
+
+function buildScheduleRowsHtml(contract){
+  const meblag=Number(contract.meblag)||0;
+  const ilkin=Number(contract.ilkinOdenis)||0;
+  const months=scheduleMonths(contract);
+  const curIdx=currentScheduleIndex(contract);
+  const monthly=contract.muddet?((meblag-ilkin)/Number(contract.muddet)):0;
+  return months.map(m=>{
+    const faktiki=state.payments.filter(p=>p.contractId===contract.id && Number(p.qrafikAyIndex)===m.index).reduce((s,p)=>s+(Number(p.meblag)||0),0);
+    if(m.index<curIdx){
+      const ok=faktiki>=monthly-0.01;
+      return `<tr class="muted">
+        <td>${esc(m.label)}</td><td class="num">${fmtMoney(monthly)}</td><td class="num">${fmtMoney(faktiki)}</td>
+        <td><span class="tag ${ok?'tag-green':'tag-red'}">${ok?'Ödənilib':'Ödənilməyib'}</span></td>
+      </tr>`;
+    }
+    if(m.index===curIdx){
+      return `<tr style="background:rgba(184,134,63,.09);">
+        <td style="font-weight:600;">${esc(m.label)}</td><td class="num" style="font-weight:600;">${fmtMoney(monthly)}</td><td class="num" style="font-weight:600;">${fmtMoney(faktiki)}</td>
+        <td><span class="tag" style="background:var(--accent);color:#2A1D08;">Cari ay</span></td>
+      </tr>`;
+    }
+    return `<tr class="muted" style="opacity:.6;">
+      <td>${esc(m.label)}</td><td class="num">${fmtMoney(monthly)}</td><td class="num">—</td><td>Gələcək</td>
+    </tr>`;
+  }).join('');
+}
+function openScheduleModal(contractId){
+  const contract=byId(state.contracts,contractId);
+  if(!contract) return;
+  const rowsHtml=buildScheduleRowsHtml(contract);
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>Ödəniş qrafiki — ${esc(contract.nomre)} <span class="muted" style="font-size:13px;font-weight:400;">— ${esc(customerName(contract.customerId))}</span></h2>
+    <div class="card table-compact"><div class="table-scroll"><table class="table-compact">
+      <thead><tr><th>Ay</th><th class="num">Qrafik üzrə</th><th class="num">Faktiki ödənilən</th><th>Status</th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="4" class="empty">Qrafik yoxdur (müddət təyin olunmayıb)</td></tr>'}</tbody>
+    </table></div></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button>
+    </div>`;
+  openModal();
+}
+function renderPaymentsPanel(contract){
+  const meblag=Number(contract.meblag)||0;
+  const ilkin=Number(contract.ilkinOdenis)||0;
+  const debt=contractDebt(contract);
+  const suggestedCollector=activeCollectorForContract(contract)||'';
+  const monthlyBase=contract.muddet?((meblag-ilkin)/Number(contract.muddet)):0;
+  const paidSoFar=contractPaidSum(contract.id);
+  const dueCount=scheduleDueCount(contract);
+  const scheduleDebt=Math.max(0, monthlyBase*dueCount - paidSoFar);
+  const rowsHtml=buildScheduleRowsHtml(contract);
+
+  setContent(`
+    <div class="topbar" style="margin-bottom:12px;">
+      <div><h1>${esc(contract.nomre)} <span class="sub" style="font-size:15px;font-weight:400;">— ${esc(customerName(contract.customerId))}</span></h1></div>
+      <button class="btn btn-ghost" data-action="pay-change-contract">Başqa müqavilə</button>
+    </div>
+    <div class="kpis" style="margin-bottom:12px;">
+      <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Satışın məbləği</div><div class="val" style="font-size:18px;">${fmtMoney(meblag)}</div></div>
+      <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">İlkin ödəniş / çatdırılma</div><div class="val" style="font-size:18px;">${fmtMoney(ilkin)}</div></div>
+      <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Qalıq borc</div><div class="val" style="font-size:18px;color:${debt>0?'var(--red)':'var(--green)'}">${fmtMoney(debt)}</div></div>
+      <div class="card kpi" style="padding:10px 14px;background:${scheduleDebt>0?'var(--red)':'var(--green)'}"><div class="lbl" style="margin-bottom:4px;color:#000">Qrafik üzrə borc</div><div class="val" style="font-size:18px;color:#000">${fmtMoney(scheduleDebt)}</div></div>
+    </div>
+    <div class="card" style="padding:10px 14px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:8px;">Bugünkü ödənişi qeyd et</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="field" style="max-width:130px;margin-bottom:0;"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" id="qp-amount"></div>
+        <div class="field" style="max-width:160px;margin-bottom:0;"><label>Tarix</label><input type="date" id="qp-date" value="${todayIso()}"></div>
+        <div class="field" style="max-width:200px;margin-bottom:0;"><label>Təhsilatçı</label><select id="qp-collector">
+          ${state.collectors.map(c=>`<option value="${c.id}" ${suggestedCollector===c.id?'selected':''}>${esc(fullName(c))}</option>`).join('')}
+        </select></div>
+        <button class="btn btn-primary" data-action="record-payment" data-contract-id="${contract.id}">Qeyd et</button>
+      </div>
+      <div class="field-err" id="qp-err" style="display:none;margin-top:8px;"></div>
+    </div>
+    <div class="section-title" style="margin:8px 0 8px;">Ödəniş qrafiki</div>
+    <div class="card"><div class="table-scroll"><table class="table-compact">
+      <thead><tr><th>Ay</th><th class="num">Qrafik üzrə</th><th class="num">Faktiki ödənilən</th><th>Status</th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="4" class="empty">Qrafik yoxdur (müqavilədə müddət təyin olunmayıb)</td></tr>'}</tbody>
+    </table></div></div>
+  `);
+}
+
+async function recordQuickPayment(contractId){
+  const errEl=document.getElementById('qp-err');
+  errEl.style.display='none';
+  const contract=byId(state.contracts,contractId);
+  if(!contract) return;
+  const amount=Number(document.getElementById('qp-amount').value);
+  const date=document.getElementById('qp-date').value;
+  const collectorId=document.getElementById('qp-collector').value;
+  if(!amount || amount<=0){ errEl.textContent='Məbləği düzgün daxil edin.'; errEl.style.display='block'; return; }
+  if(!date){ errEl.textContent='Tarixi seçin.'; errEl.style.display='block'; return; }
+  if(!collectorId){ errEl.textContent='Təhsilatçı seçin.'; errEl.style.display='block'; return; }
+  const curIdx=currentScheduleIndex(contract);
+  const months=scheduleMonths(contract);
+  const curMonth=months.find(m=>m.index===curIdx);
+  const activeCollector=activeCollectorForContract(contract);
+  if(activeCollector && collectorId!==activeCollector){
+    const proceed=confirm(contract.nomre+' nömrəli müqavilədəki təhsilatçı ilə ödənişdəki təhsilatçı fərqlənir. Davam edilsin?');
+    if(!proceed){ errEl.textContent='Ödəniş yadda saxlanmadı (təsdiqləmədiniz).'; errEl.style.display='block'; return; }
+  }
+  try{
+    await apiAdd('payments', {
+      contractId:contract.id, meblag:amount, odemeTarixi:date, collectorId,
+      qeyd:'', qrafikAyIndex:curIdx, qrafikAyLabel:curMonth?curMonth.label:'',
+    });
+    await loadAll();
+  }catch(err){
+    errEl.textContent='Yadda saxlanmadı: '+err.message;
+    errEl.style.display='block';
+  }
+}
+
+/* ============ COLLECTOR REASSIGN (toplu təhsilatçı dəyişikliyi) ============ */
+let reassignContractIds=[];
+
+function renderReassign(){
+  setContent(`
+    <div class="topbar"><div><h1>Təhsilatçı dəyişikliyi</h1><div class="sub">Müqavilələri axtarıb siyahıya əlavə edin, sonra yeni təhsilatçı təyin edin</div></div></div>
+    <div class="card" style="padding:18px;margin-bottom:16px;">
+      <label>Müqavilə axtar</label>
+      <div style="position:relative;max-width:540px;">
+        <input type="text" id="reassign-search" autocomplete="off" placeholder="Müştəri adı, soyadı və ya müqavilə № ilə axtar… (Enter ilə əlavə et)">
+        <div id="reassign-results" class="search-dropdown"></div>
+      </div>
+    </div>
+    <div class="card" style="padding:18px;margin-bottom:16px;">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="field" style="max-width:260px;margin-bottom:0;">
+          <label>Yeni təhsilatçı</label>
+          <select id="reassign-collector">
+            <option value="">— seçin —</option>
+            ${state.collectors.map(c=>`<option value="${c.id}">${esc(fullName(c))}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-primary" data-action="apply-reassign">Müqavilələrin təhsilatçısını dəyiş</button>
+      </div>
+      <div class="field-err" id="reassign-err" style="display:none;margin-top:8px;"></div>
+    </div>
+    <div class="card"><div class="table-scroll"><table>
+      <thead><tr><th>Müqavilə №</th><th>Müştəri</th><th class="num">Satış məbləği</th><th class="num">Ümumi borc</th><th class="num">Qrafik üzrə borc</th><th>Cari təhsilatçı</th><th></th></tr></thead>
+      <tbody id="reassign-tbody">${renderReassignRows()}</tbody>
+    </table></div></div>
+  `);
+  const input=document.getElementById('reassign-search');
+  const results=document.getElementById('reassign-results');
+  function matchesFor(q){
+    const query=(q||'').toLowerCase();
+    if(query.length<3) return [];
+    return state.contracts.filter(c=>{
+      const cust=byId(state.customers,c.customerId);
+      return (c.nomre+' '+(cust?fullName(cust):'')).toLowerCase().includes(query);
+    }).slice(0,30);
+  }
+  function renderList(q){
+    if((q||'').length<3){ results.innerHTML=`<div class="search-item muted">Ən azı 3 simvol yazın…</div>`; results.style.display='block'; return; }
+    const matches=matchesFor(q);
+    results.innerHTML = matches.length
+      ? matches.map(c=>`<div class="search-item" data-id="${c.id}">${esc(c.nomre)} — ${esc(customerName(c.customerId))}</div>`).join('')
+      : `<div class="search-item muted">Nəticə tapılmadı</div>`;
+    results.style.display = 'block';
+  }
+  input.addEventListener('input', ()=>renderList(input.value));
+  input.addEventListener('focus', ()=>renderList(input.value));
+  input.addEventListener('blur', ()=>{ setTimeout(()=>{ results.style.display='none'; }, 150); });
+  input.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      const matches=matchesFor(input.value);
+      if(matches.length){ addReassignContract(matches[0].id); input.value=''; results.style.display='none'; }
+    }
+  });
+  results.addEventListener('mousedown', (e)=>{
+    const item=e.target.closest('.search-item[data-id]');
+    if(!item) return;
+    addReassignContract(item.dataset.id);
+    input.value=''; results.style.display='none';
+  });
+}
+
+function addReassignContract(contractId){
+  if(!reassignContractIds.includes(contractId)) reassignContractIds.push(contractId);
+  document.getElementById('reassign-tbody').innerHTML=renderReassignRows();
+}
+function removeReassignContract(contractId){
+  reassignContractIds=reassignContractIds.filter(id=>id!==contractId);
+  document.getElementById('reassign-tbody').innerHTML=renderReassignRows();
+}
+function renderReassignRows(){
+  if(!reassignContractIds.length) return `<tr><td colspan="7" class="empty">Hələ müqavilə əlavə olunmayıb</td></tr>`;
+  return reassignContractIds.map(id=>{
+    const c=byId(state.contracts,id);
+    if(!c) return '';
+    const monthlyBase=c.muddet?((Number(c.meblag)-Number(c.ilkinOdenis||0))/Number(c.muddet)):0;
+    const dueCount=scheduleDueCount(c);
+    const scheduleDebt=Math.max(0, monthlyBase*dueCount - contractPaidSum(c.id));
+    const curCollector=activeCollectorForContract(c);
+    return `<tr>
+      <td>${esc(c.nomre)}</td>
+      <td>${esc(customerName(c.customerId))}</td>
+      <td class="num">${fmtMoney(c.meblag)}</td>
+      <td class="num">${fmtMoney(contractDebt(c))}</td>
+      <td class="num">${fmtMoney(scheduleDebt)}</td>
+      <td class="muted">${esc(collectorName(curCollector))}</td>
+      <td><button class="iconbtn" data-action="remove-reassign" data-id="${c.id}" title="Siyahıdan çıxar">${ICONS.trash}</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function applyReassign(){
+  const errEl=document.getElementById('reassign-err');
+  errEl.style.display='none';
+  const newCollectorId=document.getElementById('reassign-collector').value;
+  if(!newCollectorId){ errEl.textContent='Yeni təhsilatçı seçin.'; errEl.style.display='block'; return; }
+  if(!reassignContractIds.length){ errEl.textContent='Siyahıya ən azı bir müqavilə əlavə edin.'; errEl.style.display='block'; return; }
+  const today=todayIso();
+  let sameCount=0;
+  try{
+    for(const id of reassignContractIds){
+      const c=byId(state.contracts,id);
+      if(!c) continue;
+      const curCollector=activeCollectorForContract(c);
+      if(curCollector===newCollectorId) sameCount++;
+      const list=(c.tehsilatciTeyinatlari||[]).map(a=>a.son?a:{...a,son:today});
+      list.push({collectorId:newCollectorId, baslama:today, son:''});
+      await apiUpdate('contracts', c.id, {tehsilatciTeyinatlari:list});
+    }
+    reassignContractIds=[];
+    await loadAll();
+    if(sameCount>0) alert(sameCount+' müqavilədə təhsilatçı artıq eyni idi, amma yenə də yeni təyinat yaradıldı.');
+  }catch(err){
+    errEl.textContent='Xəta: '+err.message;
+    errEl.style.display='block';
+  }
+}
+
+/* ============ CUSTOMER DEBT INQUIRY (Müştəri borc sorğusu) ============ */
+let debtInquiryFin='';
+
+function renderDebtInquiry(){
+  const fin=debtInquiryFin;
+  const customer=fin?state.customers.find(c=>(c.finKod||'').trim().toLowerCase()===fin.trim().toLowerCase()):null;
+  let resultHtml='';
+  if(fin && !customer){
+    resultHtml=`<div class="banner">Bu FIN-lə müştəri tapılmadı.</div>`;
+  } else if(customer){
+    const contracts=state.contracts.filter(c=>c.customerId===customer.id);
+    let totalDebt=0, totalScheduleDebt=0;
+    const rowsHtml=contracts.map(c=>{
+      const debt=contractDebt(c);
+      const monthlyBase=c.muddet?((Number(c.meblag)-Number(c.ilkinOdenis||0))/Number(c.muddet)):0;
+      const dueCount=scheduleDueCount(c);
+      const scheduleDebt=Math.max(0, monthlyBase*dueCount - contractPaidSum(c.id));
+      totalDebt+=debt; totalScheduleDebt+=scheduleDebt;
+      const curCollector=activeCollectorForContract(c);
+      return `<tr>
+        <td>${esc(c.nomre)}</td>
+        <td>${fmtDate(c.tarix)}</td>
+        <td class="num">${fmtMoney(c.meblag)}</td>
+        <td class="num">${fmtMoney(c.ilkinOdenis)}</td>
+        <td class="num"><span class="tag ${debt>0?'tag-red':'tag-green'}">${fmtMoney(debt)}</span></td>
+        <td class="num">${fmtMoney(scheduleDebt)}</td>
+        <td class="muted">${esc(collectorName(curCollector))}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="7" class="empty">Bu müştərinin müqaviləsi yoxdur</td></tr>`;
+
+    resultHtml=`
+      <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px;">${esc(fullName(customer))}</div>
+        <div class="muted" style="font-size:13px;line-height:1.7;">
+          Əlaqə: ${esc(customer.elaqeNomre1||'—')}${customer.elaqeNomre2?', '+esc(customer.elaqeNomre2):''}<br>
+          Qeydiyyat ünvanı: ${esc(customer.qeydiyyatUnvani||'—')}<br>
+          Faktiki ünvan: ${esc(customer.faktikiUnvan||'—')}
+        </div>
+      </div>
+      <div class="kpis">
+        <div class="card kpi"><div class="lbl">Ümumi qalıq borc</div><div class="val" style="color:${totalDebt>0?'var(--red)':'var(--green)'}">${fmtMoney(totalDebt)}</div></div>
+        <div class="card kpi"><div class="lbl">Ümumi qrafik üzrə borc</div><div class="val" style="color:${totalScheduleDebt>0?'var(--red)':'var(--green)'}">${fmtMoney(totalScheduleDebt)}</div></div>
+      </div>
+      <div class="section-title">Müqavilələr</div>
+      <div class="card"><div class="table-scroll"><table>
+        <thead><tr><th>Müqavilə №</th><th>Tarix</th><th class="num">Satış məbləği</th><th class="num">İlkin ödəniş</th><th class="num">Qalıq borc</th><th class="num">Qrafik üzrə borc</th><th>Təhsilatçı</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div></div>
+    `;
+  }
+
+  setContent(`
+    <div class="topbar"><div><h1>Müştəri borc sorğusu</h1><div class="sub">FIN daxil edib axtarın</div></div></div>
+    <div class="card" style="padding:18px;margin-bottom:16px;max-width:420px;">
+      <label>FIN</label>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="debt-inquiry-fin" maxlength="7" value="${esc(fin)}" placeholder="7 simvol">
+        <button class="btn btn-primary" data-action="debt-inquiry-search" style="white-space:nowrap;">Axtar</button>
+      </div>
+    </div>
+    ${resultHtml}
+  `);
+  const input=document.getElementById('debt-inquiry-fin');
+  input.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); debtInquiryFin=input.value.trim(); renderDebtInquiry(); }
+  });
+  input.focus();
+}
+
+/* ============ REPORTS (placeholder) ============ */
+function renderReports(){
+  setContent(`
+    <div class="topbar"><div><h1>Hesabatlar</h1><div class="sub">Bu bölmə hələ hazırlanır</div></div></div>
+    <div class="placeholder-box">Hesabat növləri sizinlə birgə müəyyənləşdiriləndən sonra bu bölmə əlavə olunacaq.</div>
+  `);
+}
+
+/* ============ MODAL PLUMBING ============ */
+function openModal(){ document.getElementById('modal-root').classList.add('open'); }
+function closeModal(){ document.getElementById('modal-root').classList.remove('open'); document.getElementById('modal-panel').innerHTML=''; }
+
+/* ============ DELETE ============ */
+async function deleteRecord(col, id, label){
+  if(!confirm('Bu '+label+' qeydini silmək istədiyinizə əminsiniz?')) return;
+  await apiDelete(col, id);
+  await loadAll();
+}
+
+/* ============ EVENT DELEGATION ============ */
+document.addEventListener('click', async (e)=>{
+  const btn=e.target.closest('[data-action]');
+  if(!btn) return;
+  const action=btn.dataset.action, id=btn.dataset.id;
+  if(action==='nav'){ currentScreen=btn.dataset.screen; renderScreen(); return; }
+  if(action==='manual-refresh'){
+    const label=btn.querySelector('span');
+    const oldText=label.textContent;
+    label.textContent='Yenilənir…';
+    btn.disabled=true;
+    try{ await loadAll(); } finally { label.textContent=oldText; btn.disabled=false; }
+    return;
+  }
+  if(action==='close-modal'){ closeModal(); return; }
+  if(action==='add-salespeople'){ openSimpleForm('salespeople'); return; }
+  if(action==='edit-salespeople'){ openSimpleForm('salespeople', id); return; }
+  if(action==='delete-salespeople'){ await deleteRecord('salespeople', id, 'satıcı'); return; }
+  if(action==='add-collectors'){ openSimpleForm('collectors'); return; }
+  if(action==='edit-collectors'){ openSimpleForm('collectors', id); return; }
+  if(action==='delete-collectors'){ await deleteRecord('collectors', id, 'təhsilatçı'); return; }
+  if(action==='add-customers'){ openCustomerForm(); return; }
+  if(action==='edit-customers'){ openCustomerForm(id); return; }
+  if(action==='delete-customers'){ await deleteRecord('customers', id, 'müştəri'); return; }
+  if(action==='add-contracts'){ openContractForm(); return; }
+  if(action==='edit-contracts'){ openContractForm(id); return; }
+  if(action==='delete-contracts'){ await deleteRecord('contracts', id, 'müqavilə'); return; }
+  if(action==='pay-change-contract'){ paymentsContractId=null; renderPayments(); return; }
+  if(action==='record-payment'){ await recordQuickPayment(btn.dataset.contractId); return; }
+  if(action==='remove-reassign'){ removeReassignContract(id); return; }
+  if(action==='apply-reassign'){ await applyReassign(); return; }
+  if(action==='page-prev' || action==='page-next'){
+    const key=btn.dataset.key;
+    pageNum[key]=(pageNum[key]||1)+(action==='page-prev'?-1:1);
+    const searchInput=document.getElementById('search-'+key);
+    const rawVal=searchInput?searchInput.value:'';
+    const q=rawVal.length>=3 ? rawVal.toLowerCase() : '';
+    let rows;
+    if(key==='salespeople'||key==='collectors'){
+      rows=state[key].filter(p=>!q || (p.kod+p.soyad+p.ad+p.ataAdi+(p.finKod||'')+(p.elaqeNomre1||'')).toLowerCase().includes(q));
+    } else if(key==='customers'){
+      rows=state.customers.filter(c=>!q || (fullName(c)+' '+(c.kod||'')+' '+(c.finKod||'')+' '+(c.elaqeNomre1||'')).toLowerCase().includes(q));
+    } else if(key==='contracts'){
+      rows=state.contracts.filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q));
+    } else { return; }
+    const {pageRows, totalPages, total}=paginateArr(rows, key);
+    if(key==='customers'){ document.getElementById('tbody-customers').innerHTML=renderCustomerRows(pageRows); }
+    else if(key==='contracts'){ document.getElementById('tbody-contracts').innerHTML=renderContractRows(pageRows); }
+    else { document.getElementById('tbody-'+key).innerHTML=renderSimpleRows(key, pageRows); }
+    document.getElementById('pagination-'+key).innerHTML=paginationHtml(key, totalPages, total);
+    return;
+  }
+  if(action==='debt-inquiry-search'){ debtInquiryFin=document.getElementById('debt-inquiry-fin').value.trim(); renderDebtInquiry(); return; }
+  if(action==='show-assignments'){ openAssignmentsInfo(id); return; }
+  if(action==='show-schedule'){ openScheduleModal(id); return; }
+});
+document.addEventListener('submit', async (e)=>{
+  if(e.target.id==='simple-form'){ e.preventDefault(); await submitSimpleForm(e.target); }
+  if(e.target.id==='customer-form'){ e.preventDefault(); await submitCustomerForm(e.target); }
+  if(e.target.id==='contract-form'){ e.preventDefault(); await submitContractForm(e.target); }
+});
+document.addEventListener('input', (e)=>{
+  const map={'search-salespeople':'salespeople','search-collectors':'collectors','search-customers':'customers','search-contracts':'contracts'};
+  const key=map[e.target.id];
+  if(!key) return;
+  const val=e.target.value;
+  const q=val.length>=3 ? val.toLowerCase() : '';
+  if(key==='salespeople'||key==='collectors'){
+    const rows=state[key].filter(p=>!q || (p.kod+p.soyad+p.ad+p.ataAdi+(p.finKod||'')+(p.elaqeNomre1||'')).toLowerCase().includes(q));
+    pageNum[key]=1;
+    const {pageRows, totalPages, total}=paginateArr(rows, key);
+    document.getElementById('tbody-'+key).innerHTML=renderSimpleRows(key, pageRows);
+    document.getElementById('pagination-'+key).innerHTML=paginationHtml(key, totalPages, total);
+  } else if(key==='customers'){
+    const rows=state.customers.filter(c=>!q || (fullName(c)+' '+(c.kod||'')+' '+(c.finKod||'')+' '+(c.elaqeNomre1||'')).toLowerCase().includes(q));
+    pageNum.customers=1;
+    const {pageRows, totalPages, total}=paginateArr(rows, 'customers');
+    document.getElementById('tbody-customers').innerHTML=renderCustomerRows(pageRows);
+    document.getElementById('pagination-customers').innerHTML=paginationHtml('customers', totalPages, total);
+  } else if(key==='contracts'){
+    const rows=state.contracts.filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q));
+    pageNum.contracts=1;
+    const {pageRows, totalPages, total}=paginateArr(rows, 'contracts');
+    document.getElementById('tbody-contracts').innerHTML=renderContractRows(pageRows);
+    document.getElementById('pagination-contracts').innerHTML=paginationHtml('contracts', totalPages, total);
+  }
+});
+
+/* ============ API LAYER (PHP backend: api.php) ============ */
+const API_BASE='api.php?col=';
+async function readErr(r, fallback){
+  try{ const j=await r.json(); if(j&&j.error) return j.error; }catch(e){}
+  return fallback;
+}
+async function apiList(col){
+  const r=await fetch(API_BASE+col);
+  if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası ('+col+')'));
+  return r.json();
+}
+async function apiAdd(col,data){
+  const r=await fetch(API_BASE+col,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok) throw new Error(await readErr(r,'Əlavə etmə xətası ('+col+')'));
+  return r.json();
+}
+async function apiUpdate(col,id,data){
+  const r=await fetch(API_BASE+col+'&id='+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok) throw new Error(await readErr(r,'Yeniləmə xətası ('+col+')'));
+  return r.json();
+}
+async function apiDelete(col,id){
+  const r=await fetch(API_BASE+col+'&id='+encodeURIComponent(id),{method:'DELETE'});
+  if(!r.ok) throw new Error(await readErr(r,'Silmə xətası ('+col+')'));
+  return r.json();
+}
+
+let loadingAll=false;
+async function loadAll(){
+  if(loadingAll) return; loadingAll=true;
+  try{
+    const cols=['salespeople','collectors','customers','contracts','payments'];
+    const results=await Promise.all(cols.map(apiList));
+    cols.forEach((c,i)=>state[c]=results[i]);
+    dbReady=true;
+    renderScreen();
+  } finally { loadingAll=false; }
+}
+
+renderNav();
+setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Serverə qoşulur</div></div></div>`);
+loadAll().catch(err=>{
+  setContent(`<div class="topbar"><div><h1>Serverlə əlaqə qurulmadı</h1></div></div><div class="banner">${esc(err.message)}. Səhifəni yeniləyin (F5). Xəta davam etsə, api.php faylının və data qovluğunun düzgün yerləşdiyini yoxlayın.</div>`);
+});
+// Avtomatik yenilənmə ləğv edilib — istifadəçi "Yenilə" düyməsi ilə əl ilə yeniləyir.
+
+fetch('whoami.php').then(r=>r.json()).then(u=>{
+  if(!u || !u.username) return;
+  document.getElementById('user-info').textContent = u.username + ' (' + (u.role==='admin'?'Admin':'İstifadəçi') + ')';
+  if(u.role==='admin'){ document.getElementById('admin-link').style.display='flex'; }
+}).catch(()=>{});
+</script>
+</body>
+</html>

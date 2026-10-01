@@ -4,9 +4,12 @@ FROM php:8.2-apache
 RUN docker-php-ext-install pdo pdo_mysql mysqli
 
 # .htaccess-lərin işləməsi üçün
-# (bəzi php:apache image-lərində default olaraq birdən çox MPM aktiv ola bilir —
-# bu, Apache-ı işə düşməyə qoymur, ona görə əvvəlcə yalnız mpm_prefork saxlayırıq)
-RUN a2dismod mpm_event mpm_worker 2>/dev/null; a2enmod mpm_prefork rewrite headers
+# (bəzi php:apache image-lərində birdən çox MPM modulu aktiv simlink kimi qalır —
+# a2dismod bunu bəzən tanımır, ona görə simlinkləri birbaşa siləcəyik)
+RUN rm -f /etc/apache2/mods-enabled/mpm_event.load /etc/apache2/mods-enabled/mpm_event.conf \
+           /etc/apache2/mods-enabled/mpm_worker.load /etc/apache2/mods-enabled/mpm_worker.conf \
+    && a2enmod mpm_prefork rewrite headers \
+    && apachectl configtest
 
 COPY . /var/www/html/
 WORKDIR /var/www/html

@@ -1117,14 +1117,32 @@ async function applyReassign(){
 }
 
 /* ============ CUSTOMER DEBT INQUIRY (Müştəri borc sorğusu) ============ */
-let debtInquiryFin='';
+let debtInquiryQuery='';
+let debtInquirySelectedId=null;
+
+function findDebtInquiryMatches(query){
+  const q=query.trim().toLowerCase();
+  if(!q) return [];
+  const finMatch=state.customers.filter(c=>(c.finKod||'').trim().toLowerCase()===q);
+  if(finMatch.length) return finMatch;
+  return state.customers.filter(c=>fullName(c).toLowerCase().includes(q));
+}
 
 function renderDebtInquiry(){
-  const fin=debtInquiryFin;
-  const customer=fin?state.customers.find(c=>(c.finKod||'').trim().toLowerCase()===fin.trim().toLowerCase()):null;
+  const query=debtInquiryQuery;
+  const matches=query?findDebtInquiryMatches(query):[];
+  let customer=null;
+  if(matches.length===1){ customer=matches[0]; }
+  else if(matches.length>1 && debtInquirySelectedId){ customer=matches.find(c=>c.id===debtInquirySelectedId)||null; }
+
   let resultHtml='';
-  if(fin && !customer){
-    resultHtml=`<div class="banner">Bu FIN-lə müştəri tapılmadı.</div>`;
+  if(query && matches.length===0){
+    resultHtml=`<div class="banner">Bu FIN və ya adla müştəri tapılmadı.</div>`;
+  } else if(matches.length>1 && !customer){
+    resultHtml=`<div class="card" style="padding:16px 18px;">
+      <div class="muted" style="font-size:13px;margin-bottom:10px;">${matches.length} nəticə tapıldı, birini seçin:</div>
+      ${matches.map(c=>`<div class="search-item" style="position:static;padding:10px 12px;border-radius:7px;" data-action="debt-inquiry-select" data-id="${c.id}">${esc(fullName(c))}${c.finKod?' <span class="muted">— '+esc(c.finKod)+'</span>':''}</div>`).join('')}
+    </div>`;
   } else if(customer){
     const contracts=state.contracts.filter(c=>c.customerId===customer.id);
     let totalDebt=0, totalScheduleDebt=0;
@@ -1168,11 +1186,11 @@ function renderDebtInquiry(){
   }
 
   setContent(`
-    <div class="topbar"><div><h1>Müştəri borc sorğusu</h1><div class="sub">FIN daxil edib axtarın</div></div></div>
-    <div class="card" style="padding:18px;margin-bottom:16px;max-width:420px;">
-      <label>FIN</label>
+    <div class="topbar"><div><h1>Müştəri borc sorğusu</h1><div class="sub">FIN və ya Soyad Ad Ata adı ilə axtarın</div></div></div>
+    <div class="card" style="padding:18px;margin-bottom:16px;max-width:460px;">
+      <label>FIN və ya Soyad Ad Ata adı</label>
       <div style="display:flex;gap:8px;">
-        <input type="text" id="debt-inquiry-fin" maxlength="7" value="${esc(fin)}" placeholder="7 simvol">
+        <input type="text" id="debt-inquiry-fin" value="${esc(query)}" placeholder="FIN (7 simvol) və ya ad soyad">
         <button class="btn btn-primary" data-action="debt-inquiry-search" style="white-space:nowrap;">Axtar</button>
       </div>
     </div>
@@ -1180,7 +1198,7 @@ function renderDebtInquiry(){
   `);
   const input=document.getElementById('debt-inquiry-fin');
   input.addEventListener('keydown', (e)=>{
-    if(e.key==='Enter'){ e.preventDefault(); debtInquiryFin=input.value.trim(); renderDebtInquiry(); }
+    if(e.key==='Enter'){ e.preventDefault(); debtInquiryQuery=input.value.trim(); debtInquirySelectedId=null; renderDebtInquiry(); }
   });
   input.focus();
 }
@@ -1257,7 +1275,8 @@ document.addEventListener('click', async (e)=>{
     document.getElementById('pagination-'+key).innerHTML=paginationHtml(key, totalPages, total);
     return;
   }
-  if(action==='debt-inquiry-search'){ debtInquiryFin=document.getElementById('debt-inquiry-fin').value.trim(); renderDebtInquiry(); return; }
+  if(action==='debt-inquiry-search'){ debtInquiryQuery=document.getElementById('debt-inquiry-fin').value.trim(); debtInquirySelectedId=null; renderDebtInquiry(); return; }
+  if(action==='debt-inquiry-select'){ debtInquirySelectedId=id; renderDebtInquiry(); return; }
   if(action==='show-assignments'){ openAssignmentsInfo(id); return; }
   if(action==='show-schedule'){ openScheduleModal(id); return; }
 });

@@ -931,7 +931,7 @@ function renderPaymentsPanel(contract){
 
   setContent(`
     <div class="topbar" style="margin-bottom:12px;">
-      <div><h1>${esc(contract.nomre)} <span class="sub" style="font-size:15px;font-weight:400;">— ${esc(customerName(contract.customerId))}</span></h1></div>
+      <div><h1>${esc(contract.nomre)} <span class="sub" style="font-size:15px;font-weight:400;">— ${esc(customerName(contract.customerId))} · Tarix: ${fmtDate(contract.tarix)}</span></h1></div>
       <button class="btn btn-ghost" data-action="pay-change-contract">Başqa müqavilə</button>
     </div>
     <div class="kpis" style="margin-bottom:12px;">

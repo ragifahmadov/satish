@@ -221,7 +221,6 @@ const ICONS = {
 const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust','Sentyabr','Oktyabr','Noyabr','Dekabr'];
 
 /* ============ STATE ============ */
-let dbReady=false;
 const state={salespeople:[],collectors:[],customers:[],contracts:[],payments:[]};
 function upsertInState(col, item){
   if(!state[col] || !item || !item.id) return;
@@ -299,11 +298,39 @@ function renderNav(){
 }
 function setContent(html){ document.getElementById('content').innerHTML=html; }
 
-function renderScreen(){
+// Hər ekranın faktiki ehtiyac duyduğu cədvəllər (ad/borc kimi hesablanan
+// sahələr üçün başqa cədvəllərə də baxmaq lazım ola bilər).
+const SCREEN_DEPS={
+  dashboard:['contracts','payments','customers'],
+  salespeople:['salespeople'],
+  collectors:['collectors'],
+  customers:['customers'],
+  contracts:['contracts','customers','salespeople','collectors','payments'],
+  payments:['contracts','customers','collectors','payments'],
+  reassign:['contracts','customers','collectors','payments'],
+  'debt-inquiry':['customers','contracts','collectors','payments'],
+  reports:[],
+};
+const loadedCols=new Set();
+async function ensureLoaded(cols){
+  const need=cols.filter(c=>!loadedCols.has(c));
+  if(!need.length) return;
+  const results=await Promise.all(need.map(apiList));
+  need.forEach((c,i)=>{ state[c]=results[i]; loadedCols.add(c); });
+}
+
+async function renderScreen(){
   renderNav();
-  if(!dbReady){
-    setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Ortaq bazaya qoşulur</div></div></div>`);
-    return;
+  const deps=SCREEN_DEPS[currentScreen]||[];
+  const needFetch=deps.some(c=>!loadedCols.has(c));
+  if(needFetch){
+    setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Məlumat gətirilir</div></div></div>`);
+    try{
+      await ensureLoaded(deps);
+    }catch(err){
+      setContent(`<div class="topbar"><div><h1>Serverlə əlaqə qurulmadı</h1></div></div><div class="banner">${esc(err.message)}. Səhifəni yeniləyin (F5).</div>`);
+      return;
+    }
   }
   switch(currentScreen){
     case 'dashboard': return renderDashboard();
@@ -1189,7 +1216,7 @@ document.addEventListener('click', async (e)=>{
     const oldText=label.textContent;
     label.textContent='Yenilənir…';
     btn.disabled=true;
-    try{ await loadAll(); } finally { label.textContent=oldText; btn.disabled=false; }
+    try{ loadedCols.clear(); await renderScreen(); } finally { label.textContent=oldText; btn.disabled=false; }
     return;
   }
   if(action==='close-modal'){ closeModal(); return; }
@@ -1308,21 +1335,9 @@ async function apiDelete(col,id){
   return r.json();
 }
 
-let loadingAll=false;
-async function loadAll(){
-  if(loadingAll) return; loadingAll=true;
-  try{
-    const cols=['salespeople','collectors','customers','contracts','payments'];
-    const results=await Promise.all(cols.map(apiList));
-    cols.forEach((c,i)=>state[c]=results[i]);
-    dbReady=true;
-    renderScreen();
-  } finally { loadingAll=false; }
-}
-
 renderNav();
 setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Serverə qoşulur</div></div></div>`);
-loadAll().catch(err=>{
+renderScreen().catch(err=>{
   setContent(`<div class="topbar"><div><h1>Serverlə əlaqə qurulmadı</h1></div></div><div class="banner">${esc(err.message)}. Səhifəni yeniləyin (F5). Xəta davam etsə, api.php faylının və data qovluğunun düzgün yerləşdiyini yoxlayın.</div>`);
 });
 // Avtomatik yenilənmə ləğv edilib — istifadəçi "Yenilə" düyməsi ilə əl ilə yeniləyir.

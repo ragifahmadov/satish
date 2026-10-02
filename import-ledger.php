@@ -92,7 +92,7 @@ function updateProgress(data){
   stageLabel.textContent = 'Mərhələ: ' + stageName + ' (' + stageDone + ' / ' + stageTotal + ')';
 }
 
-async function runSteps(jobId, totals){
+async function runSteps(jobId, totals, skippedClosed){
   let done = {customers:0, contracts:0, payments:0};
   let stage = 'customers';
   while(true){
@@ -103,7 +103,7 @@ async function runSteps(jobId, totals){
     if(!r.ok || data.error){ throw new Error(data.error || 'Naməlum xəta'); }
     updateProgress(data);
     if(data.finished){
-      showResult('✅ İDXAL UĞURLA TAMAMLANDI.\n\nMüştəri: '+totals.customers+'\nMüqavilə: '+totals.contracts+'\nÖdəniş: '+totals.payments);
+      showResult('✅ İDXAL UĞURLA TAMAMLANDI.\n\nMüştəri: '+totals.customers+'\nMüqavilə: '+totals.contracts+'\nÖdəniş: '+totals.payments+'\n\nBağlanmış (qalığı 0 olan) və ona görə keçilən müqavilə: '+skippedClosed);
       break;
     }
   }
@@ -123,7 +123,7 @@ form.addEventListener('submit', async (e)=>{
 
     submitBtn.textContent = 'İdxal olunur…';
     progressWrap.style.display='block';
-    await runSteps(data.jobId, data.totals);
+    await runSteps(data.jobId, data.totals, data.skippedClosed||0);
   }catch(err){
     showResult('❌ XƏTA: ' + err.message);
   }finally{

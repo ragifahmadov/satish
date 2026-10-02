@@ -158,6 +158,17 @@ try {
     }
     unset($c);
 
+    // Bağlanmış (qalıq borcu 0 olan) müqavilələri idxaldan çıxarırıq.
+    $skippedClosed = 0;
+    foreach ($contracts as $sened => $c) {
+        $paidRest = array_sum(array_column($c['payments'], 'meblag'));
+        $remaining = $c['meblag'] - $c['ilkinOdenis'] - $paidRest;
+        if ($remaining <= 0.01) {
+            unset($contracts[$sened]);
+            $skippedClosed++;
+        }
+    }
+
     $customersOut = [];
     $contractsOut = [];
     $paymentsOut = [];
@@ -211,6 +222,7 @@ try {
     echo json_encode([
         'jobId' => $jobId,
         'totals' => $job['totals'],
+        'skippedClosed' => $skippedClosed,
     ]);
 
 } catch (Throwable $e) {

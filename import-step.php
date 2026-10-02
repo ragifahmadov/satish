@@ -37,6 +37,12 @@ function bulk_insert($pdo, $table, $schema, $dataList) {
     return $ids;
 }
 
+function month_diff($from, $to) {
+    [$fy, $fm] = array_map('intval', explode('-', substr($from, 0, 7)));
+    [$ty, $tm] = array_map('intval', explode('-', substr($to, 0, 7)));
+    return ($ty - $fy) * 12 + ($tm - $fm);
+}
+
 function fail_json($msg) {
     http_response_code(400);
     echo json_encode(['error' => $msg]);
@@ -83,7 +89,9 @@ try {
         if ($job['offset'] >= count($job['contracts'])) {
             $job['stage'] = 'payments';
             $job['offset'] = 0;
-            unset($job['contracts'], $job['custIdMap']); // artıq lazım deyil
+            // Qrafik ayını düzgün hesablamaq üçün hər müqavilənin tarixini saxlayırıq
+            $job['contractDates'] = array_column($job['contracts'], 'tarix', 'tempId');
+            unset($job['contracts'], $job['custIdMap']); // qalanı artıq lazım deyil
         }
 
     } elseif ($job['stage'] === 'payments') {
@@ -92,9 +100,13 @@ try {
         foreach ($slice as $p) {
             $cid = $job['contractIdMap'][$p['contractTempId']] ?? null;
             if (!$cid) continue;
+            $contractTarix = $job['contractDates'][$p['contractTempId']] ?? $p['tarix'];
+            $idx = month_diff($contractTarix, $p['tarix']);
+            if ($idx < 1) $idx = 1;
+            if ($idx > 10) $idx = 10;
             $dataList[] = [
                 'contractId' => $cid, 'meblag' => $p['meblag'], 'odemeTarixi' => $p['tarix'],
-                'collectorId' => '', 'qeyd' => '', 'qrafikAyIndex' => 1, 'qrafikAyLabel' => '',
+                'collectorId' => '', 'qeyd' => '', 'qrafikAyIndex' => $idx, 'qrafikAyLabel' => '',
             ];
         }
         if ($dataList) { bulk_insert($pdo, 'payments', $SCHEMA['payments'], $dataList); }

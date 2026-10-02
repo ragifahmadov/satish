@@ -5,24 +5,36 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
 
 set_time_limit(0);
+ini_set('memory_limit', '512M');
 header('Content-Type: application/json; charset=utf-8');
 
-const BATCH_SIZE = 400;
+const BATCH_SIZE = 1500;
 
-function insert_row($pdo, $table, $schema, $data) {
-    $newId = make_uuid();
+// Bir sorğuda çoxlu sətir yazır, yaradılmış id-ləri eyni sırada qaytarır.
+function bulk_insert($pdo, $table, $schema, $dataList) {
+    if (!$dataList) return [];
+    $colNames = array_merge(['id', 'createdAt'], array_column($schema, 0));
+    $colsQuoted = implode(',', array_map(fn($c) => "`$c`", $colNames));
+    $groups = [];
+    $params = [];
+    $ids = [];
     $now = date('Y-m-d H:i:s');
-    $cols = ['id', 'createdAt'];
-    $ph = [':id', ':createdAt'];
-    $params = [':id' => $newId, ':createdAt' => $now];
-    foreach ($schema as [$name, $type]) {
-        $cols[] = "`$name`";
-        $ph[] = ":$name";
-        $params[":$name"] = cast_in($data[$name] ?? null, $type);
+    foreach ($dataList as $i => $data) {
+        $id = make_uuid();
+        $ids[] = $id;
+        $ph = [":id$i", ":ca$i"];
+        $params[":id$i"] = $id;
+        $params[":ca$i"] = $now;
+        foreach ($schema as [$name, $type]) {
+            $key = ":{$name}_{$i}";
+            $ph[] = $key;
+            $params[$key] = cast_in($data[$name] ?? null, $type);
+        }
+        $groups[] = '(' . implode(',', $ph) . ')';
     }
-    $sql = "INSERT INTO `$table` (" . implode(',', $cols) . ") VALUES (" . implode(',', $ph) . ")";
+    $sql = "INSERT INTO `$table` ($colsQuoted) VALUES " . implode(',', $groups);
     $pdo->prepare($sql)->execute($params);
-    return $newId;
+    return $ids;
 }
 
 function fail_json($msg) {
@@ -40,41 +52,52 @@ $job = json_decode(file_get_contents($jobPath), true);
 if (!is_array($job)) { fail_json('İş faylı oxuna bilmədi.'); }
 
 try {
-    $pdo = get_pdo();
+    $pdo = get_pdo(true); // struktur artıq hazırdır — hər dəstədə təkrar yoxlamaq lazım deyil
 
     if ($job['stage'] === 'customers') {
         $keys = array_keys($job['customers']);
-        $slice = array_slice($keys, $job['offset'], BATCH_SIZE, true);
-        foreach ($slice as $key) {
-            $job['custIdMap'][$key] = insert_row($pdo, 'customers', $SCHEMA['customers'], $job['customers'][$key]);
+        $sliceKeys = array_slice($keys, $job['offset'], BATCH_SIZE);
+        $dataList = array_map(fn($k) => $job['customers'][$k], $sliceKeys);
+        $ids = bulk_insert($pdo, 'customers', $SCHEMA['customers'], $dataList);
+        foreach ($sliceKeys as $i => $key) { $job['custIdMap'][$key] = $ids[$i]; }
+        $job['offset'] += count($sliceKeys);
+        if ($job['offset'] >= count($keys)) {
+            $job['stage'] = 'contracts';
+            $job['offset'] = 0;
+            unset($job['customers']); // artıq lazım deyil — iş faylını yüngülləşdirir
         }
-        $job['offset'] += count($slice);
-        if ($job['offset'] >= count($keys)) { $job['stage'] = 'contracts'; $job['offset'] = 0; }
 
     } elseif ($job['stage'] === 'contracts') {
         $slice = array_slice($job['contracts'], $job['offset'], BATCH_SIZE);
+        $dataList = [];
         foreach ($slice as $c) {
-            $data = [
+            $dataList[] = [
                 'nomre' => $c['nomre'], 'tarix' => $c['tarix'], 'customerId' => $job['custIdMap'][$c['customerKey']] ?? '',
                 'salespersonId' => '', 'meblag' => $c['meblag'], 'ilkinOdenis' => $c['ilkinOdenis'],
                 'muddet' => 10, 'qeyd' => '',
             ];
-            $job['contractIdMap'][$c['tempId']] = insert_row($pdo, 'contracts', $SCHEMA['contracts'], $data);
         }
+        $ids = bulk_insert($pdo, 'contracts', $SCHEMA['contracts'], $dataList);
+        foreach ($slice as $i => $c) { $job['contractIdMap'][$c['tempId']] = $ids[$i]; }
         $job['offset'] += count($slice);
-        if ($job['offset'] >= count($job['contracts'])) { $job['stage'] = 'payments'; $job['offset'] = 0; }
+        if ($job['offset'] >= count($job['contracts'])) {
+            $job['stage'] = 'payments';
+            $job['offset'] = 0;
+            unset($job['contracts'], $job['custIdMap']); // artıq lazım deyil
+        }
 
     } elseif ($job['stage'] === 'payments') {
         $slice = array_slice($job['payments'], $job['offset'], BATCH_SIZE);
+        $dataList = [];
         foreach ($slice as $p) {
             $cid = $job['contractIdMap'][$p['contractTempId']] ?? null;
             if (!$cid) continue;
-            $data = [
+            $dataList[] = [
                 'contractId' => $cid, 'meblag' => $p['meblag'], 'odemeTarixi' => $p['tarix'],
                 'collectorId' => '', 'qeyd' => '', 'qrafikAyIndex' => 1, 'qrafikAyLabel' => '',
             ];
-            insert_row($pdo, 'payments', $SCHEMA['payments'], $data);
         }
+        if ($dataList) { bulk_insert($pdo, 'payments', $SCHEMA['payments'], $dataList); }
         $job['offset'] += count($slice);
         if ($job['offset'] >= count($job['payments'])) { $job['stage'] = 'done'; }
     }
@@ -82,9 +105,9 @@ try {
     $finished = ($job['stage'] === 'done');
 
     $doneCounts = [
-        'customers' => $job['stage'] === 'customers' ? $job['offset'] : count($job['customers']),
-        'contracts' => in_array($job['stage'], ['customers'], true) ? 0 : ($job['stage'] === 'contracts' ? $job['offset'] : count($job['contracts'])),
-        'payments' => in_array($job['stage'], ['customers', 'contracts'], true) ? 0 : ($job['stage'] === 'payments' ? $job['offset'] : count($job['payments'])),
+        'customers' => $job['stage'] === 'customers' ? $job['offset'] : $job['totals']['customers'],
+        'contracts' => $job['stage'] === 'contracts' ? $job['offset'] : ($job['stage'] === 'customers' ? 0 : $job['totals']['contracts']),
+        'payments' => $job['stage'] === 'payments' ? $job['offset'] : ($job['stage'] === 'done' ? $job['totals']['payments'] : 0),
     ];
 
     if ($finished) {

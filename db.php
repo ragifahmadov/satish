@@ -6,19 +6,24 @@
 
 require_once __DIR__ . '/functions.php'; // $SCHEMA və $SQL_TYPES buradan gəlir
 
-function get_pdo() {
+// $skipSync=true olanda baza/cədvəl strukturu yoxlanmadan birbaşa qoşulur —
+// bu, strukturun artıq hazır olduğu bilinən təkrarlanan çağırışlar üçündür
+// (məs. idxal zamanı hər dəstə sorğusu), lazımsız 15-20 əlavə sorğunun qarşısını alır.
+function get_pdo($skipSync = false) {
     global $SCHEMA, $SQL_TYPES;
     static $pdo = null;
     if ($pdo !== null) return $pdo;
 
     $cfg = require __DIR__ . '/config.php';
-
-    $dsnServer = "mysql:host={$cfg['host']};port={$cfg['port']};charset={$cfg['charset']}";
-    $tmp = new PDO($dsnServer, $cfg['user'], $cfg['pass'], [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    ]);
     $dbname = $cfg['dbname'];
-    $tmp->exec("CREATE DATABASE IF NOT EXISTS `$dbname` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+    if (!$skipSync) {
+        $dsnServer = "mysql:host={$cfg['host']};port={$cfg['port']};charset={$cfg['charset']}";
+        $tmp = new PDO($dsnServer, $cfg['user'], $cfg['pass'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        ]);
+        $tmp->exec("CREATE DATABASE IF NOT EXISTS `$dbname` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
 
     $dsn = "mysql:host={$cfg['host']};port={$cfg['port']};dbname={$dbname};charset={$cfg['charset']}";
     $pdo = new PDO($dsn, $cfg['user'], $cfg['pass'], [
@@ -26,7 +31,9 @@ function get_pdo() {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 
-    sync_schema($pdo, $SCHEMA, $SQL_TYPES);
+    if (!$skipSync) {
+        sync_schema($pdo, $SCHEMA, $SQL_TYPES);
+    }
     return $pdo;
 }
 

@@ -612,7 +612,7 @@ async function submitCustomerForm(form){
   else if(!id && isDuplicate(state.customers,'finKod',data.finKod,id)){ setFieldError(form,'finKod','Daxil etdiyiniz fin təkrarlanır'); ok=false; }
   if(!id && isDuplicate(state.customers,'kod',data.kod,id)){ setFieldError(form,'kod','Daxil etdiyiniz kod təkrarlanır'); ok=false; }
   if(data.elaqeNomre1.length!==9){ setFieldError(form,'elaqeNomre1','Əlaqə nömrəsini tam daxil edin'); ok=false; }
-  if(data.elaqeNomre2.length!==9){ setFieldError(form,'elaqeNomre2','Əlaqə nömrəsini tam daxil edin'); ok=false; }
+  if(data.elaqeNomre2 && data.elaqeNomre2.length!==9){ setFieldError(form,'elaqeNomre2','Əlaqə nömrəsini tam daxil edin'); ok=false; }
   if(data.dogumTarixi && calcAge(data.dogumTarixi)<17){ setFieldError(form,'dogumTarixi','17 yaşından kiçiklərə satış etmək olmaz'); ok=false; }
   if(!ok) return;
   if(id){ await apiUpdate('customers',id,data); } else { await apiAdd('customers',data); }

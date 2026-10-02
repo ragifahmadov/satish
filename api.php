@@ -38,6 +38,25 @@ try {
     switch ($method) {
 
         case 'GET':
+            // Ödənişlər üçün: tam sətirlər əvəzinə hər müqavilə üzrə YEKUN məbləği
+            // (çox kiçik cavab) — Müqavilə/İdarə paneli kimi ekranlarda tam
+            // ödəniş tarixçəsini yükləməyə ehtiyac olmadığı üçün istifadə olunur.
+            if ($col === 'payments' && isset($_GET['agg']) && $_GET['agg'] === 'sum') {
+                $stmt = $pdo->query("SELECT contractId, SUM(meblag) AS total FROM payments GROUP BY contractId");
+                $out = [];
+                foreach ($stmt->fetchAll() as $row) { $out[$row['contractId']] = (float) $row['total']; }
+                echo json_encode($out);
+                break;
+            }
+            // Ödənişlər üçün: yalnız bir müqaviləyə aid sətirlər (tam cədvəl yox).
+            if ($col === 'payments' && !empty($_GET['contractId'])) {
+                $stmt = $pdo->prepare("SELECT * FROM `payments` WHERE contractId = :cid ORDER BY createdAt ASC");
+                $stmt->execute([':cid' => $_GET['contractId']]);
+                $out = [];
+                foreach ($stmt->fetchAll() as $row) { $out[] = row_out($row, $schema); }
+                echo json_encode($out);
+                break;
+            }
             $stmt = $pdo->query("SELECT * FROM `$col` ORDER BY createdAt ASC");
             $out = [];
             foreach ($stmt->fetchAll() as $row) {

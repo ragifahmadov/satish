@@ -222,6 +222,7 @@ const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust'
 
 /* ============ STATE ============ */
 const state={salespeople:[],collectors:[],customers:[],contracts:[],payments:[]};
+let paymentSums={}; // müqavilə id -> ödənişlərin cəmi (yüngül, tam sətirlər olmadan)
 function upsertInState(col, item){
   if(!state[col] || !item || !item.id) return;
   const idx=state[col].findIndex(x=>x.id===item.id);
@@ -267,7 +268,9 @@ function scheduleMonths(contract){
   return out;
 }
 function contractPaidSum(contractId){
-  return state.payments.filter(p=>p.contractId===contractId).reduce((s,p)=>s+(Number(p.meblag)||0),0);
+  if(Object.prototype.hasOwnProperty.call(paymentSums, contractId)) return Number(paymentSums[contractId])||0;
+  if(state.payments && state.payments.length) return state.payments.filter(p=>p.contractId===contractId).reduce((s,p)=>s+(Number(p.meblag)||0),0);
+  return 0;
 }
 function contractDebt(contract){
   return (Number(contract.meblag)||0) - (Number(contract.ilkinOdenis)||0) - contractPaidSum(contract.id);
@@ -301,22 +304,26 @@ function setContent(html){ document.getElementById('content').innerHTML=html; }
 // Hər ekranın faktiki ehtiyac duyduğu cədvəllər (ad/borc kimi hesablanan
 // sahələr üçün başqa cədvəllərə də baxmaq lazım ola bilər).
 const SCREEN_DEPS={
-  dashboard:['contracts','payments','customers'],
+  dashboard:['contracts','paymentSums','customers'],
   salespeople:['salespeople'],
   collectors:['collectors'],
   customers:['customers'],
-  contracts:['contracts','customers','salespeople','collectors','payments'],
+  contracts:['contracts','customers','salespeople','collectors','paymentSums'],
   payments:['contracts','customers','collectors','payments'],
-  reassign:['contracts','customers','collectors','payments'],
-  'debt-inquiry':['customers','contracts','collectors','payments'],
+  reassign:['contracts','customers','collectors','paymentSums'],
+  'debt-inquiry':['customers','contracts','collectors','paymentSums'],
   reports:[],
 };
 const loadedCols=new Set();
 async function ensureLoaded(cols){
   const need=cols.filter(c=>!loadedCols.has(c));
   if(!need.length) return;
-  const results=await Promise.all(need.map(apiList));
-  need.forEach((c,i)=>{ state[c]=results[i]; loadedCols.add(c); });
+  const promises=need.map(c=> c==='paymentSums' ? apiPaymentSums() : apiList(c));
+  const results=await Promise.all(promises);
+  need.forEach((c,i)=>{
+    if(c==='paymentSums'){ paymentSums=results[i]; } else { state[c]=results[i]; }
+    loadedCols.add(c);
+  });
 }
 
 async function renderScreen(){
@@ -903,9 +910,20 @@ function buildScheduleRowsHtml(contract){
     </tr>`;
   }).join('');
 }
-function openScheduleModal(contractId){
+async function openScheduleModal(contractId){
   const contract=byId(state.contracts,contractId);
   if(!contract) return;
+  document.getElementById('modal-panel').innerHTML=`<div class="muted" style="padding:40px;text-align:center;">Yüklənir…</div>`;
+  openModal();
+  if(!loadedCols.has('payments')){
+    try{
+      const fresh=await apiPaymentsForContract(contractId);
+      state.payments=state.payments.filter(p=>p.contractId!==contractId).concat(fresh);
+    }catch(err){
+      document.getElementById('modal-panel').innerHTML=`<div class="banner">Ödənişlər yüklənmədi: ${esc(err.message)}</div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`;
+      return;
+    }
+  }
   const rowsHtml=buildScheduleRowsHtml(contract);
   document.getElementById('modal-panel').innerHTML=`
     <h2>Ödəniş qrafiki — ${esc(contract.nomre)} <span class="muted" style="font-size:13px;font-weight:400;">— ${esc(customerName(contract.customerId))}</span></h2>
@@ -916,7 +934,6 @@ function openScheduleModal(contractId){
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button>
     </div>`;
-  openModal();
 }
 function renderPaymentsPanel(contract){
   const meblag=Number(contract.meblag)||0;
@@ -931,11 +948,12 @@ function renderPaymentsPanel(contract){
 
   setContent(`
     <div class="topbar" style="margin-bottom:12px;">
-      <div><h1>${esc(contract.nomre)} <span class="sub" style="font-size:15px;font-weight:400;">— ${esc(customerName(contract.customerId))} · Tarix: ${fmtDate(contract.tarix)}</span></h1></div>
+      <div><h1>${esc(contract.nomre)} <span class="sub" style="font-size:15px;font-weight:400;">— ${esc(customerName(contract.customerId))}</span></h1></div>
       <button class="btn btn-ghost" data-action="pay-change-contract">Başqa müqavilə</button>
     </div>
     <div class="kpis" style="margin-bottom:12px;">
       <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Satışın məbləği</div><div class="val" style="font-size:18px;">${fmtMoney(meblag)}</div></div>
+      <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Müqavilə tarixi</div><div class="val" style="font-size:18px;">${fmtDate(contract.tarix)}</div></div>
       <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">İlkin ödəniş / çatdırılma</div><div class="val" style="font-size:18px;">${fmtMoney(ilkin)}</div></div>
       <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Qalıq borc</div><div class="val" style="font-size:18px;color:${debt>0?'var(--red)':'var(--green)'}">${fmtMoney(debt)}</div></div>
       <div class="card kpi" style="padding:10px 14px;background:${scheduleDebt>0?'var(--red)':'var(--green)'}"><div class="lbl" style="margin-bottom:4px;color:#000">Qrafik üzrə borc</div><div class="val" style="font-size:18px;color:#000">${fmtMoney(scheduleDebt)}</div></div>
@@ -985,6 +1003,7 @@ async function recordQuickPayment(contractId){
       qeyd:'', qrafikAyIndex:curIdx, qrafikAyLabel:curMonth?curMonth.label:'',
     });
     upsertInState('payments', saved);
+    paymentSums[saved.contractId]=(Number(paymentSums[saved.contractId])||0)+(Number(saved.meblag)||0);
     renderScreen();
   }catch(err){
     errEl.textContent='Yadda saxlanmadı: '+err.message;
@@ -1336,6 +1355,16 @@ async function readErr(r, fallback){
 async function apiList(col){
   const r=await fetch(API_BASE+col);
   if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası ('+col+')'));
+  return r.json();
+}
+async function apiPaymentSums(){
+  const r=await fetch(API_BASE+'payments&agg=sum');
+  if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası (ödəniş cəmləri)'));
+  return r.json();
+}
+async function apiPaymentsForContract(contractId){
+  const r=await fetch(API_BASE+'payments&contractId='+encodeURIComponent(contractId));
+  if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası (ödənişlər)'));
   return r.json();
 }
 async function apiAdd(col,data){

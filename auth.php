@@ -9,7 +9,14 @@ function start_session_safe() {
     }
 }
 
+// CREATE TABLE + admin-seed yoxlamasını hər login cəhdində yox, konteyner
+// başına YALNIZ BİR DƏFƏ işlədirik (nəticəni müvəqqəti fayla qeyd edərək).
 function ensure_users_table($pdo) {
+    static $done = false;
+    if ($done) return;
+    $marker = sys_get_temp_dir() . '/satis_users_ready.txt';
+    if (file_exists($marker)) { $done = true; return; }
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS users (
         id CHAR(36) PRIMARY KEY,
         username VARCHAR(100) UNIQUE,
@@ -24,6 +31,8 @@ function ensure_users_table($pdo) {
         $stmt = $pdo->prepare("INSERT INTO users (id,username,passwordHash,role,blocked,createdAt) VALUES (?,?,?,?,0,?)");
         $stmt->execute([make_uuid(), 'admin', password_hash('galaxy1981', PASSWORD_DEFAULT), 'admin', date('Y-m-d H:i:s')]);
     }
+    @file_put_contents($marker, '1');
+    $done = true;
 }
 
 function current_user() {

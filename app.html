@@ -223,6 +223,15 @@ const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust'
 /* ============ STATE ============ */
 let dbReady=false;
 const state={salespeople:[],collectors:[],customers:[],contracts:[],payments:[]};
+function upsertInState(col, item){
+  if(!state[col] || !item || !item.id) return;
+  const idx=state[col].findIndex(x=>x.id===item.id);
+  if(idx>=0) state[col][idx]=item; else state[col].push(item);
+}
+function removeFromState(col, id){
+  if(!state[col]) return;
+  state[col]=state[col].filter(x=>x.id!==id);
+}
 let currentScreen='dashboard';
 
 const SCREENS=[
@@ -499,9 +508,10 @@ async function submitSimpleForm(form){
   if(data.elaqeNomre1.length!==9){ setFieldError(form,'elaqeNomre1','Əlaqə nömrəsini tam daxil edin'); ok=false; }
   if(data.elaqeNomre2 && data.elaqeNomre2.length!==9){ setFieldError(form,'elaqeNomre2','Əlaqə nömrəsini tam daxil edin'); ok=false; }
   if(!ok) return;
-  if(id){ await apiUpdate(key,id,data); } else { await apiAdd(key,data); }
+  const saved = id ? await apiUpdate(key,id,data) : await apiAdd(key,data);
+  upsertInState(key, saved);
   closeModal();
-  await loadAll();
+  renderScreen();
 }
 
 /* ============ CUSTOMERS ============ */
@@ -615,9 +625,10 @@ async function submitCustomerForm(form){
   if(data.elaqeNomre2 && data.elaqeNomre2.length!==9){ setFieldError(form,'elaqeNomre2','Əlaqə nömrəsini tam daxil edin'); ok=false; }
   if(data.dogumTarixi && calcAge(data.dogumTarixi)<17){ setFieldError(form,'dogumTarixi','17 yaşından kiçiklərə satış etmək olmaz'); ok=false; }
   if(!ok) return;
-  if(id){ await apiUpdate('customers',id,data); } else { await apiAdd('customers',data); }
+  const saved = id ? await apiUpdate('customers',id,data) : await apiAdd('customers',data);
+  upsertInState('customers', saved);
   closeModal();
-  await loadAll();
+  renderScreen();
 }
 
 /* ============ CONTRACTS ============ */
@@ -770,9 +781,10 @@ async function submitContractForm(form){
   if(isDuplicate(state.contracts,'nomre',data.nomre,id)){ setFieldError(form,'nomre','Daxil etdiyiniz müqavilə nömrəsi təkrarlanır'); ok=false; }
   if(!data.customerId){ alert('Zəhmət olmasa müştərini axtarıb siyahıdan seçin.'); ok=false; }
   if(!ok) return;
-  if(id){ await apiUpdate('contracts',id,data); } else { await apiAdd('contracts',data); }
+  const saved = id ? await apiUpdate('contracts',id,data) : await apiAdd('contracts',data);
+  upsertInState('contracts', saved);
   closeModal();
-  await loadAll();
+  renderScreen();
 }
 
 /* ============ PAYMENTS ============ */
@@ -941,11 +953,12 @@ async function recordQuickPayment(contractId){
     if(!proceed){ errEl.textContent='Ödəniş yadda saxlanmadı (təsdiqləmədiniz).'; errEl.style.display='block'; return; }
   }
   try{
-    await apiAdd('payments', {
+    const saved=await apiAdd('payments', {
       contractId:contract.id, meblag:amount, odemeTarixi:date, collectorId,
       qeyd:'', qrafikAyIndex:curIdx, qrafikAyLabel:curMonth?curMonth.label:'',
     });
-    await loadAll();
+    upsertInState('payments', saved);
+    renderScreen();
   }catch(err){
     errEl.textContent='Yadda saxlanmadı: '+err.message;
     errEl.style.display='block';
@@ -1064,10 +1077,11 @@ async function applyReassign(){
       if(curCollector===newCollectorId) sameCount++;
       const list=(c.tehsilatciTeyinatlari||[]).map(a=>a.son?a:{...a,son:today});
       list.push({collectorId:newCollectorId, baslama:today, son:''});
-      await apiUpdate('contracts', c.id, {tehsilatciTeyinatlari:list});
+      const saved=await apiUpdate('contracts', c.id, {tehsilatciTeyinatlari:list});
+      upsertInState('contracts', saved);
     }
     reassignContractIds=[];
-    await loadAll();
+    renderScreen();
     if(sameCount>0) alert(sameCount+' müqavilədə təhsilatçı artıq eyni idi, amma yenə də yeni təyinat yaradıldı.');
   }catch(err){
     errEl.textContent='Xəta: '+err.message;
@@ -1160,7 +1174,8 @@ function closeModal(){ document.getElementById('modal-root').classList.remove('o
 async function deleteRecord(col, id, label){
   if(!confirm('Bu '+label+' qeydini silmək istədiyinizə əminsiniz?')) return;
   await apiDelete(col, id);
-  await loadAll();
+  removeFromState(col, id);
+  renderScreen();
 }
 
 /* ============ EVENT DELEGATION ============ */

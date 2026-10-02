@@ -32,7 +32,16 @@ function get_pdo($skipSync = false) {
     ]);
 
     if (!$skipSync) {
-        sync_schema($pdo, $SCHEMA, $SQL_TYPES);
+        // Struktur yoxlamasını hər sorğuda yox, YALNIZ $SCHEMA dəyişəndə
+        // (yəni kodu yeniləyib yenidən deploy edəndə) işlədirik — nəticəni
+        // müvəqqəti fayla yazıb sonrakı sorğularda ondan istifadə edirik.
+        $hashFile = sys_get_temp_dir() . '/satis_schema_hash.txt';
+        $currentHash = md5(serialize($SCHEMA));
+        $storedHash = @file_get_contents($hashFile);
+        if ($storedHash !== $currentHash) {
+            sync_schema($pdo, $SCHEMA, $SQL_TYPES);
+            @file_put_contents($hashFile, $currentHash);
+        }
     }
     return $pdo;
 }

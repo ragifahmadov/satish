@@ -1506,10 +1506,10 @@ function overdueRowHtml(r){
     <td class="muted">${esc(r.salesperson)}</td>
     <td class="muted">${esc(r.collector)}</td>
     <td class="muted">${esc(r.curator)}</td>
+    <td class="num"><span class="tag tag-red">${r.months}</span></td>
     <td class="num">${fmtMoney(r.sale)}</td>
     <td class="num"><span class="tag tag-red">${fmtMoney(r.debt)}</span></td>
     <td class="num">${fmtMoney(r.scheduleDebt)}</td>
-    <td class="num"><span class="tag tag-red">${r.months} ay</span></td>
   </tr>`;
 }
 
@@ -1564,7 +1564,7 @@ function renderReportOverdue(){
     </div>
     <div id="overdue-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
     <div class="card"><div class="table-scroll"><table class="table-compact" style="min-width:1050px;">
-      <thead><tr><th>№</th><th>Tarix</th><th>Müştəri</th><th>Əlaqə</th><th>Satıcı</th><th>Təhsilatçı</th><th>Kurator</th><th class="num">Satış<br>məbləği</th><th class="num">Cari borc</th><th class="num">Qrafik<br>borcu</th><th class="num">Gecikmə</th></tr></thead>
+      <thead><tr><th>№</th><th>Tarix</th><th>Müştəri</th><th>Əlaqə</th><th>Satıcı</th><th>Təhsilatçı</th><th>Kurator</th><th class="num">Gecikmə(ay)</th><th class="num">Satış<br>məbləği</th><th class="num">Cari borc</th><th class="num">Qrafik<br>borcu</th></tr></thead>
       <tbody id="overdue-tbody"></tbody>
     </table></div>
     <div id="pagination-report-overdue" style="padding:0 14px 14px;"></div></div>

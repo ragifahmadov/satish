@@ -489,7 +489,7 @@ const SIMPLE_META={
   collectors:{title:'Təhsilatçılar',singular:'təhsilatçı',col:'collectors'},
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
-const PAGE_SIZE=20;
+const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
 const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
@@ -738,9 +738,15 @@ async function submitCustomerForm(form){
 }
 
 /* ============ CONTRACTS ============ */
+// Süzgəc + bütün siyahı üzrə çeşidləmə (ən yeni müqavilə yuxarıda). Səhifələmə bundan SONRA edilir.
+function contractRowsFor(q){
+  return state.contracts
+    .filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q))
+    .sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
+}
 function renderContracts(filter){
   const q=(filter||'').toLowerCase();
-  const rows=state.contracts.filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q));
+  const rows=contractRowsFor(q);
   const {pageRows, totalPages, total}=paginateArr(rows, 'contracts');
   setContent(`
     <div class="topbar" style="align-items:center;margin-bottom:8px;">
@@ -761,7 +767,7 @@ function renderContracts(filter){
 }
 function renderContractRows(rows){
   if(!rows.length) return `<tr><td colspan="11" class="empty">Nəticə tapılmadı</td></tr>`;
-  return rows.slice().sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'')).map(c=>{
+  return rows.map(c=>{
     const debt=contractDebt(c);
     const monthly=contractMonthly(c);
     const curCollector=activeCollectorForContract(c);
@@ -1624,7 +1630,7 @@ document.addEventListener('click', async (e)=>{
     } else if(key==='customers'){
       rows=state.customers.filter(c=>!q || (fullName(c)+' '+(c.kod||'')+' '+(c.finKod||'')+' '+(c.elaqeNomre1||'')).toLowerCase().includes(q));
     } else if(key==='contracts'){
-      rows=state.contracts.filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q));
+      rows=contractRowsFor(q);
     } else { return; }
     const {pageRows, totalPages, total}=paginateArr(rows, key);
     if(key==='customers'){ document.getElementById('tbody-customers').innerHTML=renderCustomerRows(pageRows); }
@@ -1688,7 +1694,7 @@ document.addEventListener('input', (e)=>{
     document.getElementById('tbody-customers').innerHTML=renderCustomerRows(pageRows);
     document.getElementById('pagination-customers').innerHTML=paginationHtml('customers', totalPages, total);
   } else if(key==='contracts'){
-    const rows=state.contracts.filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q));
+    const rows=contractRowsFor(q);
     pageNum.contracts=1;
     const {pageRows, totalPages, total}=paginateArr(rows, 'contracts');
     document.getElementById('tbody-contracts').innerHTML=renderContractRows(pageRows);

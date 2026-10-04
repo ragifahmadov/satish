@@ -13,6 +13,12 @@ $SCHEMA = [
         ['qeydiyyatUnvani', 'string'], ['faktikiUnvan', 'string'],
         ['elaqeNomre1', 'string'], ['elaqeNomre2', 'string'], ['qeyd', 'text'],
     ],
+    'curators' => [
+        ['kod', 'string'], ['soyad', 'string'], ['ad', 'string'], ['ataAdi', 'string'],
+        ['vesiqeSeriya', 'string'], ['vesiqeNomre', 'string'], ['finKod', 'string'],
+        ['qeydiyyatUnvani', 'string'], ['faktikiUnvan', 'string'],
+        ['elaqeNomre1', 'string'], ['elaqeNomre2', 'string'], ['qeyd', 'text'],
+    ],
     'customers' => [
         ['kod', 'string'], ['soyad', 'string'], ['ad', 'string'], ['ataAdi', 'string'], ['dogumTarixi', 'date'],
         ['cinsiyet', 'string'], ['vesiqeSeriya', 'string'], ['vesiqeNomre', 'string'], ['finKod', 'string'],
@@ -22,10 +28,11 @@ $SCHEMA = [
     'contracts' => [
         ['nomre', 'string'], ['tarix', 'date'], ['customerId', 'string'], ['salespersonId', 'string'],
         ['meblag', 'number'], ['ilkinOdenis', 'number'], ['muddet', 'int'], ['qeyd', 'text'], ['tehsilatciTeyinatlari', 'json'],
+        ['kuratorTeyinatlari', 'json'], ['mehkemeQeydleri', 'json'],
     ],
     'payments' => [
         ['contractId', 'string'], ['meblag', 'number'], ['odemeTarixi', 'date'], ['collectorId', 'string'],
-        ['qeyd', 'text'], ['qrafikAyIndex', 'int'], ['qrafikAyLabel', 'string'],
+        ['qeyd', 'text'], ['qrafikAyIndex', 'int'], ['qrafikAyLabel', 'string'], ['emeliyyatNovu', 'string'],
     ],
 ];
 

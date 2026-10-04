@@ -38,15 +38,43 @@ try {
     switch ($method) {
 
         case 'GET':
-            // Ödənişlər üçün: tam sətirlər əvəzinə hər müqavilə üzrə YEKUN məbləği
-            // (çox kiçik cavab) — Müqavilə/İdarə paneli kimi ekranlarda tam
-            // ödəniş tarixçəsini yükləməyə ehtiyac olmadığı üçün istifadə olunur.
-            if ($col === 'payments' && isset($_GET['agg']) && $_GET['agg'] === 'sum') {
-                $stmt = $pdo->query("SELECT contractId, SUM(meblag) AS total FROM payments GROUP BY contractId");
-                $out = [];
-                foreach ($stmt->fetchAll() as $row) { $out[$row['contractId']] = (float) $row['total']; }
-                echo json_encode($out);
-                break;
+            // Ödənişlər üçün yığcam (aqreqat) cavablar — tam sətirləri yükləməyə ehtiyac qalmasın.
+            // "Geri qaytarma" əməliyyatları (mal qaytarılması) ödəniş sayılmır, ayrıca cəmlənir.
+            if ($col === 'payments' && isset($_GET['agg'])) {
+                $agg = $_GET['agg'];
+                if ($agg === 'sum') {
+                    // müqavilə -> [ödənişlərin cəmi, geri qaytarılan məbləğ (müsbət)]
+                    $stmt = $pdo->query("SELECT contractId,
+                            SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN 0 ELSE meblag END) AS paid,
+                            SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN -meblag ELSE 0 END) AS ret
+                        FROM payments GROUP BY contractId");
+                    $out = [];
+                    foreach ($stmt->fetchAll() as $row) { $out[$row['contractId']] = [(float) $row['paid'], (float) $row['ret']]; }
+                    echo json_encode($out);
+                    break;
+                }
+                if ($agg === 'last') {
+                    // müqavilə -> ən son (real, müsbət) ödəniş tarixi
+                    $stmt = $pdo->query("SELECT contractId, MAX(odemeTarixi) AS lastDate FROM payments
+                        WHERE meblag > 0 AND (emeliyyatNovu IS NULL OR emeliyyatNovu <> 'Geri qaytarma')
+                        GROUP BY contractId");
+                    $out = [];
+                    foreach ($stmt->fetchAll() as $row) { if ($row['lastDate']) { $out[$row['contractId']] = $row['lastDate']; } }
+                    echo json_encode($out);
+                    break;
+                }
+                if ($agg === 'month') {
+                    // verilən ayda (YYYY-MM) toplanan ödənişlərin cəmi
+                    $ym = isset($_GET['ym']) ? $_GET['ym'] : date('Y-m');
+                    if (!preg_match('/^\d{4}-\d{2}$/', $ym)) { fail(400, 'ym parametri YYYY-MM formatında olmalıdır'); }
+                    $start = $ym . '-01';
+                    $end = date('Y-m-d', strtotime($start . ' +1 month'));
+                    $stmt = $pdo->prepare("SELECT COALESCE(SUM(meblag), 0) FROM payments
+                        WHERE odemeTarixi >= :s AND odemeTarixi < :e AND (emeliyyatNovu IS NULL OR emeliyyatNovu <> 'Geri qaytarma')");
+                    $stmt->execute([':s' => $start, ':e' => $end]);
+                    echo json_encode(['total' => (float) $stmt->fetchColumn()]);
+                    break;
+                }
             }
             // Ödənişlər üçün: yalnız bir müqaviləyə aid sətirlər (tam cədvəl yox).
             if ($col === 'payments' && !empty($_GET['contractId'])) {

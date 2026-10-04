@@ -20,6 +20,13 @@ RUN rm -f /etc/apache2/mods-enabled/mpm_event.load /etc/apache2/mods-enabled/mpm
     && a2enmod mpm_prefork rewrite headers \
     && apachectl configtest
 
+# Cavabların sıxılması: siyahı məlumatları (müqavilə, müştəri) bir neçə MB JSON-dur,
+# sıxılma onları təxminən 8-10 dəfə kiçildir və yüklənməni nəzərəçarpacaq sürətləndirir.
+RUN a2enmod deflate \
+    && printf '<IfModule mod_deflate.c>\n    AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json\n</IfModule>\n' > /etc/apache2/conf-available/compress.conf \
+    && a2enconf compress \
+    && apachectl configtest
+
 COPY . /var/www/html/
 WORKDIR /var/www/html
 

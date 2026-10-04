@@ -37,10 +37,20 @@ function get_pdo($skipSync = false) {
         // müvəqqəti fayla yazıb sonrakı sorğularda ondan istifadə edirik.
         $hashFile = sys_get_temp_dir() . '/satis_schema_hash.txt';
         $currentHash = md5(serialize($SCHEMA));
-        $storedHash = @file_get_contents($hashFile);
-        if ($storedHash !== $currentHash) {
-            sync_schema($pdo, $SCHEMA, $SQL_TYPES);
-            @file_put_contents($hashFile, $currentHash);
+        if (@file_get_contents($hashFile) !== $currentHash) {
+            // Deploy-dan dərhal sonra bir neçə sorğu eyni anda gələ bilər. MySQL kilidi
+            // ilə yoxlamanı növbəyə qoyuruq ki, cədvəl/sütun yaratma toqquşmasın.
+            $gotLock = (int) $pdo->query("SELECT GET_LOCK('satis_schema_sync', 60)")->fetchColumn();
+            try {
+                // Kilidi gözləyərkən başqa sorğu işi artıq bitirmiş ola bilər
+                clearstatcache();
+                if (@file_get_contents($hashFile) !== $currentHash) {
+                    sync_schema($pdo, $SCHEMA, $SQL_TYPES);
+                    @file_put_contents($hashFile, $currentHash); // yalnız uğurlu olduqda
+                }
+            } finally {
+                if ($gotLock === 1) { $pdo->query("SELECT RELEASE_LOCK('satis_schema_sync')")->fetchColumn(); }
+            }
         }
     }
     return $pdo;
@@ -54,7 +64,7 @@ function sync_schema($pdo, $schema, $sqlTypes) {
             foreach ($cols as [$name, $type]) {
                 $defs[] = "`$name` " . $sqlTypes[$type];
             }
-            $pdo->exec("CREATE TABLE `$table` (" . implode(',', $defs) . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `$table` (" . implode(',', $defs) . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         } else {
             sync_columns($pdo, $table, $cols, $sqlTypes);
         }

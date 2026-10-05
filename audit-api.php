@@ -109,6 +109,8 @@ if ($kind === 'delete') {
     $where[] = "l.action = 'LOGIN_FAILED'";
 } elseif ($kind === 'batch') {
     $where[] = "(l.opId IS NOT NULL OR l.action IN ('IMPORT','RESET','FIX'))";
+} elseif ($kind === 'export') {
+    $where[] = "l.action = 'EXPORT'";
 } elseif ($kind === 'users') {
     $where[] = "l.action IN ('USER_CREATE','USER_BLOCK','USER_UNBLOCK','USER_PASSWORD','USER_DELETE')";
 }

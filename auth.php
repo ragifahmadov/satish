@@ -9,13 +9,13 @@ function start_session_safe() {
     }
 }
 
-// CREATE TABLE + admin-seed yoxlamasını hər login cəhdində yox, konteyner
-// başına YALNIZ BİR DƏFƏ işlədirik (nəticəni müvəqqəti fayla qeyd edərək).
+// CREATE TABLE + sütun miqrasiyası + admin-seed yoxlamasını hər sorğuda yox, konteyner
+// başına YALNIZ BİR DƏFƏ işlədirik (nəticəni versiyalı müvəqqəti faylla qeyd edərək).
 function ensure_users_table($pdo) {
     static $done = false;
     if ($done) return;
     $marker = sys_get_temp_dir() . '/satis_users_ready.txt';
-    if (file_exists($marker)) { $done = true; return; }
+    if (@file_get_contents($marker) === USERS_SCHEMA_VERSION) { $done = true; return; }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS users (
         id CHAR(36) PRIMARY KEY,
@@ -23,15 +23,28 @@ function ensure_users_table($pdo) {
         passwordHash VARCHAR(255),
         role VARCHAR(20),
         blocked TINYINT(1) DEFAULT 0,
-        createdAt DATETIME
+        createdAt DATETIME,
+        permissions MEDIUMTEXT NULL,
+        scope MEDIUMTEXT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Köhnə cədvəl üçün: hüquq və əhatə sütunları əlavə olunur
+    $addedPerm = add_column_if_missing($pdo, 'users', 'permissions', 'MEDIUMTEXT NULL');
+    add_column_if_missing($pdo, 'users', 'scope', 'MEDIUMTEXT NULL');
+    if ($addedPerm) {
+        // Yalnız sütunu İNDİ əlavə edən sorğu: mövcud adi istifadəçilər əvvəlki davranışı (hər şeyə tam giriş,
+        // bütün müqavilələr) açıq şəkildə alır — admin sonra "Səlahiyyətlər" ekranında məhdudlaşdırır.
+        // Yeni yaradılan istifadəçilərdə hüquq boşdur: admin təyin edənə qədər heç nəyə giriş yoxdur.
+        $stmt = $pdo->prepare("UPDATE users SET permissions = ?, scope = ? WHERE role <> 'admin' AND permissions IS NULL");
+        $stmt->execute([json_encode(perm_full_permissions()), json_encode(['mode' => 'all'])]);
+    }
 
     $count = $pdo->query("SELECT COUNT(*) FROM users WHERE role='admin'")->fetchColumn();
     if ((int) $count === 0) {
         $stmt = $pdo->prepare("INSERT INTO users (id,username,passwordHash,role,blocked,createdAt) VALUES (?,?,?,?,0,?)");
         $stmt->execute([make_uuid(), 'admin', password_hash('galaxy1981', PASSWORD_DEFAULT), 'admin', date('Y-m-d H:i:s')]);
     }
-    @file_put_contents($marker, '1');
+    @file_put_contents($marker, USERS_SCHEMA_VERSION);
     $done = true;
 }
 
@@ -83,38 +96,52 @@ function deny_access($jsonMode, $code, $msg) {
     if ($jsonMode) {
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['error' => $msg]);
+    } elseif ($code >= 500) {
+        // Server xətası: yönləndirmə YOX (login.php giriş olunubsa yenidən index.php-yə atıb dövr yarada bilər)
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!DOCTYPE html><meta charset="utf-8"><title>Xəta</title><p style="font-family:sans-serif;padding:30px;">'
+            . htmlspecialchars($msg) . ' <a href="login.php">Yenidən cəhd et</a></p>';
     } else {
         header('Location: login.php?err=' . urlencode($msg));
     }
     exit;
 }
 
+// Hər sorğuda: sessiyadan istifadəçi oxunur, sonra ROL, HÜQUQLAR və ƏHATƏ bazadan alınır (admin dəyişiklik
+// edən kimi qüvvəyə minir). Bazadan oxuya bilmirsə girişi AÇMIR (qapalı davranır).
+// Nəticə (kontekst) current_user() ilə əlçatandır: id, username, role, screens, extras, scopeMode, scope.
 function require_login($jsonMode = false) {
     $u = current_user();
     // Oxuma bitdi — sessiya kilidini dərhal burax (paralel sorğular bir-birini gözləməsin)
-    auth_cache('set', $u);
     if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
-    if (!$u) { deny_access($jsonMode, 401, 'Giriş tələb olunur.'); }
+    if (!is_array($u) || empty($u['id'])) {
+        auth_cache('set', null);
+        deny_access($jsonMode, 401, 'Giriş tələb olunur.');
+    }
+    $row = false;
     try {
         $pdo = get_pdo();
-        $stmt = $pdo->prepare("SELECT blocked FROM users WHERE id = ?");
+        ensure_users_table($pdo);
+        $stmt = $pdo->prepare("SELECT id, username, role, blocked, permissions, scope FROM users WHERE id = ?");
         $stmt->execute([$u['id']]);
         $row = $stmt->fetch();
-        if (!$row || (int) $row['blocked'] === 1) {
-            auth_cache('clear');
-            start_session_safe();   // sessiyanı yenidən aç ki, istifadəçini silə bilək
-            unset($_SESSION['user']);
-            deny_access($jsonMode, 401, 'Hesabınız bloklanıb və ya mövcud deyil.');
-        }
-    } catch (Exception $e) {
-        // DB bağlantı xətası olsa, sessiyanı qırmayaq — növbəti sorğu təkrar yoxlayacaq.
+    } catch (Throwable $e) {
+        error_log('require_login: ' . $e->getMessage());
+        auth_cache('set', null);
+        deny_access($jsonMode, 503, 'Verilənlər bazasına qoşulmaq mümkün olmadı. Bir az sonra yenidən cəhd edin.');
     }
+    if (!$row || (int) $row['blocked'] === 1) {
+        auth_cache('clear');
+        start_session_safe();   // sessiyanı yenidən aç ki, istifadəçini silə bilək
+        unset($_SESSION['user']);
+        deny_access($jsonMode, 401, 'Hesabınız bloklanıb və ya mövcud deyil.');
+    }
+    auth_cache('set', authz_build_ctx($u, $row));
 }
 
 function require_admin($jsonMode = false) {
     require_login($jsonMode);
-    $u = current_user();
-    if (!$u || $u['role'] !== 'admin') {
+    if (!authz_is_admin(current_user())) {
         deny_access($jsonMode, 403, 'Bu səhifəyə girişiniz yoxdur.');
     }
 }

@@ -19,6 +19,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/auth.php';
 require_login(true);
+$ctx = current_user();   // rol, hüquqlar və müqavilə əhatəsi (permissions.php)
 $tAuth = microtime(true);
 
 $col = isset($_GET['col']) ? $_GET['col'] : '';
@@ -38,8 +39,8 @@ try {
 $tDb = microtime(true);
 
 // Cavabı göndərir və Server-Timing başlığını əlavə edir (brauzerdə F12 → Network → Timing):
-//   auth  — giriş/sessiya yoxlaması,  db — bazaya qoşulma (və ilk dəfə struktur yoxlaması),
-//   op    — əsas iş (log daxil),      audit — onun içindəki log hazırlama/yazma hissəsi.
+//   auth  — giriş, hüquq və əhatənin oxunması,  db — bazaya qoşulma (və ilk dəfə struktur yoxlaması),
+//   op    — əsas iş (log daxil),                audit — onun içindəki log hazırlama/yazma hissəsi.
 function json_out($data) {
     global $t0, $tAuth, $tDb;
     $now = microtime(true);
@@ -52,6 +53,18 @@ function json_out($data) {
     echo json_encode($data);
 }
 
+// İcazə verilmədi: cəhd loga yazılır (təhlükəsizlik izi), istifadəçiyə 403 qaytarılır
+function api_deny($msg) {
+    global $pdo, $col, $method;
+    audit_event($pdo, 'ACCESS_DENIED', 'İcazə verilmədi: ' . $method . ' — ' . audit_entity_name($col) . ' — ' . $msg, ['entity' => $col]);
+    fail(403, $msg);
+}
+
+$scoped = authz_scoped($ctx);
+[$cSql, $cParams] = authz_contract_scope($ctx, 'c', 'sc');   // "görünən müqavilələr" şərti (məhdudiyyətsizdə 1=1)
+// Ödənişlər üçün əhatə şərti (məhdudiyyətsiz istifadəçidə əlavə sorğu YOXDUR — sürət dəyişmir)
+$payFilter = $scoped ? " AND p.contractId IN (SELECT c.id FROM contracts c WHERE $cSql)" : '';
+
 try {
     switch ($method) {
 
@@ -59,13 +72,18 @@ try {
             // Ödənişlər üçün yığcam (aqreqat) cavablar — tam sətirləri yükləməyə ehtiyac qalmasın.
             // "Geri qaytarma" əməliyyatları (mal qaytarılması) ödəniş sayılmır, ayrıca cəmlənir.
             if ($col === 'payments' && isset($_GET['agg'])) {
-                $agg = $_GET['agg'];
+                $agg = (string) $_GET['agg'];
+                $flags = ['sum' => '@sums', 'last' => '@last', 'month' => '@month'];
+                if (!isset($flags[$agg])) { fail(400, 'Naməlum aqreqat'); }
+                if (!authz_has_flag($ctx, $flags[$agg])) { api_deny('Bu məlumata baxmaq üçün icazəniz yoxdur.'); }
+
                 if ($agg === 'sum') {
                     // müqavilə -> [ödənişlərin cəmi, geri qaytarılan məbləğ (müsbət)]
-                    $stmt = $pdo->query("SELECT contractId,
-                            SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN 0 ELSE meblag END) AS paid,
-                            SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN -meblag ELSE 0 END) AS ret
-                        FROM payments GROUP BY contractId");
+                    $stmt = $pdo->prepare("SELECT p.contractId,
+                            SUM(CASE WHEN p.emeliyyatNovu = 'Geri qaytarma' THEN 0 ELSE p.meblag END) AS paid,
+                            SUM(CASE WHEN p.emeliyyatNovu = 'Geri qaytarma' THEN -p.meblag ELSE 0 END) AS ret
+                        FROM payments p WHERE 1=1 $payFilter GROUP BY p.contractId");
+                    $stmt->execute($cParams);
                     $out = [];
                     foreach ($stmt->fetchAll() as $row) { $out[$row['contractId']] = [(float) $row['paid'], (float) $row['ret']]; }
                     json_out($out);
@@ -73,29 +91,31 @@ try {
                 }
                 if ($agg === 'last') {
                     // müqavilə -> ən son (real, müsbət) ödəniş tarixi
-                    $stmt = $pdo->query("SELECT contractId, MAX(odemeTarixi) AS lastDate FROM payments
-                        WHERE meblag > 0 AND (emeliyyatNovu IS NULL OR emeliyyatNovu <> 'Geri qaytarma')
-                        GROUP BY contractId");
+                    $stmt = $pdo->prepare("SELECT p.contractId, MAX(p.odemeTarixi) AS lastDate FROM payments p
+                        WHERE p.meblag > 0 AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu <> 'Geri qaytarma') $payFilter
+                        GROUP BY p.contractId");
+                    $stmt->execute($cParams);
                     $out = [];
                     foreach ($stmt->fetchAll() as $row) { if ($row['lastDate']) { $out[$row['contractId']] = $row['lastDate']; } }
                     json_out($out);
                     break;
                 }
-                if ($agg === 'month') {
-                    // verilən ayda (YYYY-MM) toplanan ödənişlərin cəmi
-                    $ym = isset($_GET['ym']) ? $_GET['ym'] : date('Y-m');
-                    if (!preg_match('/^\d{4}-\d{2}$/', $ym)) { fail(400, 'ym parametri YYYY-MM formatında olmalıdır'); }
-                    $start = $ym . '-01';
-                    $end = date('Y-m-d', strtotime($start . ' +1 month'));
-                    $stmt = $pdo->prepare("SELECT COALESCE(SUM(meblag), 0) FROM payments
-                        WHERE odemeTarixi >= :s AND odemeTarixi < :e AND (emeliyyatNovu IS NULL OR emeliyyatNovu <> 'Geri qaytarma')");
-                    $stmt->execute([':s' => $start, ':e' => $end]);
-                    json_out(['total' => (float) $stmt->fetchColumn()]);
-                    break;
-                }
+                // $agg === 'month': verilən ayda (YYYY-MM) toplanan ödənişlərin cəmi
+                $ym = isset($_GET['ym']) ? $_GET['ym'] : date('Y-m');
+                if (!preg_match('/^\d{4}-\d{2}$/', $ym)) { fail(400, 'ym parametri YYYY-MM formatında olmalıdır'); }
+                $start = $ym . '-01';
+                $end = date('Y-m-d', strtotime($start . ' +1 month'));
+                $stmt = $pdo->prepare("SELECT COALESCE(SUM(p.meblag), 0) FROM payments p
+                    WHERE p.odemeTarixi >= :s AND p.odemeTarixi < :e AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu <> 'Geri qaytarma') $payFilter");
+                $stmt->execute(array_merge([':s' => $start, ':e' => $end], $cParams));
+                json_out(['total' => (float) $stmt->fetchColumn()]);
+                break;
             }
+
             // Ödənişlər üçün: yalnız bir müqaviləyə aid sətirlər (tam cədvəl yox).
             if ($col === 'payments' && !empty($_GET['contractId'])) {
+                if (!authz_has_flag($ctx, '@cpay')) { api_deny('Bu məlumata baxmaq üçün icazəniz yoxdur.'); }
+                if (!authz_contract_visible($pdo, $ctx, $_GET['contractId'])) { api_deny('Bu müqavilə sizin əhatənizdə deyil.'); }
                 $stmt = $pdo->prepare("SELECT * FROM `payments` WHERE contractId = :cid ORDER BY createdAt ASC");
                 $stmt->execute([':cid' => $_GET['contractId']]);
                 $out = [];
@@ -103,10 +123,36 @@ try {
                 json_out($out);
                 break;
             }
-            $stmt = $pdo->query("SELECT * FROM `$col` ORDER BY createdAt ASC");
+
+            // Ümumi siyahı: oxuma səviyyəsi (full/ref_addr/ref) və əhatə
+            $tier = authz_read_tier($ctx, $col);
+            if ($tier === null) { api_deny('Bu bölməyə baxmaq üçün icazəniz yoxdur.'); }
+
+            if ($col === 'contracts') {
+                $stmt = $pdo->prepare("SELECT * FROM contracts c WHERE $cSql ORDER BY c.createdAt ASC");
+                $stmt->execute($cParams);
+            } elseif ($col === 'payments') {
+                $stmt = $pdo->prepare("SELECT * FROM payments p WHERE 1=1 $payFilter ORDER BY p.createdAt ASC");
+                $stmt->execute($cParams);
+            } elseif ($col === 'customers' && $scoped) {
+                // əhatəli istifadəçi: görünən müqaviləsi olan müştərilər + özünün yaratdıqları
+                $stmt = $pdo->prepare("SELECT * FROM customers WHERE (
+                        EXISTS (SELECT 1 FROM contracts c WHERE c.customerId = customers.id AND $cSql)
+                        OR customers.createdBy = :uid) ORDER BY createdAt ASC");
+                $stmt->execute(array_merge($cParams, [':uid' => (string) ($ctx['id'] ?? '')]));
+            } else {
+                $stmt = $pdo->prepare("SELECT * FROM `$col` ORDER BY createdAt ASC");   // satıcı/təhsilatçı/kurator və əhatəsiz müştəri
+                $stmt->execute();
+            }
+
+            $isPeople = in_array($col, ['salespeople', 'collectors', 'curators'], true);
             $out = [];
             foreach ($stmt->fetchAll() as $row) {
-                $out[] = row_out($row, $schema);
+                $r = row_out($row, $schema);
+                $rowTier = $tier;
+                // Əhatəli istifadəçi satıcı/təhsilatçı/kurator sətrini YALNIZ öz əhatəsindəkilər üçün tam alır, qalanları yığcam (ad)
+                if ($isPeople && $scoped && !in_array($r['id'], $ctx['scope'][$col] ?? [], true)) { $rowTier = 'ref'; }
+                $out[] = authz_project($r, $col, $rowTier, $schema);
             }
             json_out($out);
             break;
@@ -114,6 +160,10 @@ try {
         case 'POST':
             $body = json_decode(file_get_contents('php://input'), true);
             if (!is_array($body)) { $body = []; }
+            $why = authz_write_denied($ctx, $col, 'POST', $body);
+            if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'POST', null, $body); }
+            if ($why !== '') { api_deny($why); }
+
             $newId = make_uuid();
             $now = date('Y-m-d H:i:s');
             $cols = ['id', 'createdAt'];
@@ -123,6 +173,17 @@ try {
                 $cols[] = "`$name`";
                 $placeholders[] = ":$name";
                 $params[":$name"] = cast_in($body[$name] ?? null, $type);
+            }
+            // Serverin özünün yazdığı sütunlar (müştəri bunları göndərə BİLMƏZ)
+            if ($col === 'contracts') {
+                $cols[] = '`currentCollectorId`'; $placeholders[] = ':__cc';
+                $params[':__cc'] = derive_current_assignee($body['tehsilatciTeyinatlari'] ?? [], 'collectorId');
+                $cols[] = '`currentCuratorId`'; $placeholders[] = ':__ck';
+                $params[':__ck'] = derive_current_assignee($body['kuratorTeyinatlari'] ?? [], 'curatorId');
+            }
+            if ($col === 'customers') {
+                $cols[] = '`createdBy`'; $placeholders[] = ':__cb';
+                $params[':__cb'] = (string) ($ctx['id'] ?? '');
             }
             $sql = "INSERT INTO `$col` (" . implode(',', $cols) . ") VALUES (" . implode(',', $placeholders) . ")";
 
@@ -146,12 +207,27 @@ try {
             if (!$id) { fail(400, 'id parametri lazımdır'); }
             $body = json_decode(file_get_contents('php://input'), true);
             if (!is_array($body)) { $body = []; }
+            $why = authz_write_denied($ctx, $col, 'PUT', $body);
+            if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'PUT', $id, $body); }
+            if ($why !== '') { api_deny($why); }
+
             $sets = [];
             $params = [':id' => $id];
             foreach ($schema as [$name, $type]) {
                 if (array_key_exists($name, $body)) {
                     $sets[] = "`$name` = :$name";
                     $params[":$name"] = cast_in($body[$name], $type);
+                }
+            }
+            // Hazırkı təhsilatçı/kurator tarixçədən YENİDƏN hesablanır (əhatə sütunları həmişə tarixçəyə uyğun qalır)
+            if ($col === 'contracts') {
+                if (array_key_exists('tehsilatciTeyinatlari', $body)) {
+                    $sets[] = '`currentCollectorId` = :__cc';
+                    $params[':__cc'] = derive_current_assignee($body['tehsilatciTeyinatlari'], 'collectorId');
+                }
+                if (array_key_exists('kuratorTeyinatlari', $body)) {
+                    $sets[] = '`currentCuratorId` = :__ck';
+                    $params[':__ck'] = derive_current_assignee($body['kuratorTeyinatlari'], 'curatorId');
                 }
             }
 
@@ -185,6 +261,10 @@ try {
 
         case 'DELETE':
             if (!$id) { fail(400, 'id parametri lazımdır'); }
+            $why = authz_write_denied($ctx, $col, 'DELETE', []);
+            if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'DELETE', $id, []); }
+            if ($why !== '') { api_deny($why); }
+
             $pdo->beginTransaction();
             try {
                 $sel = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id FOR UPDATE");

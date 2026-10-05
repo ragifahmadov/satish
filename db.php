@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/functions.php'; // $SCHEMA və $SQL_TYPES buradan gəlir
 require_once __DIR__ . '/audit.php';     // dəyişiklik logu (audit_log cədvəli $SCHEMA-da deyil)
+require_once __DIR__ . '/permissions.php'; // səlahiyyətlər və müqavilə əhatəsi
 
 // Baza yoxdursa yaradır (ayrı "server" səviyyəli qoşulma ilə).
 function create_database_if_missing($cfg) {
@@ -36,7 +37,7 @@ function get_pdo($skipSync = false) {
 
     $hashFile = sys_get_temp_dir() . '/satis_schema_hash.txt';
     // Log cədvəlinin strukturu ($SCHEMA-da deyil) hash-ə AUDIT_SCHEMA_VERSION ilə qatılır
-    $currentHash = md5(serialize($SCHEMA) . '|' . AUDIT_SCHEMA_VERSION);
+    $currentHash = md5(serialize($SCHEMA) . '|' . AUDIT_SCHEMA_VERSION . '|' . SCOPE_SCHEMA_VERSION);
     // Yoxlama yalnız $SCHEMA dəyişəndə (kodu yeniləyib yenidən deploy edəndə) lazımdır
     $needSync = !$skipSync && (@file_get_contents($hashFile) !== $currentHash);
 
@@ -68,6 +69,7 @@ function get_pdo($skipSync = false) {
             if (@file_get_contents($hashFile) !== $currentHash) {
                 sync_schema($pdo, $SCHEMA, $SQL_TYPES);
                 ensure_audit_table($pdo);
+                ensure_scope_columns($pdo);   // hazırkı təhsilatçı/kurator və müştəridə yaradan sütunları (+ doldurma)
                 @file_put_contents($hashFile, $currentHash); // yalnız uğurlu olduqda
             }
         } finally {
@@ -101,6 +103,7 @@ function sync_columns($pdo, $table, $cols, $sqlTypes) {
     $desired = array_column($cols, 0);
     $desired[] = 'id';
     $desired[] = 'createdAt';
+    foreach (perm_protected_columns($table) as $pc) { $desired[] = $pc; }   // serverin özünün yazdığı sütunlar silinməsin
 
     foreach ($cols as [$name, $type]) {
         if (!in_array($name, $existing, true)) {

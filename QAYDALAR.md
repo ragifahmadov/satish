@@ -33,7 +33,15 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
 - `api.php` cavablarında `Server-Timing` başlığı var (F12 → Network → Timing: auth / db / op / audit / total).
 - Siyahılar üçün tam cədvəl yükləməkdənsə yığcam (aqreqat) sorğular üstünlük təşkil edir.
 
-## Gələcək (planlaşdırılıb): səlahiyyətlər və əhatə
+## Səlahiyyətlər və müqavilə əhatəsi
 
-Yeni ekran və hesabatlar yazılanda: ekranın səlahiyyət açarı elan olunmalı və məlumat YALNIZ mərkəzi
-"görünən müqavilələr" şərtindən keçməlidir (ayrıca, filtrsiz SQL yazmayın).
+1. Nəzarət YALNIZ serverdə tətbiq olunur (`permissions.php`, `api.php`). Brauzerdə düyməni gizlətmək təhlükəsizlik deyil.
+2. Müqavilə, ödəniş və müştəri məlumatı YALNIZ `authz_contract_scope()` şərtindən keçərək oxunur. Yeni hesabat/ekran/eksport üçün
+   ayrıca, süzgəcsiz SQL yazmayın. Əhatə: satıcı/təhsilatçı/kurator üzrə OR, təhsilatçı/kurator üçün hazırkı aktiv təyinat
+   (müqavilədə `currentCollectorId`, `currentCuratorId` — serverin özü tarixçədən hesablayır, müştəri yaza bilməz).
+3. Yeni ekran/hesabat əlavə edəndə: `perm_screens()` + `perm_screen_needs()` (permissions.php), brauzerdə `SCREEN_DEPS` və `can()` gating;
+   eksport varsa `REPORT_EXPORTS` + `export-log.php $REPORTS`. `SCREEN_DEPS` serverin `perm_screen_needs()` xəritəsindən kənara çıxmamalıdır.
+4. Yeni yazma əməliyyatı üçün `authz_write_needs()`-də hüquq elan edin; sahə üzrə hüquq (məs. təyinat, məhkəmə qeydi) ayrıca yoxlanılır.
+5. Yeni istifadəçinin hüququ boşdur (heç nəyə giriş yoxdur) — admin "Səlahiyyətlər" ekranında təyin edir. Boş/pozuq hüquq = giriş yoxdur (qapalı davranış).
+6. Deploy-dan sonra `/authz-selftest.php` işlədilməlidir (hamısı ✅). Hüquq/əhatə dəyişiklikləri və icazə verilməyən cəhdlər loga düşür.
+7. `users` cədvəlinin və əhatə sütunlarının strukturunu dəyişəndə `USERS_SCHEMA_VERSION` / `SCOPE_SCHEMA_VERSION` (permissions.php) artırılmalıdır.

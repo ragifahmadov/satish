@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $pdo->prepare("INSERT INTO users (id,username,passwordHash,role,blocked,createdAt) VALUES (?,?,?,?,0,?)")
                     ->execute([make_uuid(), $username, password_hash($password, PASSWORD_DEFAULT), $role, date('Y-m-d H:i:s')]);
-                $message = 'İstifadəçi yaradıldı: ' . $username;
+                $message = 'İstifadəçi yaradıldı: ' . $username . '. Yeni istifadəçinin heç bir ekrana girişi yoxdur — "Səlahiyyətlər" ekranında hüquq və əhatəni təyin edin.';
                 audit_event($pdo, 'USER_CREATE', 'İstifadəçi yaradıldı: ' . $username . ' (' . ($role === 'admin' ? 'admin' : 'istifadəçi') . ')',
                     ['entity' => 'users', 'entityLabel' => $username]);
             }

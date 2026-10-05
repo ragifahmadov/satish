@@ -152,6 +152,25 @@
   .scroll-y{max-height:58vh;overflow-y:auto;}
   .scroll-y thead th{position:sticky;top:0;background:var(--bg-card);z-index:1;}
   .scope-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--green-bg);color:var(--text);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;}
+  .ua-layout{display:grid;grid-template-columns:270px 1fr;gap:16px;align-items:start;}
+  .ua-users{padding:8px;display:flex;flex-direction:column;gap:6px;}
+  .ua-user{text-align:left;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);padding:10px 12px;cursor:pointer;font-family:inherit;color:var(--text);}
+  .ua-user:hover{border-color:var(--accent);}
+  .ua-user.active{border-color:var(--accent);background:rgba(184,134,63,.1);}
+  .ua-name{font-weight:600;font-size:14px;}
+  .ua-c{text-align:center !important;width:100px;}
+  .ua-extra{display:flex;gap:10px;align-items:flex-start;padding:6px 0;cursor:pointer;font-size:13.5px;}
+  .ua-scope{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:12px;}
+  .ua-col-h{margin-bottom:6px;font-size:13px;}
+  .ua-search{width:100%;margin-bottom:6px;}
+  .ua-list{max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--bg-page);}
+  .ua-item{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px;cursor:pointer;}
+  .ua-preview{margin-top:16px;padding:10px 14px;border-radius:8px;background:var(--green-bg);font-size:13.5px;}
+  .ua-bar{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
+  .ua-ok{color:var(--green);font-weight:600;font-size:13px;margin-right:auto;}
+  .ua-err{color:var(--red);font-weight:600;font-size:13px;margin-right:auto;}
+  .ua-bar .muted{margin-right:auto;font-size:13px;}
+  @media (max-width:900px){ .ua-layout{grid-template-columns:1fr;} .ua-scope{grid-template-columns:1fr;} }
   .navchev{margin-left:auto;transition:transform .15s;}
   .navchev.open{transform:rotate(90deg);}
   .rowactions{display:flex;gap:6px;justify-content:flex-end;}
@@ -213,6 +232,7 @@
         <svg class="navchev" id="admin-group-chev" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
       </button>
       <div id="admin-group-items" style="display:none;">
+        <button class="navbtn navsub" data-action="nav" data-screen="user-access"><span>Səlahiyyətlər</span></button>
         <button class="navbtn navsub" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
         <a href="admin.php" class="navbtn navsub" style="text-decoration:none;"><span>İstifadəçilər</span></a>
         <a href="import-ledger.php" class="navbtn navsub" style="text-decoration:none;"><span>İdxal</span></a>
@@ -279,6 +299,24 @@ const SCREENS=[
   {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
   {id:'reports',label:'Hesabatlar',icon:'reports',children:[{id:'report-overdue',label:'Gecikmiş müqavilələr'}]},
 ];
+
+/* ============ SƏLAHİYYƏTLƏR (brauzer yalnız rahatlıq üçün gizlədir; əsl nəzarət SERVERDƏDİR) ============ */
+let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
+const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
+const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
+function isAdmin(){ return me.role==='admin'; }
+function permKey(id){ return SCREEN_PERM[id]||id; }
+function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(id)]||0)>=level; }   // 1 baxış, 2 dəyişiklik, 3 silmə
+function canExtra(key){ return isAdmin() || !!me.extras[key]; }
+function screenAllowed(id){
+  if(ADMIN_ONLY_SCREENS.includes(id)) return isAdmin();
+  if(id==='reports') return can('report-overdue',1);
+  return can(id,1);
+}
+function pickInitialScreen(){
+  const order=['contracts','dashboard','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','reassign','reassign-curator'];
+  return order.find(screenAllowed)||null;
+}
 
 /* ============ HELPERS ============ */
 function fmtMoney(n){ n=Number(n)||0; return n.toLocaleString('az-AZ',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₼'; }
@@ -351,11 +389,12 @@ function activeCuratorForContract(contract){ return activeAssigneeId(contract,'c
 /* ============ RENDER SHELL ============ */
 function renderNav(){
   const nav=document.getElementById('nav');
-  nav.innerHTML=SCREENS.map(s=>{
-    const inGroup=!!s.children && s.children.some(ch=>ch.id===currentScreen);
+  nav.innerHTML=SCREENS.filter(s=>screenAllowed(s.id)).map(s=>{
+    const kids=(s.children||[]).filter(ch=>screenAllowed(ch.id));
+    const inGroup=kids.some(ch=>ch.id===currentScreen);
     let html=`<button class="navbtn${s.id===currentScreen?' active':''}" data-action="nav" data-screen="${s.id}">${ICONS[s.icon]}<span>${s.label}</span></button>`;
-    if(s.children && (s.id===currentScreen || inGroup)){
-      html+=s.children.map(ch=>`<button class="navbtn navsub${ch.id===currentScreen?' active':''}" data-action="nav" data-screen="${ch.id}"><span>${ch.label}</span></button>`).join('');
+    if(kids.length && (s.id===currentScreen || inGroup)){
+      html+=kids.map(ch=>`<button class="navbtn navsub${ch.id===currentScreen?' active':''}" data-action="nav" data-screen="${ch.id}"><span>${ch.label}</span></button>`).join('');
     }
     return html;
   }).join('');
@@ -366,7 +405,7 @@ let adminGroupOpen=false;
 function syncAdminGroup(){
   const items=document.getElementById('admin-group-items');
   if(!items) return;
-  const open=adminGroupOpen || currentScreen==='audit-log';
+  const open=adminGroupOpen || currentScreen==='audit-log' || currentScreen==='user-access';
   items.style.display=open?'block':'none';
   const chev=document.getElementById('admin-group-chev');
   if(chev) chev.classList.toggle('open',open);
@@ -390,6 +429,7 @@ const SCREEN_DEPS={
   reports:[],
   'report-overdue':['contracts','customers','salespeople','collectors','curators','paymentSums','paymentLast'],
   'audit-log':[],
+  'user-access':[],
 };
 const loadedCols=new Set();
 // Real cədvəl olmayan, yığcam (aqreqat) məlumatlar
@@ -426,6 +466,10 @@ async function ensureContractPayments(contractId){
 
 async function renderScreen(){
   renderNav();
+  if(!screenAllowed(currentScreen)){
+    setContent(`<div class="topbar"><div><h1>İcazə yoxdur</h1><div class="sub">Bu ekrana girişiniz yoxdur. Lazım olarsa admin ilə əlaqə saxlayın.</div></div></div>`);
+    return;
+  }
   const deps=SCREEN_DEPS[currentScreen]||[];
   const needFetch=deps.some(c=>!loadedCols.has(c));
   if(needFetch){
@@ -451,6 +495,7 @@ async function renderScreen(){
     case 'reports': return renderReports();
     case 'report-overdue': return renderReportOverdue();
     case 'audit-log': return renderAuditLog();
+    case 'user-access': return renderUserAccess();
   }
 }
 
@@ -548,7 +593,7 @@ function renderSimpleList(key, filter){
   const {pageRows, totalPages, total}=paginateArr(rows, key);
   setContent(`
     <div class="topbar"><div><h1>${meta.title}</h1><div class="sub">${state[key].length} qeyd</div></div>
-      <button class="btn btn-primary" data-action="add-${key}">${ICONS.plus}&nbsp; Yeni ${meta.singular}</button></div>
+      ${can(key,2)?`<button class="btn btn-primary" data-action="add-${key}">${ICONS.plus}&nbsp; Yeni ${meta.singular}</button>`:''}</div>
     <div class="toolbar"><input class="searchbox" type="search" id="search-${key}" placeholder="Axtar…" value="${esc(filter||'')}"></div>
     <div class="card"><div class="table-scroll"><table>
       <thead><tr><th>Kod</th><th>Soyad</th><th>Ad</th><th>Ata adı</th><th>Vəsiqə seriyası</th><th>Vəsiqə nömrəsi</th><th>FIN</th><th>Qeydiyyat ünvanı</th><th>Faktiki ünvan</th><th>Əlaqə nömrə 1</th><th>Əlaqə nömrə 2</th><th>Qeyd</th><th></th></tr></thead>
@@ -574,8 +619,8 @@ function renderSimpleRows(key, rows){
     <td>${esc(p.elaqeNomre2||'—')}</td>
     <td class="muted">${esc(p.qeyd||'—')}</td>
     <td><div class="rowactions">
-      <button class="iconbtn" data-action="edit-${key}" data-id="${p.id}" title="Redaktə et">${ICONS.edit}</button>
-      <button class="iconbtn" data-action="delete-${key}" data-id="${p.id}" title="Sil">${ICONS.trash}</button>
+      ${can(key,2)?`<button class="iconbtn" data-action="edit-${key}" data-id="${p.id}" title="Redaktə et">${ICONS.edit}</button>`:''}
+      ${can(key,3)?`<button class="iconbtn" data-action="delete-${key}" data-id="${p.id}" title="Sil">${ICONS.trash}</button>`:''}
     </div></td></tr>`).join('');
 }
 function openSimpleForm(key, id){
@@ -658,7 +703,7 @@ function renderCustomers(filter){
   const {pageRows, totalPages, total}=paginateArr(rows, 'customers');
   setContent(`
     <div class="topbar"><div><h1>Müştərilər</h1><div class="sub">${state.customers.length} qeyd</div></div>
-      <button class="btn btn-primary" data-action="add-customers">${ICONS.plus}&nbsp; Yeni müştəri</button></div>
+      ${can('customers',2)?`<button class="btn btn-primary" data-action="add-customers">${ICONS.plus}&nbsp; Yeni müştəri</button>`:''}</div>
     <div class="toolbar"><input class="searchbox" type="search" id="search-customers" placeholder="Ad, FIN və ya telefon…" value="${esc(filter||'')}"></div>
     <div class="card"><div class="table-scroll"><table>
       <thead><tr><th>Kod</th><th>Soyad Ad Ata adı</th><th>Doğum tarixi</th><th>Cinsiyyət</th><th>Vəsiqə seriyası</th><th>Vəsiqə nömrəsi</th><th>FIN</th><th>Qeydiyyat ünvanı</th><th>Faktiki ünvan</th><th>Əlaqə nömrə 1</th><th>Əlaqə nömrə 2</th><th>Qeyd</th><th></th></tr></thead>
@@ -684,8 +729,8 @@ function renderCustomerRows(rows){
     <td>${esc(c.elaqeNomre2||'—')}</td>
     <td class="muted">${esc(c.qeyd||'—')}</td>
     <td><div class="rowactions">
-      <button class="iconbtn" data-action="edit-customers" data-id="${c.id}" title="Redaktə et">${ICONS.edit}</button>
-      <button class="iconbtn" data-action="delete-customers" data-id="${c.id}" title="Sil">${ICONS.trash}</button>
+      ${can('customers',2)?`<button class="iconbtn" data-action="edit-customers" data-id="${c.id}" title="Redaktə et">${ICONS.edit}</button>`:''}
+      ${can('customers',3)?`<button class="iconbtn" data-action="delete-customers" data-id="${c.id}" title="Sil">${ICONS.trash}</button>`:''}
     </div></td></tr>`).join('');
 }
 function openCustomerForm(id){
@@ -787,7 +832,7 @@ function renderContracts(filter){
       <div><h1>Müqavilələr</h1><div class="sub">${state.contracts.length} qeyd</div></div>
       <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;">
         <input class="searchbox" type="search" id="search-contracts" placeholder="Müqavilə № və ya müştəri…" style="width:220px;" value="${esc(filter||'')}">
-        <button class="btn btn-primary" data-action="add-contracts" title="Yeni müqavilə" style="width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${ICONS.plus}</button>
+        ${can('contracts',2)?`<button class="btn btn-primary" data-action="add-contracts" title="Yeni müqavilə" style="width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${ICONS.plus}</button>`:''}
       </div>
     </div>
     <div class="card" style="margin-left:-24px;width:calc(100% + 48px);min-height:calc(100vh - 190px);">
@@ -819,12 +864,12 @@ function renderContractRows(rows){
       <td class="num" style="font-size:11px;">${fmtMoney(monthly)}</td>
       <td class="num"><span class="tag ${debt>0?'tag-red':'tag-green'}">${fmtMoney(debt)}</span></td>
       <td><div class="rowactions">
-        <button class="iconbtn" data-action="edit-contracts" data-id="${c.id}" title="Redaktə et">${ICONS.edit}</button>
+        ${can('contracts',2)?`<button class="iconbtn" data-action="edit-contracts" data-id="${c.id}" title="Redaktə et">${ICONS.edit}</button>`:''}
         <button class="iconbtn" data-action="show-schedule" data-id="${c.id}" title="Ödəniş qrafiki">${ICONS.calendar}</button>
         <button class="iconbtn" data-action="show-assignments" data-id="${c.id}" title="Təhsilatçı təyinatları">${ICONS.reassign}</button>
         <button class="iconbtn" data-action="show-curator-assignments" data-id="${c.id}" title="Kurator təyinatları">${ICONS.curator}</button>
         <button class="iconbtn${hasCourt?' has':''}" data-action="show-court" data-id="${c.id}" title="${hasCourt?'Məhkəmə qeydi ('+c.mehkemeQeydleri.length+')':'Məhkəmə qeydi'}">${ICONS.court}</button>
-        <button class="iconbtn" data-action="delete-contracts" data-id="${c.id}" title="Sil">${ICONS.trash}</button>
+        ${can('contracts',3)?`<button class="iconbtn" data-action="delete-contracts" data-id="${c.id}" title="Sil">${ICONS.trash}</button>`:''}
       </div></td></tr>`;
   }).join('');
 }
@@ -938,12 +983,12 @@ function openCourtModal(contractId){
         <div class="muted" style="font-size:12.5px;margin-bottom:4px;">${fmtDate(e.tarix)}</div>
         <div style="white-space:pre-wrap;word-break:break-word;">${esc(e.qeyd)}</div>
       </div>
-      <button type="button" class="iconbtn" data-action="delete-court-note" data-id="${c.id}" data-idx="${e._i}" title="Qeydi sil">${ICONS.trash}</button>
+      ${canExtra('court-notes')?`<button type="button" class="iconbtn" data-action="delete-court-note" data-id="${c.id}" data-idx="${e._i}" title="Qeydi sil">${ICONS.trash}</button>`:''}
     </div>`).join('') : `<div class="muted" style="margin-bottom:6px;">Bu müqavilə üzrə hələ məhkəmə qeydi yoxdur.</div>`;
   document.getElementById('modal-panel').innerHTML=`
     <h2>Məhkəmə qeydi — ${esc(c.nomre)} <span class="muted" style="font-size:13px;font-weight:400;">— ${esc(customerName(c.customerId))}</span></h2>
     <div style="margin-bottom:16px;max-height:260px;overflow-y:auto;">${listHtml}</div>
-    <form id="court-form" data-id="${c.id}">
+    ${canExtra('court-notes')?`<form id="court-form" data-id="${c.id}">
       <div class="field" style="max-width:200px;"><label>Tarix</label><input type="date" name="tarix" value="${todayIso()}"></div>
       <div class="field"><label>Məhkəmə qeydi</label><textarea name="qeyd" rows="3"></textarea></div>
       <div class="field-err" id="court-err"></div>
@@ -951,7 +996,7 @@ function openCourtModal(contractId){
         <button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button>
         <button type="submit" class="btn btn-primary">Yadda saxla</button>
       </div>
-    </form>`;
+    </form>`:`<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`}`;
   openModal();
 }
 async function submitCourtForm(form){
@@ -1157,19 +1202,19 @@ function renderPaymentsPanel(contract){
       <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Qalıq borc</div><div class="val" style="font-size:18px;color:${debt>0?'var(--red)':'var(--green)'}">${fmtMoney(debt)}</div></div>
       <div class="card kpi" style="padding:10px 14px;background:${scheduleDebt>0?'var(--red)':'var(--green)'}"><div class="lbl" style="margin-bottom:4px;color:#000">Qrafik üzrə borc</div><div class="val" style="font-size:18px;color:#000">${fmtMoney(scheduleDebt)}</div></div>
     </div>
-    <div class="card" style="padding:10px 14px;margin-bottom:12px;">
+    ${can('payments',2)?`<div class="card" style="padding:10px 14px;margin-bottom:12px;">
       <div id="qp-title" style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:8px;">Bugünkü ödənişi qeyd et</div>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
         <div class="field" style="max-width:130px;margin-bottom:0;"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" id="qp-amount"></div>
         <div class="field" style="max-width:160px;margin-bottom:0;"><label>Tarix</label><input type="date" id="qp-date" value="${todayIso()}"></div>
-        <div class="field" style="margin-bottom:0;"><label style="visibility:hidden;">.</label>
+        ${canExtra('goods-return')?`<div class="field" style="margin-bottom:0;"><label style="visibility:hidden;">.</label>
           <label class="check"><input type="checkbox" id="qp-return"> Mal qaytarılması</label>
-        </div>
+        </div>`:''}
         <button class="btn btn-primary" id="qp-btn" data-action="record-payment" data-contract-id="${contract.id}">Qeyd et</button>
       </div>
       <div class="muted" id="qp-return-hint" style="display:none;font-size:12px;margin-top:8px;">Məbləğ cədvələ mənfi (−) rəqəmlə, "Geri qaytarma" növü ilə yazılacaq və müqavilənin satış məbləğindən çıxılacaq.</div>
       <div class="field-err" id="qp-err" style="display:none;margin-top:8px;"></div>
-    </div>
+    </div>`:''}
     <div class="section-title" style="margin:8px 0 8px;">Ödəniş qrafiki</div>
     <div class="card"><div class="table-scroll"><table class="table-compact">
       <thead><tr><th>Ay</th><th class="num">Qrafik üzrə</th><th class="num">Faktiki ödənilən</th><th>Status</th></tr></thead>
@@ -1198,7 +1243,8 @@ async function recordQuickPayment(contractId){
   if(!contract) return;
   const amount=Number(document.getElementById('qp-amount').value);
   const date=document.getElementById('qp-date').value;
-  const isReturn=document.getElementById('qp-return').checked;
+  const rc=document.getElementById('qp-return');
+  const isReturn=!!(rc && rc.checked);
   if(!amount || amount<=0){ errEl.textContent='Məbləği düzgün daxil edin.'; errEl.style.display='block'; return; }
   if(!date){ errEl.textContent='Tarixi seçin.'; errEl.style.display='block'; return; }
   if(isReturn){
@@ -1247,7 +1293,7 @@ function renderReassign(role){
         <div id="reassign-results" class="search-dropdown"></div>
       </div>
     </div>
-    <div class="card" style="padding:18px;margin-bottom:16px;">
+    ${can(role==='curator'?'reassign-curator':'reassign',2)?`<div class="card" style="padding:18px;margin-bottom:16px;">
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
         <div class="field" style="max-width:260px;margin-bottom:0;">
           <label>Yeni ${R.lower}</label>
@@ -1259,7 +1305,7 @@ function renderReassign(role){
         <button class="btn btn-primary" data-action="apply-reassign" data-role="${role}">${R.changeBtn}</button>
       </div>
       <div class="field-err" id="reassign-err" style="display:none;margin-top:8px;"></div>
-    </div>
+    </div>`:'<div class="banner">Bu ekran üzrə yalnız baxış hüququnuz var, dəyişiklik edə bilməzsiniz.</div>'}
     <div class="card"><div class="table-scroll"><table>
       <thead><tr><th>Müqavilə №</th><th>Müştəri</th><th class="num">Satış məbləği</th><th class="num">Ümumi borc</th><th class="num">Qrafik üzrə borc</th><th>Cari ${R.lower}</th><th></th></tr></thead>
       <tbody id="reassign-tbody">${renderReassignRows(role)}</tbody>
@@ -1447,10 +1493,10 @@ function renderReports(){
   setContent(`
     <div class="topbar"><div><h1>Hesabatlar</h1><div class="sub">Hesabat formasını seçin</div></div></div>
     <div class="kpis" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));">
-      <div class="card" data-action="nav" data-screen="report-overdue" style="padding:18px 20px;cursor:pointer;">
+      ${can('report-overdue',1)?`<div class="card" data-action="nav" data-screen="report-overdue" style="padding:18px 20px;cursor:pointer;">
         <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Gecikmiş müqavilələr</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">Son ödənişindən 2 ay və daha çox keçən, borcu qalan müqavilələr</div>
-      </div>
+      </div>`:''}
     </div>
   `);
 }
@@ -1598,7 +1644,7 @@ function renderReportOverdue(){
     <div class="topbar">
       <div><h1>Gecikmiş müqavilələr</h1><div class="sub">Son ödənişindən ${OVERDUE_MIN_MONTHS} ay və daha çox keçən, borcu qalan müqavilələr</div></div>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="overdue">Excelə yüklə</button>
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="overdue">Excelə yüklə</button>`:''}
         <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
       </div>
     </div>
@@ -1846,6 +1892,7 @@ const AUDIT_ACTIONS={
   USER_CREATE:['İstifadəçi yaradıldı','tag-gray'], USER_BLOCK:['İstifadəçi bloklandı','tag-red'],
   USER_UNBLOCK:['Blokdan çıxarıldı','tag-green'], USER_PASSWORD:['Şifrə dəyişdi','tag-amber'],
   USER_DELETE:['İstifadəçi silindi','tag-red'], EXPORT:['Excel export','tag-accent'],
+  USER_PERMISSIONS:['Səlahiyyət dəyişdi','tag-amber'], ACCESS_DENIED:['İcazə verilmədi','tag-red'],
 };
 const AUDIT_ENTITIES={contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
 
@@ -1907,7 +1954,7 @@ async function renderAuditLog(){
   setContent(`
     <div class="topbar"><div><h1>Dəyişiklik logu</h1><div class="sub">Sistemdə aparılan bütün dəyişikliklər (yalnız admin görür)</div></div></div>
     <div class="chips">
-      ${chip('','Hamısı')}${chip('delete','Silmələr')}${chip('failed','Uğursuz girişlər')}${chip('batch','Toplu əməliyyatlar')}${chip('users','İstifadəçi / səlahiyyət dəyişiklikləri')}${chip('export','Excel export-lar')}
+      ${chip('','Hamısı')}${chip('delete','Silmələr')}${chip('failed','Uğursuz girişlər')}${chip('batch','Toplu əməliyyatlar')}${chip('users','İstifadəçi / səlahiyyət dəyişiklikləri')}${chip('export','Excel export-lar')}${chip('denied','İcazə verilməyənlər')}
     </div>
     <div class="card" style="padding:16px 18px;margin-bottom:12px;">
       <div class="filters">
@@ -2014,7 +2061,7 @@ function auditDetailHtml(r){
       ${r.opId?`<div class="muted" style="font-size:12px;">Əməliyyat nömrəsi: ${esc(r.opId)}</div>`:''}
     </div>
     ${isBatch?`<div class="muted" style="font-size:12.5px;margin-top:10px;">Bu toplu əməliyyat ${r.opCount} dəyişiklikdən ibarətdir. Aşağıda onlardan biri göstərilir, hamısı üçün "Bu əməliyyatın bütün ${r.opCount} dəyişikliyi" düyməsinə basın.</div>`:''}
-    ${auditChangesTable(r.changes, r.action==='UPDATE', ['EXPORT','IMPORT','FIX'].includes(r.action)?'Dəyər':'Yeni')}
+    ${auditChangesTable(r.changes, ['UPDATE','USER_PERMISSIONS'].includes(r.action), ['EXPORT','IMPORT','FIX'].includes(r.action)?'Dəyər':'Yeni')}
     <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${b.join('')}</div>
       <button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button>
@@ -2093,6 +2140,219 @@ function renderHistory(){
   const more=(remaining>0)?`<button type="button" class="btn btn-ghost btn-sm" data-action="hist-more"${hist.loading?' disabled':''}>Daha çox yüklə (${remaining} qalıb)</button>`:'';
   panel.innerHTML=`<h2>Tarixçə — ${esc(hist.title)}</h2>${body}
     <div class="modal-actions" style="justify-content:space-between;"><div>${more}</div><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`;
+}
+
+/* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
+   Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
+   (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
+const UA_MAX={dashboard:1,'debt-inquiry':1,'report-overdue':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
+const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)'};
+const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
+let ua={loaded:false,users:[],people:{},screens:[],extras:[],selectedId:null,orig:null,draft:null,preview:null,msg:'',msgOk:true};
+let uaPreviewTimer=null, uaPreviewReq=0;
+
+function uaClone(o){ return JSON.parse(JSON.stringify(o)); }
+function uaNorm(d){ const n=uaClone(d); UA_SCOPE_TYPES.forEach(([k])=>{ n.scope[k]=[...n.scope[k]].sort(); }); return JSON.stringify(n); }
+function uaDirty(){ return !!ua.draft && !!ua.orig && uaNorm(ua.draft)!==uaNorm(ua.orig); }
+function uaUser(){ return ua.users.find(x=>x.id===ua.selectedId)||null; }
+async function uaApi(url,body){
+  const r=await fetch(url, body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error((j&&j.error)||('Xəta ('+r.status+')'));
+  return j;
+}
+function uaSummary(u){
+  if(u.role==='admin') return 'Bütün hüquqlar';
+  const n=Object.values(u.screens).filter(v=>v>0).length;
+  const sc=u.scope.mode==='all'?'bütün müqavilələr':((u.scope.salespeople.length+u.scope.collectors.length+u.scope.curators.length)+' seçim');
+  return n+' ekran · '+sc;
+}
+
+async function renderUserAccess(){
+  if(!ua.loaded){
+    setContent(`<div class="topbar"><div><h1>Səlahiyyətlər</h1><div class="sub">Yüklənir…</div></div></div>`);
+    try{
+      const j=await uaApi('users-api.php?action=list');
+      ua.users=j.users; ua.people=j.people; ua.screens=j.screens; ua.extras=j.extras; ua.loaded=true;
+    }catch(err){
+      setContent(`<div class="topbar"><div><h1>Səlahiyyətlər</h1></div></div><div class="banner">${esc(err.message)}</div>`);
+      return;
+    }
+  }
+  if(currentScreen!=='user-access') return;
+  drawUserAccess();
+}
+
+function uaUsersListHtml(){
+  return ua.users.map(u=>{
+    const badges=[
+      u.role==='admin'?'<span class="tag tag-accent">Admin</span>':'',
+      u.blocked?'<span class="tag tag-red">Bloklanıb</span>':'',
+      (u.role!=='admin' && !u.configured)?'<span class="tag tag-amber">Hüquq təyin olunmayıb</span>':'',
+    ].filter(Boolean).join(' ');
+    return `<button type="button" class="ua-user${u.id===ua.selectedId?' active':''}" data-action="ua-select" data-id="${esc(u.id)}">
+      <div class="ua-name">${esc(u.username)}</div><div class="muted" style="font-size:12px;margin:2px 0 4px;">${esc(uaSummary(u))}</div><div>${badges}</div></button>`;
+  }).join('');
+}
+
+function drawUserAccess(){
+  setContent(`
+    <div class="topbar"><div><h1>Səlahiyyətlər</h1><div class="sub">İstifadəçilərin ekran hüquqları və hansı müqavilələri görə biləcəyi (yalnız admin)</div></div>
+      <a class="btn btn-ghost" href="admin.php" style="text-decoration:none;">İstifadəçi yarat / şifrə / blok →</a></div>
+    <div class="ua-layout">
+      <div class="card ua-users" id="ua-users">${uaUsersListHtml()||'<div class="empty">İstifadəçi yoxdur</div>'}</div>
+      <div id="ua-editor">${uaEditorHtml()}</div>
+    </div>`);
+  uaSchedulePreview(0);
+}
+
+function uaScopeListHtml(key,label){
+  const people=ua.people[key]||[];
+  const chosen=new Set(ua.draft.scope[key]);
+  const items=people.map(p=>`<label class="ua-item" data-name="${esc(p.name.toLowerCase())}"><input type="checkbox" data-ua-person="${key}" value="${esc(p.id)}"${chosen.has(p.id)?' checked':''}> <span>${esc(p.name)}</span></label>`).join('')
+    || '<div class="muted" style="padding:8px;font-size:12.5px;">Siyahı boşdur</div>';
+  return `<div class="ua-col">
+    <div class="ua-col-h"><strong>${label}</strong> <span class="muted" id="ua-count-${key}">(${chosen.size} seçilib)</span></div>
+    <input type="search" class="ua-search" data-ua-search="${key}" placeholder="Axtar…">
+    <div class="ua-list" id="ua-list-${key}">${items}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button type="button" class="btn btn-ghost btn-sm" data-action="ua-all" data-key="${key}">Hamısı</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="ua-none" data-key="${key}">Heç biri</button></div>
+  </div>`;
+}
+
+function uaBarHtml(){
+  const dirty=uaDirty();
+  return `${ua.msg?`<span class="${ua.msgOk?'ua-ok':'ua-err'}">${esc(ua.msg)}</span>`:(dirty?'<span class="muted">Yadda saxlanılmamış dəyişiklik var</span>':'')}
+    <button type="button" class="btn btn-ghost" data-action="ua-cancel"${dirty?'':' disabled'}>Ləğv et</button>
+    <button type="button" class="btn btn-primary" data-action="ua-save"${dirty?'':' disabled'}>Yadda saxla</button>`;
+}
+
+function uaEditorHtml(){
+  const u=uaUser();
+  if(!u) return `<div class="card" style="padding:30px;"><div class="muted">Soldan istifadəçi seçin.</div></div>`;
+  if(u.role==='admin') return `<div class="card" style="padding:24px 26px;"><h2 style="margin:0 0 8px;font-size:17px;">${esc(u.username)}</h2>
+    <p class="muted" style="margin:0;line-height:1.6;">Admin hesabı bütün ekranlara tam hüquqla və bütün müqavilələrə malikdir; məhdudlaşdırıla bilməz.</p></div>`;
+  const d=ua.draft;
+  const rows=ua.screens.map(s=>{
+    const lv=d.screens[s.key]||0, max=UA_MAX[s.key]||3;
+    const cells=UA_LEVELS.map(([L])=>`<td class="ua-c"><input type="checkbox" data-ua-screen="${s.key}" data-lv="${L}"${lv>=L?' checked':''}${L>max?' disabled':''}></td>`).join('');
+    return `<tr data-ua-row="${s.key}"><td>${esc(s.label)}</td>${cells}</tr>`;
+  }).join('');
+  const extras=ua.extras.map(x=>`<label class="ua-extra"><input type="checkbox" data-ua-extra="${x.key}"${d.extras[x.key]?' checked':''}>
+      <span><strong>${esc(x.label)}</strong><span class="muted" style="font-size:12px;"> — ${esc(UA_EXTRA_HINT[x.key]||'')}</span></span></label>`).join('');
+  const selected=d.scope.mode==='selected';
+  return `<div class="card" style="padding:20px 22px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+      <h2 style="margin:0;font-size:17px;">${esc(u.username)}</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-ghost btn-sm" data-action="ua-preset" data-preset="view">Hamısına yalnız baxış</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="ua-preset" data-preset="full">Tam hüquq</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="ua-preset" data-preset="none">Hamısını sil</button>
+      </div></div>
+    <div class="section-title" style="margin:0 0 8px;">Ekran hüquqları</div>
+    <div class="table-scroll"><table class="table-compact"><thead><tr><th>Ekran</th><th class="ua-c">Baxış</th><th class="ua-c">Dəyişiklik</th><th class="ua-c">Silmə</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:6px;">Dəyişiklik hüququ Baxışı, Silmə isə hər ikisini özündə saxlayır.</div>
+    <div class="section-title" style="margin:20px 0 6px;">Ayrıca hüquqlar</div>
+    <div>${extras}</div>
+    <div class="section-title" style="margin:20px 0 8px;">Hansı müqavilələri görür</div>
+    <label class="ua-extra"><input type="radio" name="ua-mode" data-ua-mode="all"${selected?'':' checked'}> <span><strong>Bütün müqavilələr</strong></span></label>
+    <label class="ua-extra"><input type="radio" name="ua-mode" data-ua-mode="selected"${selected?' checked':''}> <span><strong>Yalnız seçilənlər</strong><span class="muted" style="font-size:12px;"> — müqavilə seçilmiş satıcılardan, təhsilatçılardan və ya kuratorlardan birinə aiddirsə görünür (təhsilatçı/kurator üçün hazırkı aktiv təyinat)</span></span></label>
+    ${selected?`<div class="ua-scope">${UA_SCOPE_TYPES.map(([k,l])=>uaScopeListHtml(k,l)).join('')}</div>`:''}
+    <div class="ua-preview" id="ua-preview">${uaPreviewHtml()}</div>
+    <div class="ua-bar" id="ua-bar">${uaBarHtml()}</div>
+  </div>`;
+}
+
+function uaPreviewHtml(){
+  const p=ua.preview;
+  if(!p) return '<span class="muted">Əhatə hesablanır…</span>';
+  if(p.error) return `<span class="ua-err">${esc(p.error)}</span>`;
+  const d=ua.draft;
+  if(d && d.scope.mode==='selected' && !d.scope.salespeople.length && !d.scope.collectors.length && !d.scope.curators.length){
+    return '<strong>Heç nə seçilməyib — bu istifadəçi heç bir müqavilə görməyəcək.</strong>';
+  }
+  return `Bu istifadəçi <strong>${p.contracts}</strong> müqavilə (cəmi ${p.totalContracts}-dən) və <strong>${p.customers}</strong> müştəri görəcək <span class="muted">· sorğu ${p.ms} ms</span>`;
+}
+
+function uaRefreshBar(){
+  const bar=document.getElementById('ua-bar'); if(bar) bar.innerHTML=uaBarHtml();
+  const list=document.getElementById('ua-users'); if(list) list.innerHTML=uaUsersListHtml();
+}
+function uaSchedulePreview(delay){
+  clearTimeout(uaPreviewTimer);
+  const u=uaUser();
+  if(!u || u.role==='admin' || !ua.draft) return;
+  uaPreviewTimer=setTimeout(async ()=>{
+    const my=++uaPreviewReq;
+    try{
+      const j=await uaApi('users-api.php?action=preview',{scope:ua.draft.scope});
+      if(my!==uaPreviewReq) return;
+      ua.preview=j;
+    }catch(err){ if(my!==uaPreviewReq) return; ua.preview={error:err.message}; }
+    const el=document.getElementById('ua-preview'); if(el) el.innerHTML=uaPreviewHtml();
+  }, delay===undefined?300:delay);
+}
+function uaRedrawEditor(){
+  const ed=document.getElementById('ua-editor'); if(ed) ed.innerHTML=uaEditorHtml();
+  uaRefreshBar();
+  uaSchedulePreview(0);
+}
+function uaSelect(id){
+  if(uaDirty() && !confirm('Yadda saxlanılmamış dəyişikliklər var. Başqa istifadəçiyə keçilsin?')) return;
+  const u=ua.users.find(x=>x.id===id); if(!u) return;
+  ua.selectedId=id; ua.msg=''; ua.preview=null;
+  if(u.role==='admin'){ ua.draft=null; ua.orig=null; }
+  else {
+    ua.orig={screens:uaClone(u.screens),extras:uaClone(u.extras),scope:uaClone(u.scope)};
+    ua.draft=uaClone(ua.orig);
+  }
+  const list=document.getElementById('ua-users'); if(list) list.innerHTML=uaUsersListHtml();
+  const ed=document.getElementById('ua-editor'); if(ed) ed.innerHTML=uaEditorHtml();
+  uaSchedulePreview(0);
+}
+function uaPreset(p){
+  if(!ua.draft) return;
+  ua.draft.screens={};
+  ua.screens.forEach(s=>{ ua.draft.screens[s.key]= p==='none'?0 : p==='view'?1 : (UA_MAX[s.key]||3); });
+  ua.extras.forEach(x=>{ ua.draft.extras[x.key]= (p==='full'); });
+  ua.msg=''; uaRedrawEditor();
+}
+function uaSetLevel(key,L,checked){
+  const max=UA_MAX[key]||3;
+  ua.draft.screens[key]=Math.min(max, checked?L:L-1);
+  const lv=ua.draft.screens[key];
+  document.querySelectorAll(`[data-ua-screen="${key}"]`).forEach(cb=>{ cb.checked=lv>=Number(cb.dataset.lv); });
+  ua.msg=''; uaRefreshBar();
+}
+function uaTogglePerson(key,id,checked){
+  const set=new Set(ua.draft.scope[key]);
+  if(checked) set.add(id); else set.delete(id);
+  ua.draft.scope[key]=[...set];
+  const c=document.getElementById('ua-count-'+key); if(c) c.textContent='('+set.size+' seçilib)';
+  ua.msg=''; uaRefreshBar(); uaSchedulePreview();
+}
+function uaSelectAll(key,all){
+  ua.draft.scope[key]= all ? (ua.people[key]||[]).map(p=>p.id) : [];
+  document.querySelectorAll(`[data-ua-person="${key}"]`).forEach(cb=>{ cb.checked=all; });
+  const c=document.getElementById('ua-count-'+key); if(c) c.textContent='('+ua.draft.scope[key].length+' seçilib)';
+  ua.msg=''; uaRefreshBar(); uaSchedulePreview();
+}
+function uaCancel(){
+  if(!ua.orig) return;
+  ua.draft=uaClone(ua.orig); ua.msg=''; uaRedrawEditor();
+}
+async function uaSave(){
+  const u=uaUser(); if(!u || !ua.draft) return;
+  try{
+    const j=await uaApi('users-api.php?action=save',{userId:u.id, screens:ua.draft.screens, extras:ua.draft.extras, scope:ua.draft.scope});
+    if(j.scope) ua.draft.scope=Object.assign({mode:ua.draft.scope.mode}, {salespeople:j.scope.salespeople,collectors:j.scope.collectors,curators:j.scope.curators});
+    u.screens=uaClone(ua.draft.screens); u.extras=uaClone(ua.draft.extras); u.scope=uaClone(ua.draft.scope); u.configured=true;
+    ua.orig=uaClone(ua.draft);
+    ua.msg=j.changed===false?'Dəyişiklik yoxdur':'Yadda saxlandı ✓'; ua.msgOk=true;
+  }catch(err){ ua.msg=err.message; ua.msgOk=false; }
+  uaRedrawEditor();
 }
 
 /* ============ MODAL PLUMBING ============ */
@@ -2175,6 +2435,12 @@ document.addEventListener('click', async (e)=>{
     await withButtonLoading(btn, async()=>{ try{ await exportReport(btn.dataset.report); }catch(err){ alert(err.message); } });
     return;
   }
+  if(action==='ua-select'){ uaSelect(id); return; }
+  if(action==='ua-preset'){ uaPreset(btn.dataset.preset); return; }
+  if(action==='ua-all'){ uaSelectAll(btn.dataset.key,true); return; }
+  if(action==='ua-none'){ uaSelectAll(btn.dataset.key,false); return; }
+  if(action==='ua-cancel'){ uaCancel(); return; }
+  if(action==='ua-save'){ await withButtonLoading(btn, ()=>uaSave()); return; }
   if(action==='toggle-admin-group'){ adminGroupOpen=!adminGroupOpen; syncAdminGroup(); return; }
   if(action==='audit-kind'){ auditFilters.kind=btn.dataset.kind; pageNum['audit-log']=1; renderAuditLog(); return; }
   if(action==='audit-reset'){ auditFilters=auditDefaultFilters(); pageNum['audit-log']=1; renderAuditLog(); return; }
@@ -2212,11 +2478,23 @@ document.addEventListener('submit', async (e)=>{
 });
 // "Mal qaytarılması" işarəsi dəyişəndə ödəniş blokunun görünüşünü yenilə
 document.addEventListener('change', (e)=>{
-  if(e.target && e.target.id==='qp-return'){ updateReturnToggleUi(e.target.checked); }
+  const t=e.target; if(!t) return;
+  if(t.id==='qp-return'){ updateReturnToggleUi(t.checked); return; }
+  const ds=t.dataset||{};
+  if(ds.uaScreen && ua.draft){ uaSetLevel(ds.uaScreen, Number(ds.lv), t.checked); return; }
+  if(ds.uaExtra && ua.draft){ ua.draft.extras[ds.uaExtra]=t.checked; ua.msg=''; uaRefreshBar(); return; }
+  if(ds.uaMode && ua.draft){ ua.draft.scope.mode=ds.uaMode; ua.msg=''; uaRedrawEditor(); return; }
+  if(ds.uaPerson && ua.draft){ uaTogglePerson(ds.uaPerson, t.value, t.checked); return; }
 });
 document.addEventListener('input', (e)=>{
   const of=e.target && e.target.dataset ? e.target.dataset.ofilter : null;
   if(of){ overdueFilters[of]=e.target.value; pageNum['report-overdue']=1; refreshOverdueTable(); return; }
+  const us=e.target && e.target.dataset ? e.target.dataset.uaSearch : null;
+  if(us){
+    const q=e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#ua-list-'+us+' .ua-item').forEach(it=>{ it.style.display=(!q||it.dataset.name.includes(q))?'':'none'; });
+    return;
+  }
   const af=e.target && e.target.dataset ? e.target.dataset.afilter : null;
   if(af){
     auditFilters[af]=e.target.value; pageNum['audit-log']=1;
@@ -2303,19 +2581,35 @@ async function apiDelete(col,id){
   return r.json();
 }
 
-renderNav();
+// Əvvəl istifadəçinin hüquqları (whoami) alınır, sonra ona açıq olan ilk ekran göstərilir
+function applyMe(u){
+  me={username:u.username||'',role:u.role||'user',screens:u.screens||{},extras:u.extras||{},scopeMode:u.scopeMode||'selected'};
+  currentUsername=me.username;
+  document.getElementById('user-info').textContent=me.username+' ('+(isAdmin()?'Admin':'İstifadəçi')+')';
+  if(isAdmin()) document.body.classList.add('is-admin');
+}
 setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Serverə qoşulur</div></div></div>`);
-renderScreen().catch(err=>{
+(async function boot(){
+  let u=null;
+  try{ const r=await fetch('whoami.php'); u=r.ok?await r.json():null; }catch(e){ u=null; }
+  if(!u || !u.username){
+    renderNav();
+    setContent(`<div class="topbar"><div><h1>Sessiya bitib</h1></div></div><div class="banner">Zəhmət olmasa yenidən <a href="login.php">daxil olun</a>.</div>`);
+    return;
+  }
+  applyMe(u);
+  const first=pickInitialScreen();
+  if(!first){
+    currentScreen='none';
+    renderNav();
+    setContent(`<div class="topbar"><div><h1>Hələ icazə verilməyib</h1><div class="sub">Hesabınıza hələ heç bir ekran açılmayıb.</div></div></div><div class="banner">Lazım olan ekranların açılması üçün admin ilə əlaqə saxlayın.</div>`);
+    return;
+  }
+  currentScreen=first;
+  await renderScreen();
+})().catch(err=>{
   setContent(`<div class="topbar"><div><h1>Serverlə əlaqə qurulmadı</h1></div></div><div class="banner">${esc(err.message)}. Səhifəni yeniləyin (F5). Xəta davam etsə, api.php faylının və data qovluğunun düzgün yerləşdiyini yoxlayın.</div>`);
 });
-// Avtomatik yenilənmə ləğv edilib — istifadəçi "Yenilə" düyməsi ilə əl ilə yeniləyir.
-
-fetch('whoami.php').then(r=>r.json()).then(u=>{
-  if(!u || !u.username) return;
-  currentUsername = u.username;
-  document.getElementById('user-info').textContent = u.username + ' (' + (u.role==='admin'?'Admin':'İstifadəçi') + ')';
-  if(u.role==='admin'){ document.body.classList.add('is-admin'); }
-}).catch(()=>{});
 </script>
 </body>
 </html>

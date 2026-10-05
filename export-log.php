@@ -25,15 +25,22 @@ require_login(true);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail(405, 'Yalnız POST'); }
 
+// hesabat açarı => [ad, ona baxış üçün lazım olan ekran açarı (permissions.php)]
 $REPORTS = [
-    'overdue' => 'Gecikmiş müqavilələr',
+    'overdue' => ['Gecikmiş müqavilələr', 'report-overdue'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);
 if (!is_array($in)) { fail(400, 'Yanlış sorğu'); }
 $key = (string) ($in['report'] ?? '');
 if (!isset($REPORTS[$key])) { fail(400, 'Naməlum hesabat'); }
-$title = $REPORTS[$key];
+$title = $REPORTS[$key][0];
+$ctx = current_user();
+// Export: həm hesabata baxış, həm də "Excelə export" hüququ lazımdır
+if (!authz_can($ctx, $REPORTS[$key][1], 1) || !authz_extra($ctx, 'export')) {
+    audit_event(get_pdo(), 'ACCESS_DENIED', 'İcazə verilmədi: Excel export — ' . $title, ['entity' => 'reports']);
+    fail(403, 'Bu hesabatı Excelə yükləmək üçün icazəniz yoxdur.');
+}
 $rows = max(0, (int) ($in['rows'] ?? 0));
 
 $changes = [['f' => 'rows', 'l' => 'Sətir sayı', 'o' => '', 'n' => (string) $rows]];

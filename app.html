@@ -137,6 +137,23 @@
   .tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500;font-family:var(--font-mono);}
   .tag-red{background:var(--red-bg);color:var(--red);}
   .tag-green{background:var(--green-bg);color:var(--green);}
+  .tag-amber{background:#F6EBD3;color:#8A6530;}
+  .tag-gray{background:rgba(120,110,95,.14);color:var(--text-muted);}
+  .tag-accent{background:var(--accent);color:#2A1D08;}
+  body:not(.is-admin) .admin-only{display:none !important;}
+  .modal-panel.wide{max-width:900px;}
+  tr.clickable{cursor:pointer;}
+  tr.clickable:hover td{background:rgba(184,134,63,.07);}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+  .chip{padding:6px 13px;border:1px solid var(--border);border-radius:20px;background:var(--bg-card);color:var(--text);font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .chip:hover{border-color:var(--accent);}
+  .chip.active{background:var(--accent);border-color:var(--accent);color:#2A1D08;font-weight:600;}
+  .diff td{vertical-align:top;white-space:pre-wrap;word-break:break-word;}
+  .scroll-y{max-height:58vh;overflow-y:auto;}
+  .scroll-y thead th{position:sticky;top:0;background:var(--bg-card);z-index:1;}
+  .scope-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--green-bg);color:var(--text);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:13px;}
+  .navchev{margin-left:auto;transition:transform .15s;}
+  .navchev.open{transform:rotate(90deg);}
   .rowactions{display:flex;gap:6px;justify-content:flex-end;}
   .iconbtn{background:var(--bg-page);border:1px solid var(--border);cursor:pointer;padding:7px;color:var(--text);border-radius:7px;line-height:0;}
   .iconbtn svg{width:18px;height:18px;display:block;stroke-width:2;}
@@ -189,22 +206,20 @@
       <span>Yenilə</span>
     </button>
     <div class="sidebar-foot" id="user-info">Ortaq baza</div>
-    <a href="admin.php" class="navbtn" id="admin-link" style="display:none;text-decoration:none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M4.5 20c0-3.3 3-5.3 7.5-5.3s7.5 2 7.5 5.3"/><path d="M19 4l1.3 1.3L17 8.5"/></svg>
-      <span>Admin paneli</span>
-    </a>
-    <a href="import-ledger.php" class="navbtn" id="import-link" style="display:none;text-decoration:none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
-      <span>İdxal</span>
-    </a>
-    <a href="fix-qrafik.php" class="navbtn" id="fixq-link" style="display:none;text-decoration:none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-      <span>Qrafik ayını düzəlt</span>
-    </a>
-    <a href="reset.php" class="navbtn" id="reset-link" style="display:none;text-decoration:none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7"/></svg>
-      <span>Bazanı təmizlə</span>
-    </a>
+    <div id="admin-group" class="admin-only">
+      <button class="navbtn" id="admin-group-btn" data-action="toggle-admin-group">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 3v5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6l7-3z"/><path d="M9.5 12l2 2 3.5-4"/></svg>
+        <span>Administrasiya</span>
+        <svg class="navchev" id="admin-group-chev" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <div id="admin-group-items" style="display:none;">
+        <button class="navbtn navsub" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
+        <a href="admin.php" class="navbtn navsub" style="text-decoration:none;"><span>İstifadəçilər</span></a>
+        <a href="import-ledger.php" class="navbtn navsub" style="text-decoration:none;"><span>İdxal</span></a>
+        <a href="fix-qrafik.php" class="navbtn navsub" style="text-decoration:none;"><span>Qrafik ayını düzəlt</span></a>
+        <a href="reset.php" class="navbtn navsub" style="text-decoration:none;"><span>Bazanı təmizlə</span></a>
+      </div>
+    </div>
     <a href="logout.php" class="navbtn" style="text-decoration:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 19H5a2 2 0 01-2-2V7a2 2 0 012-2h7"/></svg>
       <span>Çıxış</span>
@@ -344,6 +359,18 @@ function renderNav(){
     }
     return html;
   }).join('');
+  syncAdminGroup();
+}
+// "Administrasiya" qrupu: log ekranındaykən avtomatik açıq, əks halda düymə ilə açılıb-bağlanır
+let adminGroupOpen=false;
+function syncAdminGroup(){
+  const items=document.getElementById('admin-group-items');
+  if(!items) return;
+  const open=adminGroupOpen || currentScreen==='audit-log';
+  items.style.display=open?'block':'none';
+  const chev=document.getElementById('admin-group-chev');
+  if(chev) chev.classList.toggle('open',open);
+  document.querySelectorAll('#admin-group-items [data-screen]').forEach(b=>b.classList.toggle('active', b.dataset.screen===currentScreen));
 }
 function setContent(html){ document.getElementById('content').innerHTML=html; }
 
@@ -362,6 +389,7 @@ const SCREEN_DEPS={
   'debt-inquiry':['customers','contracts','collectors','paymentSums'],
   reports:[],
   'report-overdue':['contracts','customers','salespeople','collectors','curators','paymentSums','paymentLast'],
+  'audit-log':[],
 };
 const loadedCols=new Set();
 // Real cədvəl olmayan, yığcam (aqreqat) məlumatlar
@@ -422,6 +450,7 @@ async function renderScreen(){
     case 'debt-inquiry': return renderDebtInquiry();
     case 'reports': return renderReports();
     case 'report-overdue': return renderReportOverdue();
+    case 'audit-log': return renderAuditLog();
   }
 }
 
@@ -492,7 +521,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -712,9 +741,12 @@ function openCustomerForm(id){
         </div>
       </div>
       <div class="field"><label>Qeyd</label><textarea name="qeyd" rows="2">${esc(rec?.qeyd||'')}</textarea></div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
-        <button type="submit" class="btn btn-primary">Yadda saxla</button>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <div>${rec?`<button type="button" class="btn btn-ghost admin-only" data-action="show-history" data-kind="customers" data-id="${rec.id}" data-title="${esc(fullName(rec))}">Tarixçə</button>`:''}</div>
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+          <button type="submit" class="btn btn-primary">Yadda saxla</button>
+        </div>
       </div>
     </form>`;
   openModal();
@@ -830,9 +862,12 @@ function openContractForm(id){
         <div class="field"><label>Müddət (ay)</label><input required type="number" step="1" min="1" name="muddet" value="${esc(rec?.muddet??'')}"></div>
       </div>
       <div class="field"><label>Qeyd</label><textarea name="qeyd" rows="2">${esc(rec?.qeyd||'')}</textarea></div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
-        <button type="submit" class="btn btn-primary">Yadda saxla</button>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <div>${rec?`<button type="button" class="btn btn-ghost admin-only" data-action="show-history" data-kind="contract" data-id="${rec.id}" data-title="Müqavilə № ${esc(rec.nomre)}">Tarixçə</button>`:''}</div>
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+          <button type="submit" class="btn btn-primary">Yadda saxla</button>
+        </div>
       </div>
     </form>`;
   openModal();
@@ -1110,7 +1145,10 @@ function renderPaymentsPanel(contract){
   setContent(`
     <div class="topbar" style="margin-bottom:12px;">
       <div><h1>${esc(contract.nomre)} <span class="sub" style="font-size:15px;font-weight:400;">— ${esc(customerName(contract.customerId))}</span></h1></div>
-      <button class="btn btn-ghost" data-action="pay-change-contract">Başqa müqavilə</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost admin-only" data-action="show-history" data-kind="contract" data-id="${contract.id}" data-title="Müqavilə № ${esc(contract.nomre)} — ${esc(customerName(contract.customerId))}">Tarixçə</button>
+        <button class="btn btn-ghost" data-action="pay-change-contract">Başqa müqavilə</button>
+      </div>
     </div>
     <div class="kpis" style="margin-bottom:12px;">
       <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Satışın məbləği</div><div class="val" style="font-size:18px;">${fmtMoney(meblag)}</div></div>
@@ -1299,6 +1337,7 @@ async function applyReassign(role){
   if(!reassignIds[role].length){ errEl.textContent='Siyahıya ən azı bir müqavilə əlavə edin.'; errEl.style.display='block'; return; }
   const today=todayIso();
   let sameCount=0;
+  const op={opId:uuidv4(), opLabel:R.label+' dəyişikliyi → '+roleName(role,newId)};
   try{
     for(const id of reassignIds[role]){
       const c=byId(state.contracts,id);
@@ -1306,7 +1345,7 @@ async function applyReassign(role){
       if(activeAssigneeId(c,role)===newId) sameCount++;
       const list=(c[R.field]||[]).map(a=>a.son?a:{...a,son:today});
       list.push({[R.idKey]:newId, baslama:today, son:''});
-      const saved=await apiUpdate('contracts', c.id, {[R.field]:list});
+      const saved=await apiUpdate('contracts', c.id, {[R.field]:list}, op);
       upsertInState('contracts', saved);
     }
     reassignIds[role]=[];
@@ -1497,20 +1536,38 @@ function filterOverdue(rows, f){
   });
 }
 
+// Sütunların tək elanı: th/td ekran üçün, xl/type/width/val Excel üçün (hər ikisi eyni mənbədən qurulur)
+const OVERDUE_COLUMNS=[
+  {th:'<th>№</th>', xl:'Müqavilə №', type:'text', width:14, td:r=>`<td>${esc(r.c.nomre)}</td>`, val:r=>r.c.nomre},
+  {th:'<th>Tarix</th>', xl:'Müqavilə tarixi', type:'date', width:16, td:r=>`<td>${fmtDate(r.c.tarix)}</td>`, val:r=>r.c.tarix},
+  {th:'<th>Müştəri</th>', xl:'Müştəri', type:'text', width:36, td:r=>`<td>${esc(r.customer)}</td>`, val:r=>r.customer},
+  {th:'<th>Əlaqə</th>', xl:'Əlaqə nömrəsi', type:'text', width:22, td:r=>`<td class="muted">${esc(r.phone||'—')}</td>`, val:r=>r.phone},
+  {th:'<th>Satıcı</th>', xl:'Satıcı', type:'text', width:26, td:r=>`<td class="muted">${esc(r.salesperson)}</td>`, val:r=>r.salesperson},
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:26, td:r=>`<td class="muted">${esc(r.collector)}</td>`, val:r=>r.collector},
+  {th:'<th>Kurator</th>', xl:'Kurator', type:'text', width:26, td:r=>`<td class="muted">${esc(r.curator)}</td>`, val:r=>r.curator},
+  {th:'<th class="num">Gecikmə(ay)</th>', xl:'Gecikmə (ay)', type:'int', width:14, td:r=>`<td class="num"><span class="tag tag-red">${r.months}</span></td>`, val:r=>r.months},
+  {th:'<th class="num">Satış<br>məbləği</th>', xl:'Satış məbləği', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.sale)}</td>`, val:r=>r.sale},
+  {th:'<th class="num">Cari borc</th>', xl:'Cari borc', type:'money', width:16, td:r=>`<td class="num"><span class="tag tag-red">${fmtMoney(r.debt)}</span></td>`, val:r=>r.debt},
+  {th:'<th class="num">Qrafik<br>borcu</th>', xl:'Qrafik borcu', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.scheduleDebt)}</td>`, val:r=>r.scheduleDebt},
+];
 function overdueRowHtml(r){
-  return `<tr>
-    <td>${esc(r.c.nomre)}</td>
-    <td>${fmtDate(r.c.tarix)}</td>
-    <td>${esc(r.customer)}</td>
-    <td class="muted">${esc(r.phone||'—')}</td>
-    <td class="muted">${esc(r.salesperson)}</td>
-    <td class="muted">${esc(r.collector)}</td>
-    <td class="muted">${esc(r.curator)}</td>
-    <td class="num"><span class="tag tag-red">${r.months}</span></td>
-    <td class="num">${fmtMoney(r.sale)}</td>
-    <td class="num"><span class="tag tag-red">${fmtMoney(r.debt)}</span></td>
-    <td class="num">${fmtMoney(r.scheduleDebt)}</td>
-  </tr>`;
+  return `<tr>${OVERDUE_COLUMNS.map(c=>c.td(r)).join('')}</tr>`;
+}
+// Tətbiq olunan filtrlərin oxunaqlı siyahısı (Excel "Məlumat" vərəqi və export logu üçün)
+function overdueFilterDescription(){
+  const f=overdueFilters, out=[];
+  const add=(l,v)=>{ if(v!=='' && v!=null) out.push({l,v:String(v)}); };
+  const person=(arr,id)=>{ const o=byId(arr,id); return o?fullName(o):id; };
+  add('Müqavilə №',f.nomre); add('Müştəri',f.musteri); add('Əlaqə nömrəsi',f.tel);
+  if(f.satici) add('Satıcı',person(state.salespeople,f.satici));
+  if(f.tehsilatci) add('Təhsilatçı',f.tehsilatci==='__none__'?'Təyin olunmayıb':person(state.collectors,f.tehsilatci));
+  if(f.kurator) add('Kurator',f.kurator==='__none__'?'Təyin olunmayıb':person(state.curators,f.kurator));
+  if(f.tarixDan) add('Müqavilə tarixi (dan)',fmtDate(f.tarixDan));
+  if(f.tarixDek) add('Müqavilə tarixi (dək)',fmtDate(f.tarixDek));
+  add('Satış məbləği (min)',f.satisMin); add('Satış məbləği (maks)',f.satisMax);
+  add('Cari borc (min)',f.borcMin); add('Cari borc (maks)',f.borcMax);
+  add('Qrafik borcu (min)',f.qrafikMin); add('Gecikmə ay (min)',f.gecMin); add('Gecikmə ay (maks)',f.gecMax);
+  return out;
 }
 
 function refreshOverdueTable(){
@@ -1521,8 +1578,10 @@ function refreshOverdueTable(){
   const sumDebt=rows.reduce((a,r)=>a+r.debt,0), sumSch=rows.reduce((a,r)=>a+r.scheduleDebt,0);
   document.getElementById('overdue-summary').innerHTML=
     `<strong>${total}</strong> müqavilə &nbsp;·&nbsp; Cəmi cari borc: <strong>${fmtMoney(sumDebt)}</strong> &nbsp;·&nbsp; Cəmi qrafik üzrə borc: <strong>${fmtMoney(sumSch)}</strong>`;
-  tbody.innerHTML=pageRows.length?pageRows.map(overdueRowHtml).join(''):`<tr><td colspan="11" class="empty" style="padding:40px;">Nəticə tapılmadı</td></tr>`;
+  tbody.innerHTML=pageRows.length?pageRows.map(overdueRowHtml).join(''):`<tr><td colspan="${OVERDUE_COLUMNS.length}" class="empty" style="padding:40px;">Nəticə tapılmadı</td></tr>`;
   document.getElementById('pagination-report-overdue').innerHTML=paginationHtml('report-overdue',totalPages,total);
+  const eb=document.getElementById('export-btn');
+  if(eb){ eb.textContent=total?('Excelə yüklə — '+total+' sətir'):'Excelə yüklə'; eb.disabled=!total; }
 }
 
 function renderReportOverdue(){
@@ -1538,7 +1597,10 @@ function renderReportOverdue(){
   setContent(`
     <div class="topbar">
       <div><h1>Gecikmiş müqavilələr</h1><div class="sub">Son ödənişindən ${OVERDUE_MIN_MONTHS} ay və daha çox keçən, borcu qalan müqavilələr</div></div>
-      <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="overdue">Excelə yüklə</button>
+        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      </div>
     </div>
     <div class="card" style="padding:16px 18px;margin-bottom:14px;">
       <div class="filters">
@@ -1564,7 +1626,7 @@ function renderReportOverdue(){
     </div>
     <div id="overdue-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
     <div class="card"><div class="table-scroll"><table class="table-compact" style="min-width:1050px;">
-      <thead><tr><th>№</th><th>Tarix</th><th>Müştəri</th><th>Əlaqə</th><th>Satıcı</th><th>Təhsilatçı</th><th>Kurator</th><th class="num">Gecikmə(ay)</th><th class="num">Satış<br>məbləği</th><th class="num">Cari borc</th><th class="num">Qrafik<br>borcu</th></tr></thead>
+      <thead><tr>${OVERDUE_COLUMNS.map(c=>c.th).join('')}</tr></thead>
       <tbody id="overdue-tbody"></tbody>
     </table></div>
     <div id="pagination-report-overdue" style="padding:0 14px 14px;"></div></div>
@@ -1572,9 +1634,470 @@ function renderReportOverdue(){
   refreshOverdueTable();
 }
 
+/* ============ EXCEL (.xlsx) EXPORT — brauzerdə, kənar kitabxanasız ============
+   Qaydalar (QAYDALAR.md): hər hesabat REPORT_EXPORTS-da elan olunur və export düyməsini avtomatik alır;
+   fayl yaradılmazdan ƏVVƏL export loga yazılır — loga yazılmasa fayl yaradılmır. */
+
+function xlEsc(s){
+  return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g,'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function xlColName(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
+// 'YYYY-MM-DD' -> Excel tarix seriyası (1899-12-30-dan gün sayı)
+function xlDateSerial(iso){
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||''));
+  if(!m) return null;
+  return Math.round((Date.UTC(+m[1],+m[2]-1,+m[3])-Date.UTC(1899,11,30))/86400000);
+}
+// Üslublar: 0 adi, 1 başlıq, 2 məbləğ (#,##0.00), 3 tarix (dd.mm.yyyy), 4 tam ədəd, 5 qalın
+function xlCellXml(ref, v, type, style){
+  if(v===null || v===undefined || v==='') return '';
+  if(type==='money' || type==='int'){
+    let n=Number(v); if(!isFinite(n)) return '';
+    if(type==='money') n=Math.round(n*100)/100;
+    return `<c r="${ref}" s="${type==='money'?2:4}"><v>${n}</v></c>`;
+  }
+  if(type==='date'){
+    const n=xlDateSerial(v); if(n===null) return '';
+    return `<c r="${ref}" s="3"><v>${n}</v></c>`;
+  }
+  // Mətn həmişə "inlineStr" kimi yazılır: "=", "+", "@" ilə başlayan mətn Excel-də düstur kimi icra OLUNMUR
+  return `<c r="${ref}"${style?` s="${style}"`:''} t="inlineStr"><is><t xml:space="preserve">${xlEsc(String(v).slice(0,32000))}</t></is></c>`;
+}
+// sheet: {name, columns:[{label,type,width}]|null, widths?, rows:[[cell|{v,t,s}]], freeze, filter}
+function xlSheetXml(sh, isFirst){
+  const cols=sh.columns||[];
+  const widths=sh.widths||cols.map(c=>c.width||14);
+  const ncols=Math.max(cols.length, widths.length, ...sh.rows.map(r=>r.length), 1);
+  const nrows=sh.rows.length+(cols.length?1:0);
+  const out=[];
+  out.push('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">');
+  out.push(`<dimension ref="A1:${xlColName(ncols-1)}${Math.max(nrows,1)}"/>`);
+  out.push('<sheetViews><sheetView workbookViewId="0"'+(isFirst?' tabSelected="1"':'')+'>'
+    +(sh.freeze && cols.length?'<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/>':'')
+    +'</sheetView></sheetViews>');
+  out.push('<sheetFormatPr defaultRowHeight="15"/>');
+  out.push('<cols>'+widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')+'</cols>');
+  out.push('<sheetData>');
+  let r=0;
+  if(cols.length){
+    r++;
+    out.push(`<row r="${r}">`+cols.map((c,i)=>xlCellXml(xlColName(i)+r,c.label,'text',1)).join('')+'</row>');
+  }
+  for(const row of sh.rows){
+    r++;
+    let x=`<row r="${r}">`;
+    for(let i=0;i<row.length;i++){
+      const cell=row[i];
+      const ov=cell!==null && typeof cell==='object' && 'v' in cell;
+      x+=xlCellXml(xlColName(i)+r, ov?cell.v:cell, ov?(cell.t||'text'):(cols[i]?cols[i].type:'text'), ov?cell.s:undefined);
+    }
+    out.push(x+'</row>');
+  }
+  out.push('</sheetData>');
+  if(sh.filter && cols.length) out.push(`<autoFilter ref="A1:${xlColName(cols.length-1)}${nrows}"/>`);
+  out.push('</worksheet>');
+  return out.join('');
+}
+function xlSheetName(name,i){
+  const n=String(name||'').replace(/[\[\]:*?\/\\]/g,' ').trim().slice(0,31);
+  return n||('Vərəq'+(i+1));
+}
+
+/* ---- ZIP (xlsx bir ZIP arxividir) ---- */
+const _crcTable=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=_crcTable[(c^u8[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+async function deflateRaw(u8){
+  if(typeof CompressionStream==='undefined') return null;      // köhnə brauzer: sıxılmadan yazılır
+  try{
+    const stream=new Blob([u8]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }catch(e){ return null; }
+}
+async function zipBuild(files){
+  const enc=new TextEncoder(), chunks=[], central=[];
+  let offset=0;
+  const d=new Date();
+  const dosTime=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+  const dosDate=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate());
+  for(const f of files){
+    const nameB=enc.encode(f.name), crc=crc32(f.data);
+    let comp=await deflateRaw(f.data), method=8;
+    if(!comp || comp.length>=f.data.length){ comp=f.data; method=0; }
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,method,true);
+    lh.setUint16(10,dosTime,true); lh.setUint16(12,dosDate,true); lh.setUint32(14,crc,true);
+    lh.setUint32(18,comp.length,true); lh.setUint32(22,f.data.length,true); lh.setUint16(26,nameB.length,true); lh.setUint16(28,0,true);
+    chunks.push(new Uint8Array(lh.buffer),nameB,comp);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(10,method,true);
+    ch.setUint16(12,dosTime,true); ch.setUint16(14,dosDate,true); ch.setUint32(16,crc,true);
+    ch.setUint32(20,comp.length,true); ch.setUint32(24,f.data.length,true); ch.setUint16(28,nameB.length,true);
+    ch.setUint32(42,offset,true);
+    central.push(new Uint8Array(ch.buffer),nameB);
+    offset+=30+nameB.length+comp.length;
+  }
+  const centralSize=central.reduce((a,c)=>a+c.length,0);
+  const end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true); end.setUint16(8,files.length,true); end.setUint16(10,files.length,true);
+  end.setUint32(12,centralSize,true); end.setUint32(16,offset,true);
+  return new Blob([...chunks,...central,new Uint8Array(end.buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+async function xlBuildBlob(sheets){
+  const enc=new TextEncoder();
+  const X='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+  const REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const names=sheets.map((s,i)=>xlSheetName(s.name,i));
+  const files=[
+    {name:'[Content_Types].xml', data:enc.encode(X+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+      +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      +sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')
+      +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')},
+    {name:'_rels/.rels', data:enc.encode(X+`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`)},
+    {name:'xl/workbook.xml', data:enc.encode(X+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${REL}"><sheets>`
+      +names.map((n,i)=>`<sheet name="${xlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')+'</sheets></workbook>')},
+    {name:'xl/_rels/workbook.xml.rels', data:enc.encode(X+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      +sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${REL}/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')
+      +`<Relationship Id="rId${sheets.length+1}" Type="${REL}/styles" Target="styles.xml"/></Relationships>`)},
+    {name:'xl/styles.xml', data:enc.encode(X+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      +'<numFmts count="1"><numFmt numFmtId="164" formatCode="dd\\.mm\\.yyyy"/></numFmts>'
+      +'<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+      +'<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+      +'<fill><patternFill patternType="solid"><fgColor rgb="FFF3EFE4"/><bgColor indexed="64"/></patternFill></fill></fills>'
+      +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+      +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+      +'<cellXfs count="6">'
+      +'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+      +'<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>'
+      +'<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+      +'<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+      +'<xf numFmtId="1" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+      +'<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+      +'</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')},
+    ...sheets.map((s,i)=>({name:`xl/worksheets/sheet${i+1}.xml`, data:enc.encode(xlSheetXml(s,i===0))})),
+  ];
+  return zipBuild(files);
+}
+function downloadBlob(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+
+/* ---- hesabatların export elanı ---- */
+let currentUsername='';
+function bakuDateIso(){ return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Baku',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()); }
+
+const REPORT_EXPORTS={
+  overdue:{
+    title:'Gecikmiş müqavilələr', file:'Gecikmis_muqavileler',
+    columns:()=>OVERDUE_COLUMNS,
+    rows:()=>filterOverdue(overdueBase, overdueFilters),
+    filters:()=>overdueFilterDescription(),
+    totals:(rows)=>[['Cəmi cari borc',rows.reduce((a,r)=>a+r.debt,0)],['Cəmi qrafik borcu',rows.reduce((a,r)=>a+r.scheduleDebt,0)]],
+  },
+};
+
+// Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
+async function logExport(key, count, filters){
+  const r=await fetch('export-log.php',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({report:key, rows:count, filters:filters.map(f=>({l:f.l,v:f.v}))})});
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok || !j || !j.ok) throw new Error('Export loga yazıla bilmədi, fayl yaradılmadı. '+((j&&j.error)||('Server cavabı: '+r.status)));
+}
+
+async function exportReport(key){
+  const def=REPORT_EXPORTS[key];
+  if(!def) throw new Error('Naməlum hesabat: '+key);
+  const rows=def.rows();
+  if(!rows.length) throw new Error('Export üçün sətir yoxdur.');
+  const filters=def.filters();
+  await logExport(key, rows.length, filters);                       // 1) əvvəl log
+  const cols=def.columns();
+  const dataSheet={
+    name:def.title, freeze:true, filter:true,
+    columns:cols.map(c=>({label:c.xl, type:c.type, width:c.width})),
+    rows:rows.map(r=>cols.map(c=>c.val(r))),
+  };
+  const info=[
+    [{v:'Hesabat',s:5}, def.title],
+    [{v:'Yüklənmə vaxtı (Bakı)',s:5}, fmtBaku(new Date().toISOString().slice(0,19).replace('T',' '))],
+    [{v:'İstifadəçi',s:5}, currentUsername||'—'],
+    [{v:'Sətir sayı',s:5}, {v:rows.length,t:'int'}],
+    ...def.totals(rows).map(t=>[{v:t[0],s:5},{v:t[1],t:'money'}]),
+    ['',''],
+    [{v:'Tətbiq olunan filtrlər',s:5}, filters.length?'':'Filtr yoxdur (bütün nəticələr)'],
+    ...filters.map(f=>[f.l, f.v]),
+  ];
+  const blob=await xlBuildBlob([dataSheet,{name:'Məlumat', widths:[30,60], rows:info}]);   // 2) fayl
+  downloadBlob(blob, def.file+'_'+bakuDateIso()+'.xlsx');
+}
+
+/* ============ DƏYİŞİKLİK LOGU (yalnız admin) ============ */
+const AUDIT_PAGE_SIZE=25;
+const AUDIT_ACTIONS={
+  CREATE:['Əlavə','tag-green'], UPDATE:['Dəyişiklik','tag-amber'], DELETE:['Silmə','tag-red'],
+  LOGIN:['Giriş','tag-gray'], LOGOUT:['Çıxış','tag-gray'], LOGIN_FAILED:['Uğursuz giriş','tag-red'],
+  IMPORT:['İdxal','tag-accent'], RESET:['Təmizləmə','tag-red'], FIX:['Düzəliş','tag-accent'],
+  USER_CREATE:['İstifadəçi yaradıldı','tag-gray'], USER_BLOCK:['İstifadəçi bloklandı','tag-red'],
+  USER_UNBLOCK:['Blokdan çıxarıldı','tag-green'], USER_PASSWORD:['Şifrə dəyişdi','tag-amber'],
+  USER_DELETE:['İstifadəçi silindi','tag-red'], EXPORT:['Excel export','tag-accent'],
+};
+const AUDIT_ENTITIES={contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
+
+// Log vaxtları serverdə UTC saxlanılır; burada Bakı vaxtı ilə göstərilir
+const _bakuFmt=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Baku',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+function fmtBaku(utc){
+  if(!utc) return '';
+  const d=new Date(String(utc).replace(' ','T')+'Z');
+  if(isNaN(d)) return String(utc);
+  const p={}; _bakuFmt.formatToParts(d).forEach(x=>{ p[x.type]=x.value; });
+  return p.day+'.'+p.month+'.'+p.year+' '+p.hour+':'+p.minute;
+}
+function isoLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function uuidv4(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{ const r=Math.random()*16|0; return (c==='x'?r:(r&3|8)).toString(16); });
+}
+
+function auditDefaultFilters(){
+  const d=new Date(); d.setDate(d.getDate()-30);
+  return {from:isoLocal(d),to:'',user:'',kind:'',actionType:'',entity:'',q:'',entityId:'',contractId:'',opId:'',scope:''};
+}
+let auditFilters=auditDefaultFilters();
+let auditUsers=null;
+let auditReq=0;          // köhnə cavabın yeni nəticəni əzməməsi üçün
+let auditQTimer=null;
+
+function auditParams(f, page, size){
+  const p=new URLSearchParams();
+  p.set('action','list'); p.set('page',page); p.set('size',size);
+  ['from','to','user','kind','actionType','entity','entityId','contractId','opId'].forEach(k=>{ if(f[k]) p.set(k,f[k]); });
+  if((f.q||'').trim().length>=3) p.set('q',f.q.trim());
+  return p;
+}
+async function auditFetch(params){
+  const r=await fetch('audit-api.php?'+params.toString());
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error((j&&j.error)||('Log yüklənmədi ('+r.status+')'));
+  return j;
+}
+function auditActionTag(action,isBatch){
+  if(isBatch) return '<span class="tag tag-accent">Toplu dəyişiklik</span>';
+  const x=AUDIT_ACTIONS[action]||[action,'tag-gray'];
+  return `<span class="tag ${x[1]}">${esc(x[0])}</span>`;
+}
+
+async function renderAuditLog(){
+  if(auditUsers===null){
+    try{ auditUsers=(await auditFetch(new URLSearchParams({action:'users'}))).users||[]; }
+    catch(e){ auditUsers=[]; }
+  }
+  if(currentScreen!=='audit-log') return;
+  const f=auditFilters;
+  const chip=(kind,label)=>`<button type="button" class="chip${f.kind===kind?' active':''}" data-action="audit-kind" data-kind="${kind}">${label}</button>`;
+  const sel=(key,label,options)=>`<div class="field"><label>${label}</label><select data-afilter="${key}">${options.map(o=>`<option value="${esc(o[0])}"${f[key]===o[0]?' selected':''}>${esc(o[1])}</option>`).join('')}</select></div>`;
+  const actionOpts=[['','Hamısı'],...Object.entries(AUDIT_ACTIONS).map(([k,v])=>[k,v[0]])];
+  const entityOpts=[['','Hamısı'],...Object.entries(AUDIT_ENTITIES)];
+  const userOpts=[['','Hamısı'],...auditUsers.map(u=>[u,u])];
+  setContent(`
+    <div class="topbar"><div><h1>Dəyişiklik logu</h1><div class="sub">Sistemdə aparılan bütün dəyişikliklər (yalnız admin görür)</div></div></div>
+    <div class="chips">
+      ${chip('','Hamısı')}${chip('delete','Silmələr')}${chip('failed','Uğursuz girişlər')}${chip('batch','Toplu əməliyyatlar')}${chip('users','İstifadəçi / səlahiyyət dəyişiklikləri')}${chip('export','Excel export-lar')}
+    </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:12px;">
+      <div class="filters">
+        <div class="field"><label>Tarix (dan)</label><input type="date" data-afilter="from" value="${esc(f.from)}"></div>
+        <div class="field"><label>Tarix (dək)</label><input type="date" data-afilter="to" value="${esc(f.to)}"></div>
+        ${sel('user','İstifadəçi',userOpts)}
+        ${sel('actionType','Əməliyyat',actionOpts)}
+        ${sel('entity','Obyekt',entityOpts)}
+        <div class="field"><label>Axtarış (müqavilə № / ad)</label><input type="search" data-afilter="q" value="${esc(f.q)}" placeholder="ən azı 3 simvol"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;"><button type="button" class="btn btn-ghost btn-sm" data-action="audit-reset">Filtrləri təmizlə</button></div>
+    </div>
+    ${f.scope?`<div class="scope-bar"><span>Süzgəc: <strong>${esc(f.scope)}</strong></span><button type="button" class="btn btn-ghost btn-sm" data-action="audit-clear-scope">✕ Ləğv et</button></div>`:''}
+    <div id="audit-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div class="card"><div class="table-scroll"><table class="table-compact" style="min-width:860px;">
+      <thead><tr><th>Tarix (Bakı)</th><th>İstifadəçi</th><th>Əməliyyat</th><th>Obyekt</th><th>Təfərrüat</th></tr></thead>
+      <tbody id="audit-tbody"><tr><td colspan="5" class="empty" style="padding:40px;">Yüklənir…</td></tr></tbody>
+    </table></div>
+    <div id="pagination-audit-log" style="padding:0 14px 14px;"></div></div>
+  `);
+  await loadAuditPage();
+}
+
+// grouped=true: toplu əməliyyatın sətirləri BİR başlıq sətri kimi göstərilir; false (açılmış görünüş): hər sətir öz məlumatı ilə
+function auditRowHtml(r, grouped){
+  const isBatch=!!grouped && !!r.opId && r.opCount>1;
+  let entityCell='<span class="muted">—</span>';
+  if(r.entity){
+    const en=esc(AUDIT_ENTITIES[r.entity]||r.entity);
+    entityCell = isBatch ? `<span class="muted">${en}</span>` : `<span class="muted">${en}</span>${r.entityLabel?'<br>'+esc(r.entityLabel):''}`;
+  }
+  const detail = isBatch
+    ? `${esc(r.opLabel||'Toplu əməliyyat')} — <strong>${r.opCount}</strong> dəyişiklik`
+    : esc(r.summary||'');
+  return `<tr class="clickable" data-action="audit-detail" data-id="${r.id}">
+    <td style="white-space:nowrap;">${fmtBaku(r.createdAt)}</td>
+    <td>${esc(r.username||'—')}</td>
+    <td>${auditActionTag(r.action,isBatch)}</td>
+    <td>${entityCell}</td>
+    <td style="white-space:pre-wrap;word-break:break-word;">${detail}</td>
+  </tr>`;
+}
+
+async function loadAuditPage(){
+  const tbody=document.getElementById('audit-tbody');
+  if(!tbody) return;
+  const my=++auditReq;
+  try{
+    const j=await auditFetch(auditParams(auditFilters, pageNum['audit-log']||1, AUDIT_PAGE_SIZE));
+    if(my!==auditReq) return;   // arada daha yeni sorğu başlayıb
+    const totalPages=Math.max(1,Math.ceil(j.total/AUDIT_PAGE_SIZE));
+    tbody.innerHTML=j.rows.length ? j.rows.map(r=>auditRowHtml(r,j.grouped)).join('')
+      : `<tr><td colspan="5" class="empty" style="padding:40px;">Nəticə tapılmadı</td></tr>`;
+    document.getElementById('pagination-audit-log').innerHTML=paginationHtml('audit-log',totalPages,j.total);
+    document.getElementById('audit-summary').textContent=j.total+' qeyd'+(j.grouped?' (toplu əməliyyatlar bir sətirdə göstərilir)':'');
+  }catch(err){
+    if(my!==auditReq) return;
+    tbody.innerHTML=`<tr><td colspan="5"><div class="banner" style="margin:14px;">${esc(err.message)}</div></td></tr>`;
+    const pg=document.getElementById('pagination-audit-log'); if(pg) pg.innerHTML='';
+  }
+}
+
+function auditApplyScope(fields, label){
+  // Konkret obyektin/əməliyyatın tam tarixçəsi üçün tarix hədləri götürülür
+  auditFilters=Object.assign(auditDefaultFilters(), {from:'',to:''}, fields, {scope:label||''});
+  pageNum['audit-log']=1;
+  closeModal();
+  currentScreen='audit-log';
+  renderScreen();
+}
+
+/* ---- Təfərrüat pəncərəsi (Sahə | Köhnə | Yeni) ---- */
+function auditChangesTable(ch, bothColumns, newLabel){
+  if(!ch || !ch.length) return '';
+  const hasOld=bothColumns || ch.some(c=>c.o), hasNew=bothColumns || ch.some(c=>c.n);
+  const rows=ch.map(c=>`<tr><td>${esc(c.l||c.f)}</td>${hasOld?`<td>${esc(c.o||'—')}</td>`:''}${hasNew?`<td>${esc(c.n||'—')}</td>`:''}</tr>`).join('');
+  return `<div class="card" style="margin-top:12px;"><div class="table-scroll"><table class="table-compact diff">
+    <thead><tr><th>Sahə</th>${hasOld?'<th>Köhnə</th>':''}${hasNew?'<th>'+(newLabel||'Yeni')+'</th>':''}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function auditDetailHtml(r){
+  const isBatch=!!r.opId && r.opCount>1;
+  const act=(AUDIT_ACTIONS[r.action]||[r.action])[0];
+  const b=[];
+  if(r.entity && r.entityId){
+    b.push(`<button type="button" class="btn btn-ghost btn-sm" data-action="audit-scope-entity" data-entity="${esc(r.entity)}" data-eid="${esc(r.entityId)}" data-label="${esc((AUDIT_ENTITIES[r.entity]||r.entity)+': '+(r.entityLabel||''))}">Bu obyektin tarixçəsi</button>`);
+  }
+  if(r.contractId){
+    b.push(`<button type="button" class="btn btn-ghost btn-sm" data-action="audit-scope-contract" data-cid="${esc(r.contractId)}" data-label="Müqavilənin tarixçəsi (ödənişlər daxil)">Müqavilənin bütün tarixçəsi</button>`);
+  }
+  if(isBatch){
+    b.push(`<button type="button" class="btn btn-ghost btn-sm" data-action="audit-scope-op" data-op="${esc(r.opId)}" data-label="${esc(r.opLabel||'Toplu əməliyyat')}">Bu əməliyyatın bütün ${r.opCount} dəyişikliyi</button>`);
+  }
+  if(r.username){
+    b.push(`<button type="button" class="btn btn-ghost btn-sm" data-action="audit-scope-user" data-user="${esc(r.username)}" data-label="İstifadəçi: ${esc(r.username)}">İstifadəçinin bütün fəaliyyəti</button>`);
+  }
+  return `<h2>Dəyişiklik təfərrüatı</h2>
+    <div style="font-size:13.5px;line-height:1.75;">
+      <div><span class="muted">Tarix (Bakı):</span> ${fmtBaku(r.createdAt)}</div>
+      <div><span class="muted">İstifadəçi:</span> ${esc(r.username||'—')}</div>
+      <div><span class="muted">Əməliyyat:</span> ${esc(act)}</div>
+      ${r.entity?`<div><span class="muted">Obyekt:</span> ${esc(AUDIT_ENTITIES[r.entity]||r.entity)}${r.entityLabel?' — '+esc(r.entityLabel):''}</div>`:''}
+      <div><span class="muted">Xülasə:</span> ${esc(r.summary||'')}</div>
+      ${r.ip?`<div class="muted" style="font-size:12px;">IP: ${esc(r.ip)}</div>`:''}
+      ${r.opId?`<div class="muted" style="font-size:12px;">Əməliyyat nömrəsi: ${esc(r.opId)}</div>`:''}
+    </div>
+    ${isBatch?`<div class="muted" style="font-size:12.5px;margin-top:10px;">Bu toplu əməliyyat ${r.opCount} dəyişiklikdən ibarətdir. Aşağıda onlardan biri göstərilir, hamısı üçün "Bu əməliyyatın bütün ${r.opCount} dəyişikliyi" düyməsinə basın.</div>`:''}
+    ${auditChangesTable(r.changes, r.action==='UPDATE', ['EXPORT','IMPORT','FIX'].includes(r.action)?'Dəyər':'Yeni')}
+    <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${b.join('')}</div>
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button>
+    </div>`;
+}
+async function openAuditDetail(id){
+  const panel=document.getElementById('modal-panel');
+  panel.classList.add('wide');
+  panel.innerHTML=`<div class="muted" style="padding:40px;text-align:center;">Yüklənir…</div>`;
+  openModal();
+  try{
+    const r=await auditFetch(new URLSearchParams({action:'detail',id}));
+    panel.innerHTML=auditDetailHtml(r);
+  }catch(err){
+    panel.innerHTML=`<div class="banner">${esc(err.message)}</div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`;
+  }
+}
+
+/* ---- Qeydin öz tarixçəsi (müqavilə / müştəri): "Tarixçə" düyməsi, yalnız admin ---- */
+let hist={params:null,rows:[],total:0,page:0,loading:false,error:'',expanded:{},detail:{},title:''};
+async function openHistoryModal(kind,id,title){
+  const panel=document.getElementById('modal-panel');
+  panel.classList.add('wide');
+  hist={params:(kind==='contract'?{contractId:id}:{entity:kind,entityId:id}),rows:[],total:0,page:0,loading:false,error:'',expanded:{},detail:{},title:title||''};
+  renderHistory();
+  openModal();
+  await histLoadMore();
+}
+async function histLoadMore(){
+  if(hist.loading || !hist.params) return;
+  hist.loading=true; hist.error=''; renderHistory();
+  try{
+    const p=new URLSearchParams(Object.assign({action:'list',page:hist.page+1,size:AUDIT_PAGE_SIZE}, hist.params));
+    const j=await auditFetch(p);
+    hist.page=j.page; hist.total=j.total; hist.rows=hist.rows.concat(j.rows);
+  }catch(err){ hist.error=err.message; }
+  hist.loading=false;
+  renderHistory();
+}
+async function histToggle(id){
+  id=Number(id);
+  if(hist.expanded[id]){ hist.expanded[id]=false; renderHistory(); return; }
+  hist.expanded[id]=true;
+  if(!hist.detail[id]){
+    renderHistory();
+    try{ hist.detail[id]=await auditFetch(new URLSearchParams({action:'detail',id})); }
+    catch(err){ hist.detail[id]={changes:[],summary:err.message}; }
+  }
+  renderHistory();
+}
+function renderHistory(){
+  const panel=document.getElementById('modal-panel');
+  if(!panel || !hist.params) return;
+  const rowsHtml=hist.rows.map(r=>{
+    const isOther=r.entity && hist.params.contractId && r.entity!=='contracts';
+    const label=isOther?`<span class="muted">${esc(AUDIT_ENTITIES[r.entity]||r.entity)}:</span> `:'';
+    let html=`<tr class="clickable" data-action="hist-toggle" data-id="${r.id}">
+      <td style="white-space:nowrap;">${fmtBaku(r.createdAt)}</td>
+      <td>${esc(r.username||'—')}</td>
+      <td>${auditActionTag(r.action,false)}</td>
+      <td style="white-space:pre-wrap;word-break:break-word;">${label}${esc(r.summary||'')}</td></tr>`;
+    if(hist.expanded[r.id]){
+      const d=hist.detail[r.id];
+      html+=`<tr><td colspan="4" style="background:rgba(184,134,63,.06);padding:4px 14px 14px;">${d?(auditChangesTable(d.changes, d.action==='UPDATE')||'<div class="muted" style="padding:10px 0;">Təfərrüat yoxdur</div>'):'<div class="muted" style="padding:10px 0;">Yüklənir…</div>'}</td></tr>`;
+    }
+    return html;
+  }).join('');
+  let body;
+  if(hist.error) body=`<div class="banner">${esc(hist.error)}</div>`;
+  else if(!hist.rows.length && hist.loading) body=`<div class="muted" style="padding:30px;text-align:center;">Yüklənir…</div>`;
+  else if(!hist.rows.length) body=`<div class="muted" style="padding:24px 4px;line-height:1.6;">Hələ dəyişiklik qeydi yoxdur. Log yalnız bu funksiya işə düşəndən sonrakı dəyişiklikləri saxlayır.</div>`;
+  else body=`<div class="card scroll-y"><div class="table-scroll"><table class="table-compact">
+      <thead><tr><th>Tarix (Bakı)</th><th>İstifadəçi</th><th>Əməliyyat</th><th>Təfərrüat</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></div>
+      <div class="muted" style="font-size:12px;margin-top:8px;">Təfərrüat üçün sətrə basın.</div>`;
+  const remaining=hist.total-hist.rows.length;
+  const more=(remaining>0)?`<button type="button" class="btn btn-ghost btn-sm" data-action="hist-more"${hist.loading?' disabled':''}>Daha çox yüklə (${remaining} qalıb)</button>`:'';
+  panel.innerHTML=`<h2>Tarixçə — ${esc(hist.title)}</h2>${body}
+    <div class="modal-actions" style="justify-content:space-between;"><div>${more}</div><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`;
+}
+
 /* ============ MODAL PLUMBING ============ */
 function openModal(){ document.getElementById('modal-root').classList.add('open'); }
-function closeModal(){ document.getElementById('modal-root').classList.remove('open'); document.getElementById('modal-panel').innerHTML=''; }
+function closeModal(){ document.getElementById('modal-root').classList.remove('open'); const mp=document.getElementById('modal-panel'); mp.innerHTML=''; mp.classList.remove('wide'); }
 
 /* ============ DELETE ============ */
 async function deleteRecord(col, id, label){
@@ -1622,6 +2145,7 @@ document.addEventListener('click', async (e)=>{
     const key=btn.dataset.key;
     pageNum[key]=(pageNum[key]||1)+(action==='page-prev'?-1:1);
     if(key==='report-overdue'){ refreshOverdueTable(); return; }
+    if(key==='audit-log'){ loadAuditPage(); return; }
     const searchInput=document.getElementById('search-'+key);
     const rawVal=searchInput?searchInput.value:'';
     const q=rawVal.length>=3 ? rawVal.toLowerCase() : '';
@@ -1647,6 +2171,22 @@ document.addEventListener('click', async (e)=>{
   if(action==='show-court'){ openCourtModal(id); return; }
   if(action==='delete-court-note'){ await withButtonLoading(btn, ()=>deleteCourtNote(id, btn.dataset.idx)); return; }
   if(action==='overdue-reset'){ resetOverdueFilters(); renderReportOverdue(); return; }
+  if(action==='export-report'){
+    await withButtonLoading(btn, async()=>{ try{ await exportReport(btn.dataset.report); }catch(err){ alert(err.message); } });
+    return;
+  }
+  if(action==='toggle-admin-group'){ adminGroupOpen=!adminGroupOpen; syncAdminGroup(); return; }
+  if(action==='audit-kind'){ auditFilters.kind=btn.dataset.kind; pageNum['audit-log']=1; renderAuditLog(); return; }
+  if(action==='audit-reset'){ auditFilters=auditDefaultFilters(); pageNum['audit-log']=1; renderAuditLog(); return; }
+  if(action==='audit-clear-scope'){ auditFilters=auditDefaultFilters(); pageNum['audit-log']=1; renderAuditLog(); return; }
+  if(action==='audit-detail'){ openAuditDetail(id); return; }
+  if(action==='audit-scope-entity'){ auditApplyScope({entity:btn.dataset.entity, entityId:btn.dataset.eid}, btn.dataset.label); return; }
+  if(action==='audit-scope-contract'){ auditApplyScope({contractId:btn.dataset.cid}, btn.dataset.label); return; }
+  if(action==='audit-scope-op'){ auditApplyScope({opId:btn.dataset.op}, btn.dataset.label); return; }
+  if(action==='audit-scope-user'){ auditApplyScope({user:btn.dataset.user}, btn.dataset.label); return; }
+  if(action==='show-history'){ openHistoryModal(btn.dataset.kind, id, btn.dataset.title); return; }
+  if(action==='hist-more'){ histLoadMore(); return; }
+  if(action==='hist-toggle'){ histToggle(id); return; }
   if(action==='show-schedule'){ openScheduleModal(id); return; }
 });
 async function withButtonLoading(btn, fn){
@@ -1677,6 +2217,12 @@ document.addEventListener('change', (e)=>{
 document.addEventListener('input', (e)=>{
   const of=e.target && e.target.dataset ? e.target.dataset.ofilter : null;
   if(of){ overdueFilters[of]=e.target.value; pageNum['report-overdue']=1; refreshOverdueTable(); return; }
+  const af=e.target && e.target.dataset ? e.target.dataset.afilter : null;
+  if(af){
+    auditFilters[af]=e.target.value; pageNum['audit-log']=1;
+    if(af==='q'){ clearTimeout(auditQTimer); auditQTimer=setTimeout(loadAuditPage,350); } else { loadAuditPage(); }
+    return;
+  }
   const map={'search-salespeople':'salespeople','search-collectors':'collectors','search-curators':'curators','search-customers':'customers','search-contracts':'contracts'};
   const key=map[e.target.id];
   if(!key) return;
@@ -1740,8 +2286,14 @@ async function apiAdd(col,data){
   if(!r.ok) throw new Error(await readErr(r,'Əlavə etmə xətası ('+col+')'));
   return r.json();
 }
-async function apiUpdate(col,id,data){
-  const r=await fetch(API_BASE+col+'&id='+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+async function apiUpdate(col,id,data,opts){
+  const headers={'Content-Type':'application/json'};
+  // Toplu əməliyyat: eyni opId ilə gedən sorğular logda bir əməliyyat kimi qruplaşdırılır
+  if(opts && opts.opId){
+    headers['X-Op-Id']=opts.opId;
+    if(opts.opLabel) headers['X-Op-Label']=encodeURIComponent(opts.opLabel);
+  }
+  const r=await fetch(API_BASE+col+'&id='+encodeURIComponent(id),{method:'PUT',headers,body:JSON.stringify(data)});
   if(!r.ok) throw new Error(await readErr(r,'Yeniləmə xətası ('+col+')'));
   return r.json();
 }
@@ -1760,8 +2312,9 @@ renderScreen().catch(err=>{
 
 fetch('whoami.php').then(r=>r.json()).then(u=>{
   if(!u || !u.username) return;
+  currentUsername = u.username;
   document.getElementById('user-info').textContent = u.username + ' (' + (u.role==='admin'?'Admin':'İstifadəçi') + ')';
-  if(u.role==='admin'){ document.getElementById('admin-link').style.display='flex'; document.getElementById('import-link').style.display='flex'; document.getElementById('reset-link').style.display='flex'; document.getElementById('fixq-link').style.display='flex'; }
+  if(u.role==='admin'){ document.body.classList.add('is-admin'); }
 }).catch(()=>{});
 </script>
 </body>

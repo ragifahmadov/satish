@@ -5,6 +5,7 @@
 // edildikcə DB strukturu əl ilə toxunmadan özü uyğunlaşır.
 
 require_once __DIR__ . '/functions.php'; // $SCHEMA və $SQL_TYPES buradan gəlir
+require_once __DIR__ . '/audit.php';     // dəyişiklik logu (audit_log cədvəli $SCHEMA-da deyil)
 
 // Baza yoxdursa yaradır (ayrı "server" səviyyəli qoşulma ilə).
 function create_database_if_missing($cfg) {
@@ -34,7 +35,8 @@ function get_pdo($skipSync = false) {
     ];
 
     $hashFile = sys_get_temp_dir() . '/satis_schema_hash.txt';
-    $currentHash = md5(serialize($SCHEMA));
+    // Log cədvəlinin strukturu ($SCHEMA-da deyil) hash-ə AUDIT_SCHEMA_VERSION ilə qatılır
+    $currentHash = md5(serialize($SCHEMA) . '|' . AUDIT_SCHEMA_VERSION);
     // Yoxlama yalnız $SCHEMA dəyişəndə (kodu yeniləyib yenidən deploy edəndə) lazımdır
     $needSync = !$skipSync && (@file_get_contents($hashFile) !== $currentHash);
 
@@ -65,6 +67,7 @@ function get_pdo($skipSync = false) {
             clearstatcache();
             if (@file_get_contents($hashFile) !== $currentHash) {
                 sync_schema($pdo, $SCHEMA, $SQL_TYPES);
+                ensure_audit_table($pdo);
                 @file_put_contents($hashFile, $currentHash); // yalnız uğurlu olduqda
             }
         } finally {

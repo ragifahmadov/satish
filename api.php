@@ -1,4 +1,5 @@
 <?php
+$t0 = microtime(true);
 header('Content-Type: application/json; charset=utf-8');
 
 // PHP-nin öz HTML xəbərdarlıqlarının JSON cavabına qarışmasının qarşısını al —
@@ -18,6 +19,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/auth.php';
 require_login(true);
+$tAuth = microtime(true);
 
 $col = isset($_GET['col']) ? $_GET['col'] : '';
 $id  = isset($_GET['id']) ? $_GET['id'] : null;
@@ -32,6 +34,22 @@ try {
     $pdo = get_pdo();
 } catch (Throwable $e) {
     fail(500, 'Verilənlər bazasına qoşulma xətası: ' . $e->getMessage() . '. config.php faylındaki məlumatları yoxlayın və MySQL-in işlək olduğuna əmin olun.');
+}
+$tDb = microtime(true);
+
+// Cavabı göndərir və Server-Timing başlığını əlavə edir (brauzerdə F12 → Network → Timing):
+//   auth  — giriş/sessiya yoxlaması,  db — bazaya qoşulma (və ilk dəfə struktur yoxlaması),
+//   op    — əsas iş (log daxil),      audit — onun içindəki log hazırlama/yazma hissəsi.
+function json_out($data) {
+    global $t0, $tAuth, $tDb;
+    $now = microtime(true);
+    header('Server-Timing: '
+        . 'auth;dur=' . round(($tAuth - $t0) * 1000, 1) . ', '
+        . 'db;dur=' . round(($tDb - $tAuth) * 1000, 1) . ', '
+        . 'op;dur=' . round(($now - $tDb) * 1000, 1) . ', '
+        . 'audit;dur=' . round(audit_timer() * 1000, 1) . ', '
+        . 'total;dur=' . round(($now - $t0) * 1000, 1));
+    echo json_encode($data);
 }
 
 try {
@@ -50,7 +68,7 @@ try {
                         FROM payments GROUP BY contractId");
                     $out = [];
                     foreach ($stmt->fetchAll() as $row) { $out[$row['contractId']] = [(float) $row['paid'], (float) $row['ret']]; }
-                    echo json_encode($out);
+                    json_out($out);
                     break;
                 }
                 if ($agg === 'last') {
@@ -60,7 +78,7 @@ try {
                         GROUP BY contractId");
                     $out = [];
                     foreach ($stmt->fetchAll() as $row) { if ($row['lastDate']) { $out[$row['contractId']] = $row['lastDate']; } }
-                    echo json_encode($out);
+                    json_out($out);
                     break;
                 }
                 if ($agg === 'month') {
@@ -72,7 +90,7 @@ try {
                     $stmt = $pdo->prepare("SELECT COALESCE(SUM(meblag), 0) FROM payments
                         WHERE odemeTarixi >= :s AND odemeTarixi < :e AND (emeliyyatNovu IS NULL OR emeliyyatNovu <> 'Geri qaytarma')");
                     $stmt->execute([':s' => $start, ':e' => $end]);
-                    echo json_encode(['total' => (float) $stmt->fetchColumn()]);
+                    json_out(['total' => (float) $stmt->fetchColumn()]);
                     break;
                 }
             }
@@ -82,7 +100,7 @@ try {
                 $stmt->execute([':cid' => $_GET['contractId']]);
                 $out = [];
                 foreach ($stmt->fetchAll() as $row) { $out[] = row_out($row, $schema); }
-                echo json_encode($out);
+                json_out($out);
                 break;
             }
             $stmt = $pdo->query("SELECT * FROM `$col` ORDER BY createdAt ASC");
@@ -90,7 +108,7 @@ try {
             foreach ($stmt->fetchAll() as $row) {
                 $out[] = row_out($row, $schema);
             }
-            echo json_encode($out);
+            json_out($out);
             break;
 
         case 'POST':
@@ -107,11 +125,21 @@ try {
                 $params[":$name"] = cast_in($body[$name] ?? null, $type);
             }
             $sql = "INSERT INTO `$col` (" . implode(',', $cols) . ") VALUES (" . implode(',', $placeholders) . ")";
-            $pdo->prepare($sql)->execute($params);
 
-            $sel = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id");
-            $sel->execute([':id' => $newId]);
-            echo json_encode(row_out($sel->fetch(), $schema));
+            // Əlavə və onun logu eyni əməliyyatda: log yazılmasa əlavə də olmur
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare($sql)->execute($params);
+                $sel = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id");
+                $sel->execute([':id' => $newId]);
+                $rowOut = row_out($sel->fetch(), $schema);
+                audit_log_create($pdo, $col, $schema, $rowOut);
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                throw $e;
+            }
+            json_out($rowOut);
             break;
 
         case 'PUT':
@@ -126,27 +154,53 @@ try {
                     $params[":$name"] = cast_in($body[$name], $type);
                 }
             }
-            if (!empty($sets)) {
-                $sql = "UPDATE `$col` SET " . implode(',', $sets) . " WHERE id = :id";
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($params);
-                if ($stmt->rowCount() === 0) {
-                    $check = $pdo->prepare("SELECT id FROM `$col` WHERE id = :id");
-                    $check->execute([':id' => $id]);
-                    if (!$check->fetch()) { fail(404, 'Qeyd tapılmadı'); }
+
+            $pdo->beginTransaction();
+            try {
+                // Köhnə vəziyyəti oxuyuruq (log üçün "köhnə → yeni"); eyni qeydin paralel dəyişməsi növbəyə düşür
+                $sel = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id FOR UPDATE");
+                $sel->execute([':id' => $id]);
+                $oldRow = $sel->fetch();
+                if (!$oldRow) {
+                    $pdo->rollBack();
+                    fail(404, 'Qeyd tapılmadı');
                 }
+                $oldOut = row_out($oldRow, $schema);
+
+                if (!empty($sets)) {
+                    $pdo->prepare("UPDATE `$col` SET " . implode(',', $sets) . " WHERE id = :id")->execute($params);
+                }
+
+                $sel2 = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id");
+                $sel2->execute([':id' => $id]);
+                $newOut = row_out($sel2->fetch(), $schema);
+                audit_log_update($pdo, $col, $schema, $oldOut, $newOut);  // dəyişiklik yoxdursa heç nə yazmır
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                throw $e;
             }
-            $sel = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id");
-            $sel->execute([':id' => $id]);
-            $row = $sel->fetch();
-            if (!$row) { fail(404, 'Qeyd tapılmadı'); }
-            echo json_encode(row_out($row, $schema));
+            json_out($newOut);
             break;
 
         case 'DELETE':
             if (!$id) { fail(400, 'id parametri lazımdır'); }
-            $pdo->prepare("DELETE FROM `$col` WHERE id = :id")->execute([':id' => $id]);
-            echo json_encode(['ok' => true]);
+            $pdo->beginTransaction();
+            try {
+                $sel = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id FOR UPDATE");
+                $sel->execute([':id' => $id]);
+                $oldRow = $sel->fetch();
+                if ($oldRow) {
+                    $oldOut = row_out($oldRow, $schema);
+                    $pdo->prepare("DELETE FROM `$col` WHERE id = :id")->execute([':id' => $id]);
+                    audit_log_delete($pdo, $col, $schema, $oldOut);
+                }
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                throw $e;
+            }
+            json_out(['ok' => true]);
             break;
 
         default:

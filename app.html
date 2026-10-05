@@ -1536,38 +1536,20 @@ function filterOverdue(rows, f){
   });
 }
 
-// Sütunların tək elanı: th/td ekran üçün, xl/type/width/val Excel üçün (hər ikisi eyni mənbədən qurulur)
-const OVERDUE_COLUMNS=[
-  {th:'<th>№</th>', xl:'Müqavilə №', type:'text', width:14, td:r=>`<td>${esc(r.c.nomre)}</td>`, val:r=>r.c.nomre},
-  {th:'<th>Tarix</th>', xl:'Müqavilə tarixi', type:'date', width:16, td:r=>`<td>${fmtDate(r.c.tarix)}</td>`, val:r=>r.c.tarix},
-  {th:'<th>Müştəri</th>', xl:'Müştəri', type:'text', width:36, td:r=>`<td>${esc(r.customer)}</td>`, val:r=>r.customer},
-  {th:'<th>Əlaqə</th>', xl:'Əlaqə nömrəsi', type:'text', width:22, td:r=>`<td class="muted">${esc(r.phone||'—')}</td>`, val:r=>r.phone},
-  {th:'<th>Satıcı</th>', xl:'Satıcı', type:'text', width:26, td:r=>`<td class="muted">${esc(r.salesperson)}</td>`, val:r=>r.salesperson},
-  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:26, td:r=>`<td class="muted">${esc(r.collector)}</td>`, val:r=>r.collector},
-  {th:'<th>Kurator</th>', xl:'Kurator', type:'text', width:26, td:r=>`<td class="muted">${esc(r.curator)}</td>`, val:r=>r.curator},
-  {th:'<th class="num">Gecikmə(ay)</th>', xl:'Gecikmə (ay)', type:'int', width:14, td:r=>`<td class="num"><span class="tag tag-red">${r.months}</span></td>`, val:r=>r.months},
-  {th:'<th class="num">Satış<br>məbləği</th>', xl:'Satış məbləği', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.sale)}</td>`, val:r=>r.sale},
-  {th:'<th class="num">Cari borc</th>', xl:'Cari borc', type:'money', width:16, td:r=>`<td class="num"><span class="tag tag-red">${fmtMoney(r.debt)}</span></td>`, val:r=>r.debt},
-  {th:'<th class="num">Qrafik<br>borcu</th>', xl:'Qrafik borcu', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.scheduleDebt)}</td>`, val:r=>r.scheduleDebt},
-];
 function overdueRowHtml(r){
-  return `<tr>${OVERDUE_COLUMNS.map(c=>c.td(r)).join('')}</tr>`;
-}
-// Tətbiq olunan filtrlərin oxunaqlı siyahısı (Excel "Məlumat" vərəqi və export logu üçün)
-function overdueFilterDescription(){
-  const f=overdueFilters, out=[];
-  const add=(l,v)=>{ if(v!=='' && v!=null) out.push({l,v:String(v)}); };
-  const person=(arr,id)=>{ const o=byId(arr,id); return o?fullName(o):id; };
-  add('Müqavilə №',f.nomre); add('Müştəri',f.musteri); add('Əlaqə nömrəsi',f.tel);
-  if(f.satici) add('Satıcı',person(state.salespeople,f.satici));
-  if(f.tehsilatci) add('Təhsilatçı',f.tehsilatci==='__none__'?'Təyin olunmayıb':person(state.collectors,f.tehsilatci));
-  if(f.kurator) add('Kurator',f.kurator==='__none__'?'Təyin olunmayıb':person(state.curators,f.kurator));
-  if(f.tarixDan) add('Müqavilə tarixi (dan)',fmtDate(f.tarixDan));
-  if(f.tarixDek) add('Müqavilə tarixi (dək)',fmtDate(f.tarixDek));
-  add('Satış məbləği (min)',f.satisMin); add('Satış məbləği (maks)',f.satisMax);
-  add('Cari borc (min)',f.borcMin); add('Cari borc (maks)',f.borcMax);
-  add('Qrafik borcu (min)',f.qrafikMin); add('Gecikmə ay (min)',f.gecMin); add('Gecikmə ay (maks)',f.gecMax);
-  return out;
+  return `<tr>
+    <td>${esc(r.c.nomre)}</td>
+    <td>${fmtDate(r.c.tarix)}</td>
+    <td>${esc(r.customer)}</td>
+    <td class="muted">${esc(r.phone||'—')}</td>
+    <td class="muted">${esc(r.salesperson)}</td>
+    <td class="muted">${esc(r.collector)}</td>
+    <td class="muted">${esc(r.curator)}</td>
+    <td class="num"><span class="tag tag-red">${r.months}</span></td>
+    <td class="num">${fmtMoney(r.sale)}</td>
+    <td class="num"><span class="tag tag-red">${fmtMoney(r.debt)}</span></td>
+    <td class="num">${fmtMoney(r.scheduleDebt)}</td>
+  </tr>`;
 }
 
 function refreshOverdueTable(){
@@ -1578,10 +1560,8 @@ function refreshOverdueTable(){
   const sumDebt=rows.reduce((a,r)=>a+r.debt,0), sumSch=rows.reduce((a,r)=>a+r.scheduleDebt,0);
   document.getElementById('overdue-summary').innerHTML=
     `<strong>${total}</strong> müqavilə &nbsp;·&nbsp; Cəmi cari borc: <strong>${fmtMoney(sumDebt)}</strong> &nbsp;·&nbsp; Cəmi qrafik üzrə borc: <strong>${fmtMoney(sumSch)}</strong>`;
-  tbody.innerHTML=pageRows.length?pageRows.map(overdueRowHtml).join(''):`<tr><td colspan="${OVERDUE_COLUMNS.length}" class="empty" style="padding:40px;">Nəticə tapılmadı</td></tr>`;
+  tbody.innerHTML=pageRows.length?pageRows.map(overdueRowHtml).join(''):`<tr><td colspan="11" class="empty" style="padding:40px;">Nəticə tapılmadı</td></tr>`;
   document.getElementById('pagination-report-overdue').innerHTML=paginationHtml('report-overdue',totalPages,total);
-  const eb=document.getElementById('export-btn');
-  if(eb){ eb.textContent=total?('Excelə yüklə — '+total+' sətir'):'Excelə yüklə'; eb.disabled=!total; }
 }
 
 function renderReportOverdue(){
@@ -1597,10 +1577,7 @@ function renderReportOverdue(){
   setContent(`
     <div class="topbar">
       <div><h1>Gecikmiş müqavilələr</h1><div class="sub">Son ödənişindən ${OVERDUE_MIN_MONTHS} ay və daha çox keçən, borcu qalan müqavilələr</div></div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="overdue">Excelə yüklə</button>
-        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
-      </div>
+      <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
     </div>
     <div class="card" style="padding:16px 18px;margin-bottom:14px;">
       <div class="filters">
@@ -1626,215 +1603,12 @@ function renderReportOverdue(){
     </div>
     <div id="overdue-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
     <div class="card"><div class="table-scroll"><table class="table-compact" style="min-width:1050px;">
-      <thead><tr>${OVERDUE_COLUMNS.map(c=>c.th).join('')}</tr></thead>
+      <thead><tr><th>№</th><th>Tarix</th><th>Müştəri</th><th>Əlaqə</th><th>Satıcı</th><th>Təhsilatçı</th><th>Kurator</th><th class="num">Gecikmə(ay)</th><th class="num">Satış<br>məbləği</th><th class="num">Cari borc</th><th class="num">Qrafik<br>borcu</th></tr></thead>
       <tbody id="overdue-tbody"></tbody>
     </table></div>
     <div id="pagination-report-overdue" style="padding:0 14px 14px;"></div></div>
   `);
   refreshOverdueTable();
-}
-
-/* ============ EXCEL (.xlsx) EXPORT — brauzerdə, kənar kitabxanasız ============
-   Qaydalar (QAYDALAR.md): hər hesabat REPORT_EXPORTS-da elan olunur və export düyməsini avtomatik alır;
-   fayl yaradılmazdan ƏVVƏL export loga yazılır — loga yazılmasa fayl yaradılmır. */
-
-function xlEsc(s){
-  return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g,'')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function xlColName(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
-// 'YYYY-MM-DD' -> Excel tarix seriyası (1899-12-30-dan gün sayı)
-function xlDateSerial(iso){
-  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||''));
-  if(!m) return null;
-  return Math.round((Date.UTC(+m[1],+m[2]-1,+m[3])-Date.UTC(1899,11,30))/86400000);
-}
-// Üslublar: 0 adi, 1 başlıq, 2 məbləğ (#,##0.00), 3 tarix (dd.mm.yyyy), 4 tam ədəd, 5 qalın
-function xlCellXml(ref, v, type, style){
-  if(v===null || v===undefined || v==='') return '';
-  if(type==='money' || type==='int'){
-    let n=Number(v); if(!isFinite(n)) return '';
-    if(type==='money') n=Math.round(n*100)/100;
-    return `<c r="${ref}" s="${type==='money'?2:4}"><v>${n}</v></c>`;
-  }
-  if(type==='date'){
-    const n=xlDateSerial(v); if(n===null) return '';
-    return `<c r="${ref}" s="3"><v>${n}</v></c>`;
-  }
-  // Mətn həmişə "inlineStr" kimi yazılır: "=", "+", "@" ilə başlayan mətn Excel-də düstur kimi icra OLUNMUR
-  return `<c r="${ref}"${style?` s="${style}"`:''} t="inlineStr"><is><t xml:space="preserve">${xlEsc(String(v).slice(0,32000))}</t></is></c>`;
-}
-// sheet: {name, columns:[{label,type,width}]|null, widths?, rows:[[cell|{v,t,s}]], freeze, filter}
-function xlSheetXml(sh, isFirst){
-  const cols=sh.columns||[];
-  const widths=sh.widths||cols.map(c=>c.width||14);
-  const ncols=Math.max(cols.length, widths.length, ...sh.rows.map(r=>r.length), 1);
-  const nrows=sh.rows.length+(cols.length?1:0);
-  const out=[];
-  out.push('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">');
-  out.push(`<dimension ref="A1:${xlColName(ncols-1)}${Math.max(nrows,1)}"/>`);
-  out.push('<sheetViews><sheetView workbookViewId="0"'+(isFirst?' tabSelected="1"':'')+'>'
-    +(sh.freeze && cols.length?'<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/>':'')
-    +'</sheetView></sheetViews>');
-  out.push('<sheetFormatPr defaultRowHeight="15"/>');
-  out.push('<cols>'+widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')+'</cols>');
-  out.push('<sheetData>');
-  let r=0;
-  if(cols.length){
-    r++;
-    out.push(`<row r="${r}">`+cols.map((c,i)=>xlCellXml(xlColName(i)+r,c.label,'text',1)).join('')+'</row>');
-  }
-  for(const row of sh.rows){
-    r++;
-    let x=`<row r="${r}">`;
-    for(let i=0;i<row.length;i++){
-      const cell=row[i];
-      const ov=cell!==null && typeof cell==='object' && 'v' in cell;
-      x+=xlCellXml(xlColName(i)+r, ov?cell.v:cell, ov?(cell.t||'text'):(cols[i]?cols[i].type:'text'), ov?cell.s:undefined);
-    }
-    out.push(x+'</row>');
-  }
-  out.push('</sheetData>');
-  if(sh.filter && cols.length) out.push(`<autoFilter ref="A1:${xlColName(cols.length-1)}${nrows}"/>`);
-  out.push('</worksheet>');
-  return out.join('');
-}
-function xlSheetName(name,i){
-  const n=String(name||'').replace(/[\[\]:*?\/\\]/g,' ').trim().slice(0,31);
-  return n||('Vərəq'+(i+1));
-}
-
-/* ---- ZIP (xlsx bir ZIP arxividir) ---- */
-const _crcTable=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } return t; })();
-function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=_crcTable[(c^u8[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
-async function deflateRaw(u8){
-  if(typeof CompressionStream==='undefined') return null;      // köhnə brauzer: sıxılmadan yazılır
-  try{
-    const stream=new Blob([u8]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  }catch(e){ return null; }
-}
-async function zipBuild(files){
-  const enc=new TextEncoder(), chunks=[], central=[];
-  let offset=0;
-  const d=new Date();
-  const dosTime=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
-  const dosDate=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate());
-  for(const f of files){
-    const nameB=enc.encode(f.name), crc=crc32(f.data);
-    let comp=await deflateRaw(f.data), method=8;
-    if(!comp || comp.length>=f.data.length){ comp=f.data; method=0; }
-    const lh=new DataView(new ArrayBuffer(30));
-    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,method,true);
-    lh.setUint16(10,dosTime,true); lh.setUint16(12,dosDate,true); lh.setUint32(14,crc,true);
-    lh.setUint32(18,comp.length,true); lh.setUint32(22,f.data.length,true); lh.setUint16(26,nameB.length,true); lh.setUint16(28,0,true);
-    chunks.push(new Uint8Array(lh.buffer),nameB,comp);
-    const ch=new DataView(new ArrayBuffer(46));
-    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(10,method,true);
-    ch.setUint16(12,dosTime,true); ch.setUint16(14,dosDate,true); ch.setUint32(16,crc,true);
-    ch.setUint32(20,comp.length,true); ch.setUint32(24,f.data.length,true); ch.setUint16(28,nameB.length,true);
-    ch.setUint32(42,offset,true);
-    central.push(new Uint8Array(ch.buffer),nameB);
-    offset+=30+nameB.length+comp.length;
-  }
-  const centralSize=central.reduce((a,c)=>a+c.length,0);
-  const end=new DataView(new ArrayBuffer(22));
-  end.setUint32(0,0x06054b50,true); end.setUint16(8,files.length,true); end.setUint16(10,files.length,true);
-  end.setUint32(12,centralSize,true); end.setUint32(16,offset,true);
-  return new Blob([...chunks,...central,new Uint8Array(end.buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-}
-
-async function xlBuildBlob(sheets){
-  const enc=new TextEncoder();
-  const X='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
-  const REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-  const names=sheets.map((s,i)=>xlSheetName(s.name,i));
-  const files=[
-    {name:'[Content_Types].xml', data:enc.encode(X+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-      +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
-      +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-      +sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')
-      +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')},
-    {name:'_rels/.rels', data:enc.encode(X+`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`)},
-    {name:'xl/workbook.xml', data:enc.encode(X+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${REL}"><sheets>`
-      +names.map((n,i)=>`<sheet name="${xlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')+'</sheets></workbook>')},
-    {name:'xl/_rels/workbook.xml.rels', data:enc.encode(X+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      +sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${REL}/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')
-      +`<Relationship Id="rId${sheets.length+1}" Type="${REL}/styles" Target="styles.xml"/></Relationships>`)},
-    {name:'xl/styles.xml', data:enc.encode(X+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-      +'<numFmts count="1"><numFmt numFmtId="164" formatCode="dd\\.mm\\.yyyy"/></numFmts>'
-      +'<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
-      +'<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
-      +'<fill><patternFill patternType="solid"><fgColor rgb="FFF3EFE4"/><bgColor indexed="64"/></patternFill></fill></fills>'
-      +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
-      +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-      +'<cellXfs count="6">'
-      +'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
-      +'<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>'
-      +'<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
-      +'<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
-      +'<xf numFmtId="1" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
-      +'<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
-      +'</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')},
-    ...sheets.map((s,i)=>({name:`xl/worksheets/sheet${i+1}.xml`, data:enc.encode(xlSheetXml(s,i===0))})),
-  ];
-  return zipBuild(files);
-}
-function downloadBlob(blob, filename){
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download=filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),10000);
-}
-
-/* ---- hesabatların export elanı ---- */
-let currentUsername='';
-function bakuDateIso(){ return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Baku',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()); }
-
-const REPORT_EXPORTS={
-  overdue:{
-    title:'Gecikmiş müqavilələr', file:'Gecikmis_muqavileler',
-    columns:()=>OVERDUE_COLUMNS,
-    rows:()=>filterOverdue(overdueBase, overdueFilters),
-    filters:()=>overdueFilterDescription(),
-    totals:(rows)=>[['Cəmi cari borc',rows.reduce((a,r)=>a+r.debt,0)],['Cəmi qrafik borcu',rows.reduce((a,r)=>a+r.scheduleDebt,0)]],
-  },
-};
-
-// Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
-async function logExport(key, count, filters){
-  const r=await fetch('export-log.php',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({report:key, rows:count, filters:filters.map(f=>({l:f.l,v:f.v}))})});
-  let j=null; try{ j=await r.json(); }catch(e){}
-  if(!r.ok || !j || !j.ok) throw new Error('Export loga yazıla bilmədi, fayl yaradılmadı. '+((j&&j.error)||('Server cavabı: '+r.status)));
-}
-
-async function exportReport(key){
-  const def=REPORT_EXPORTS[key];
-  if(!def) throw new Error('Naməlum hesabat: '+key);
-  const rows=def.rows();
-  if(!rows.length) throw new Error('Export üçün sətir yoxdur.');
-  const filters=def.filters();
-  await logExport(key, rows.length, filters);                       // 1) əvvəl log
-  const cols=def.columns();
-  const dataSheet={
-    name:def.title, freeze:true, filter:true,
-    columns:cols.map(c=>({label:c.xl, type:c.type, width:c.width})),
-    rows:rows.map(r=>cols.map(c=>c.val(r))),
-  };
-  const info=[
-    [{v:'Hesabat',s:5}, def.title],
-    [{v:'Yüklənmə vaxtı (Bakı)',s:5}, fmtBaku(new Date().toISOString().slice(0,19).replace('T',' '))],
-    [{v:'İstifadəçi',s:5}, currentUsername||'—'],
-    [{v:'Sətir sayı',s:5}, {v:rows.length,t:'int'}],
-    ...def.totals(rows).map(t=>[{v:t[0],s:5},{v:t[1],t:'money'}]),
-    ['',''],
-    [{v:'Tətbiq olunan filtrlər',s:5}, filters.length?'':'Filtr yoxdur (bütün nəticələr)'],
-    ...filters.map(f=>[f.l, f.v]),
-  ];
-  const blob=await xlBuildBlob([dataSheet,{name:'Məlumat', widths:[30,60], rows:info}]);   // 2) fayl
-  downloadBlob(blob, def.file+'_'+bakuDateIso()+'.xlsx');
 }
 
 /* ============ DƏYİŞİKLİK LOGU (yalnız admin) ============ */
@@ -1845,9 +1619,9 @@ const AUDIT_ACTIONS={
   IMPORT:['İdxal','tag-accent'], RESET:['Təmizləmə','tag-red'], FIX:['Düzəliş','tag-accent'],
   USER_CREATE:['İstifadəçi yaradıldı','tag-gray'], USER_BLOCK:['İstifadəçi bloklandı','tag-red'],
   USER_UNBLOCK:['Blokdan çıxarıldı','tag-green'], USER_PASSWORD:['Şifrə dəyişdi','tag-amber'],
-  USER_DELETE:['İstifadəçi silindi','tag-red'], EXPORT:['Excel export','tag-accent'],
+  USER_DELETE:['İstifadəçi silindi','tag-red'],
 };
-const AUDIT_ENTITIES={contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
+const AUDIT_ENTITIES={contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi'};
 
 // Log vaxtları serverdə UTC saxlanılır; burada Bakı vaxtı ilə göstərilir
 const _bakuFmt=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Baku',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
@@ -1907,7 +1681,7 @@ async function renderAuditLog(){
   setContent(`
     <div class="topbar"><div><h1>Dəyişiklik logu</h1><div class="sub">Sistemdə aparılan bütün dəyişikliklər (yalnız admin görür)</div></div></div>
     <div class="chips">
-      ${chip('','Hamısı')}${chip('delete','Silmələr')}${chip('failed','Uğursuz girişlər')}${chip('batch','Toplu əməliyyatlar')}${chip('users','İstifadəçi / səlahiyyət dəyişiklikləri')}${chip('export','Excel export-lar')}
+      ${chip('','Hamısı')}${chip('delete','Silmələr')}${chip('failed','Uğursuz girişlər')}${chip('batch','Toplu əməliyyatlar')}${chip('users','İstifadəçi / səlahiyyət dəyişiklikləri')}
     </div>
     <div class="card" style="padding:16px 18px;margin-bottom:12px;">
       <div class="filters">
@@ -1980,12 +1754,12 @@ function auditApplyScope(fields, label){
 }
 
 /* ---- Təfərrüat pəncərəsi (Sahə | Köhnə | Yeni) ---- */
-function auditChangesTable(ch, bothColumns, newLabel){
+function auditChangesTable(ch, bothColumns){
   if(!ch || !ch.length) return '';
   const hasOld=bothColumns || ch.some(c=>c.o), hasNew=bothColumns || ch.some(c=>c.n);
   const rows=ch.map(c=>`<tr><td>${esc(c.l||c.f)}</td>${hasOld?`<td>${esc(c.o||'—')}</td>`:''}${hasNew?`<td>${esc(c.n||'—')}</td>`:''}</tr>`).join('');
   return `<div class="card" style="margin-top:12px;"><div class="table-scroll"><table class="table-compact diff">
-    <thead><tr><th>Sahə</th>${hasOld?'<th>Köhnə</th>':''}${hasNew?'<th>'+(newLabel||'Yeni')+'</th>':''}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    <thead><tr><th>Sahə</th>${hasOld?'<th>Köhnə</th>':''}${hasNew?'<th>Yeni</th>':''}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function auditDetailHtml(r){
   const isBatch=!!r.opId && r.opCount>1;
@@ -2014,7 +1788,7 @@ function auditDetailHtml(r){
       ${r.opId?`<div class="muted" style="font-size:12px;">Əməliyyat nömrəsi: ${esc(r.opId)}</div>`:''}
     </div>
     ${isBatch?`<div class="muted" style="font-size:12.5px;margin-top:10px;">Bu toplu əməliyyat ${r.opCount} dəyişiklikdən ibarətdir. Aşağıda onlardan biri göstərilir, hamısı üçün "Bu əməliyyatın bütün ${r.opCount} dəyişikliyi" düyməsinə basın.</div>`:''}
-    ${auditChangesTable(r.changes, r.action==='UPDATE', ['EXPORT','IMPORT','FIX'].includes(r.action)?'Dəyər':'Yeni')}
+    ${auditChangesTable(r.changes, r.action==='UPDATE')}
     <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${b.join('')}</div>
       <button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button>
@@ -2171,10 +1945,6 @@ document.addEventListener('click', async (e)=>{
   if(action==='show-court'){ openCourtModal(id); return; }
   if(action==='delete-court-note'){ await withButtonLoading(btn, ()=>deleteCourtNote(id, btn.dataset.idx)); return; }
   if(action==='overdue-reset'){ resetOverdueFilters(); renderReportOverdue(); return; }
-  if(action==='export-report'){
-    await withButtonLoading(btn, async()=>{ try{ await exportReport(btn.dataset.report); }catch(err){ alert(err.message); } });
-    return;
-  }
   if(action==='toggle-admin-group'){ adminGroupOpen=!adminGroupOpen; syncAdminGroup(); return; }
   if(action==='audit-kind'){ auditFilters.kind=btn.dataset.kind; pageNum['audit-log']=1; renderAuditLog(); return; }
   if(action==='audit-reset'){ auditFilters=auditDefaultFilters(); pageNum['audit-log']=1; renderAuditLog(); return; }
@@ -2312,7 +2082,6 @@ renderScreen().catch(err=>{
 
 fetch('whoami.php').then(r=>r.json()).then(u=>{
   if(!u || !u.username) return;
-  currentUsername = u.username;
   document.getElementById('user-info').textContent = u.username + ' (' + (u.role==='admin'?'Admin':'İstifadəçi') + ')';
   if(u.role==='admin'){ document.body.classList.add('is-admin'); }
 }).catch(()=>{});

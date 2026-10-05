@@ -59,11 +59,22 @@ function attempt_login($username, $password) {
     $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
     $stmt->execute([$username]);
     $user = $stmt->fetch();
-    if (!$user) return ['ok' => false, 'error' => 'İstifadəçi adı və ya şifrə yanlışdır.'];
-    if ((int) $user['blocked'] === 1) return ['ok' => false, 'error' => 'Bu istifadəçi bloklanıb.'];
-    if (!password_verify($password, $user['passwordHash'])) return ['ok' => false, 'error' => 'İstifadəçi adı və ya şifrə yanlışdır.'];
+    // Giriş hadisələri loga yazılır (şifrə heç vaxt yazılmır); log xətası girişə mane olmur
+    if (!$user) {
+        audit_event($pdo, 'LOGIN_FAILED', 'Uğursuz giriş: belə istifadəçi yoxdur', ['username' => $username]);
+        return ['ok' => false, 'error' => 'İstifadəçi adı və ya şifrə yanlışdır.'];
+    }
+    if ((int) $user['blocked'] === 1) {
+        audit_event($pdo, 'LOGIN_FAILED', 'Uğursuz giriş: istifadəçi bloklanıb', ['username' => $user['username'], 'userId' => $user['id']]);
+        return ['ok' => false, 'error' => 'Bu istifadəçi bloklanıb.'];
+    }
+    if (!password_verify($password, $user['passwordHash'])) {
+        audit_event($pdo, 'LOGIN_FAILED', 'Uğursuz giriş: şifrə yanlışdır', ['username' => $user['username'], 'userId' => $user['id']]);
+        return ['ok' => false, 'error' => 'İstifadəçi adı və ya şifrə yanlışdır.'];
+    }
     start_session_safe();
     $_SESSION['user'] = ['id' => $user['id'], 'username' => $user['username'], 'role' => $user['role']];
+    audit_event($pdo, 'LOGIN', 'Sistemə giriş', ['username' => $user['username'], 'userId' => $user['id']]);
     return ['ok' => true];
 }
 

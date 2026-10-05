@@ -22,12 +22,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("INSERT INTO users (id,username,passwordHash,role,blocked,createdAt) VALUES (?,?,?,?,0,?)")
                     ->execute([make_uuid(), $username, password_hash($password, PASSWORD_DEFAULT), $role, date('Y-m-d H:i:s')]);
                 $message = 'İstifadəçi yaradıldı: ' . $username;
+                audit_event($pdo, 'USER_CREATE', 'İstifadəçi yaradıldı: ' . $username . ' (' . ($role === 'admin' ? 'admin' : 'istifadəçi') . ')',
+                    ['entity' => 'users', 'entityLabel' => $username]);
             }
         }
     } elseif ($action === 'toggle_block') {
         $id = $_POST['id'] ?? '';
-        $pdo->prepare("UPDATE users SET blocked = 1-blocked WHERE id=? AND username<>'admin'")->execute([$id]);
+        $upd = $pdo->prepare("UPDATE users SET blocked = 1-blocked WHERE id=? AND username<>'admin'");
+        $upd->execute([$id]);
         $message = 'Status yeniləndi.';
+        if ($upd->rowCount() > 0) {
+            $tu = $pdo->prepare("SELECT username, blocked FROM users WHERE id=?");
+            $tu->execute([$id]);
+            $trow = $tu->fetch();
+            if ($trow) {
+                $isBlocked = ((int) $trow['blocked'] === 1);
+                audit_event($pdo, $isBlocked ? 'USER_BLOCK' : 'USER_UNBLOCK',
+                    ($isBlocked ? 'İstifadəçi bloklandı: ' : 'İstifadəçi blokdan çıxarıldı: ') . $trow['username'],
+                    ['entity' => 'users', 'entityId' => $id, 'entityLabel' => $trow['username']]);
+            }
+        }
     } elseif ($action === 'change_password') {
         $id = $_POST['id'] ?? '';
         $newPass = $_POST['new_password'] ?? '';
@@ -36,11 +50,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $pdo->prepare("UPDATE users SET passwordHash=? WHERE id=?")->execute([password_hash($newPass, PASSWORD_DEFAULT), $id]);
             $message = 'Şifrə yeniləndi.';
+            // Şifrənin özü və ya hash-i loga YAZILMIR, yalnız dəyişmə faktı
+            $tu = $pdo->prepare("SELECT username FROM users WHERE id=?");
+            $tu->execute([$id]);
+            $tname = $tu->fetchColumn();
+            if ($tname !== false) {
+                audit_event($pdo, 'USER_PASSWORD', 'Şifrə dəyişdirildi: ' . $tname,
+                    ['entity' => 'users', 'entityId' => $id, 'entityLabel' => $tname]);
+            }
         }
     } elseif ($action === 'delete') {
         $id = $_POST['id'] ?? '';
+        $tu = $pdo->prepare("SELECT username, role FROM users WHERE id=? AND username<>'admin'");
+        $tu->execute([$id]);
+        $trow = $tu->fetch();
         $pdo->prepare("DELETE FROM users WHERE id=? AND username<>'admin'")->execute([$id]);
         $message = 'İstifadəçi silindi.';
+        if ($trow) {
+            audit_event($pdo, 'USER_DELETE', 'İstifadəçi silindi: ' . $trow['username'] . ' (' . ($trow['role'] === 'admin' ? 'admin' : 'istifadəçi') . ')',
+                ['entity' => 'users', 'entityId' => $id, 'entityLabel' => $trow['username']]);
+        }
     }
 }
 

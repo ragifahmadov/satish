@@ -62,6 +62,11 @@ try {
 
     if ($finished) {
         @unlink($jobPath);
+        audit_event($pdo, 'FIX', 'Qrafik ayı düzəlişi: ' . $job['total'] . ' ödəniş yoxlanıldı, ' . $job['changed'] . ' ödənişin ayı dəyişdirildi',
+            ['changes' => [
+                ['f' => 'checked', 'l' => 'Yoxlanılan ödəniş', 'o' => '', 'n' => (string) $job['total']],
+                ['f' => 'changed', 'l' => 'Ayı dəyişdirilən ödəniş', 'o' => '', 'n' => (string) $job['changed']],
+            ]]);
     } else {
         file_put_contents($jobPath, json_encode($job));
     }

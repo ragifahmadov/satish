@@ -93,7 +93,7 @@ function audit_full_name($row) {
 function audit_entity_name($col) {
     static $m = [
         'salespeople' => 'Satıcı', 'collectors' => 'Təhsilatçı', 'curators' => 'Kurator',
-        'customers' => 'Müştəri', 'contracts' => 'Müqavilə', 'payments' => 'Ödəniş', 'users' => 'İstifadəçi', 'reports' => 'Hesabat',
+        'customers' => 'Müştəri', 'contracts' => 'Müqavilə', 'payments' => 'Ödəniş', 'users' => 'İstifadəçi',
     ];
     return $m[$col] ?? $col;
 }

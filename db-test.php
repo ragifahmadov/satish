@@ -40,6 +40,16 @@ try {
             echo "  ✅ $table — struktur tamdır ($count qeyd)\n";
         }
     }
+    // Dəyişiklik logu cədvəli ($SCHEMA-da deyil, ayrıca yoxlanılır)
+    $auditExists = $pdo->query("SHOW TABLES LIKE 'audit_log'")->fetchColumn();
+    if ($auditExists) {
+        $auditCount = (int) $pdo->query("SELECT COUNT(*) FROM audit_log")->fetchColumn();
+        echo "  ✅ audit_log — dəyişiklik logu cədvəli var ($auditCount qeyd)\n";
+    } else {
+        echo "  ❌ audit_log — dəyişiklik logu cədvəli YOXDUR\n";
+        $problems++;
+    }
+
     echo "\n" . ($problems === 0
         ? "✅ Bütün struktur düzgündür."
         : "⚠️ $problems problem tapıldı. Səhifəni bir də yeniləyin; davam edərsə xəta mətnini göndərin.") . "\n";

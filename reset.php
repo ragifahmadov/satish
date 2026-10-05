@@ -25,6 +25,13 @@ if ($confirmed) {
             $pdo->exec("DELETE FROM `$table`");
             $counts[$table] = $before;
         }
+        $sumParts = [];
+        $chg = [];
+        foreach ($counts as $t => $c) {
+            $sumParts[] = audit_entity_name($t) . ': ' . $c;
+            $chg[] = ['f' => $t, 'l' => audit_entity_name($t), 'o' => (string) $c, 'n' => '0'];
+        }
+        audit_event($pdo, 'RESET', 'Baza təmizləndi — silinən qeydlər: ' . implode(', ', $sumParts), ['changes' => $chg]);
         echo "<h2>Təmizləndi</h2><pre>";
         foreach ($counts as $t => $c) {
             echo "[$t] $c qeyd silindi.\n";

@@ -124,6 +124,15 @@ try {
 
     if ($finished) {
         @unlink($jobPath);
+        // 50 min ayrı sətir əvəzinə bir xülasə sətri
+        $t = $job['totals'];
+        audit_event($pdo, 'IMPORT',
+            'İdxal tamamlandı: ' . $t['customers'] . ' müştəri, ' . $t['contracts'] . ' müqavilə, ' . $t['payments'] . ' ödəniş',
+            ['changes' => [
+                ['f' => 'customers', 'l' => 'Müştəri', 'o' => '', 'n' => (string) $t['customers']],
+                ['f' => 'contracts', 'l' => 'Müqavilə', 'o' => '', 'n' => (string) $t['contracts']],
+                ['f' => 'payments', 'l' => 'Ödəniş', 'o' => '', 'n' => (string) $t['payments']],
+            ]]);
     } else {
         file_put_contents($jobPath, json_encode($job));
     }

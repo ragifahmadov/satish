@@ -17,16 +17,6 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
 6. Log cədvəlinin strukturunu dəyişəndə `AUDIT_SCHEMA_VERSION` (audit.php) dəyişdirilməlidir.
 7. Vaxtlar UTC saxlanılır, ekranda Bakı vaxtı göstərilir.
 
-## Hesabatlar və Excel export
-
-1. Hər hesabat səhifəsində **Excelə yüklə** düyməsi olmalıdır. Hesabatı `REPORT_EXPORTS` (app.html) siyahısında elan edin:
-   sütunlar (`xl` başlıq, `type`: text/int/money/date, `width`, `val`), sətirlər, filtrlərin təsviri, cəmlər.
-   Ekran cədvəlinin başlıq/xanaları də AYNI sütun elanından qurulmalıdır (ayrı-ayrı yazmayın) — ekranla Excel uyğunsuz qalmasın.
-2. Export hadisəsi `export-log.php`-də `$REPORTS` siyahısına da əlavə olunmalıdır (siyahıda olmayan ad rədd edilir).
-3. Fayl YARADILMAZDAN ƏVVƏL `export-log.php` çağırılır; loga yazılmasa fayl yaradılmır.
-4. Fayl real `.xlsx`-dir (CSV yox): məbləğ rəqəm, tarix Excel tarixi, mətn (müqavilə №, telefon) mətn kimi yazılır;
-   "=", "+", "@" ilə başlayan mətn düstur kimi icra olunmur.
-
 ## Performans
 
 - Hər sorğu üçün bazaya qoşulma bir dəfə (`get_pdo()`), struktur yoxlaması konteynerdə bir dəfə.

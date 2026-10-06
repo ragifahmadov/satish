@@ -29,6 +29,7 @@ function perm_screens() {
         'debt-inquiry' => 'Müştəri borc sorğusu',
         'report-overdue' => 'Hesabat: Gecikmiş müqavilələr',
         'report-collections' => 'Hesabat: Təhsilat hesabatı',
+        'report-contracts' => 'Hesabat: Müqavilə axtarışı',
     ];
 }
 
@@ -67,6 +68,8 @@ function perm_screen_needs() {
         'report-overdue' => ['contracts' => 'ref', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@last' => 1],
         // Təhsilat hesabatının sətirləri report-api.php-dən gəlir (müqavilə №, müştəri adı — yığcam); burada yalnız təhsilatçı siyahısı
         'report-collections' => ['collectors' => 'ref'],
+        // Müqavilə axtarışının sətirləri report-api.php-dən gəlir; burada yalnız filtr siyahıları (adlar)
+        'report-contracts' => ['salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref'],
     ];
 }
 
@@ -544,4 +547,18 @@ function authz_collector_payment_denied($ctx, $body) {
     if ((string) ($body['emeliyyatNovu'] ?? '') === 'Geri qaytarma' || (float) ($body['meblag'] ?? 0) <= 0) return 'Təhsilatçı yalnız müsbət məbləğli ödəniş qəbul edə bilər.';
     if ((string) ($body['reassignCollectorId'] ?? '') !== '') return 'Təhsilatçı müqavilənin təhsilatçısını dəyişə bilməz.';
     return '';
+}
+
+// Qrafik üzrə keçmiş ayların sayı — brauzerdəki scheduleDueCount() ilə EYNİ qayda: i-ci ay = müqavilə ayından
+// i ay sonrakı ayın 1-i; bu tarix bu gündən (Bakı) gec deyilsə ay keçmiş sayılır.
+function schedule_due_count($tarix, $muddet, $today) {
+    if (!preg_match('/^(\d{4})-(\d{2})/', (string) $tarix, $m) || (int) $muddet <= 0) return 0;
+    $y = (int) $m[1]; $mo = (int) $m[2];
+    $due = 0;
+    for ($i = 1; $i <= (int) $muddet; $i++) {
+        $t = $y * 12 + ($mo - 1) + $i;
+        $d = sprintf('%04d-%02d-01', intdiv($t, 12), $t % 12 + 1);
+        if ($d <= $today) { $due = $i; } else { break; }
+    }
+    return $due;
 }

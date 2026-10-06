@@ -30,6 +30,7 @@ $pdo = get_pdo();
 // hesabat açarı => ona baxış üçün lazım olan ekran açarı (permissions.php → perm_screens)
 $REPORT_SCREENS = [
     'collections' => 'report-collections',
+    'contracts' => 'report-contracts',
 ];
 
 $report = (string) ($_GET['report'] ?? '');
@@ -37,6 +38,11 @@ if (!isset($REPORT_SCREENS[$report])) { fail(400, 'Naməlum hesabat'); }
 // Təhsilatçıya bağlı istifadəçi "Mənim ödənişlərim" (mobil) üçün Təhsilat (mobil) hüququ ilə də baxa bilər —
 // onun üçün sətirlər yalnız öz ödənişləridir (authz_payment_collector_scope)
 $mobileOwn = ($report === 'collections' && !empty($ctx['collectorId']) && authz_can($ctx, 'collector-mobile', 1));
+// Təhsilatçıya bağlı istifadəçi (mobil) yalnız "Mənim ödənişlərim"i görür — digər hesabatlara girişi yoxdur
+if (!empty($ctx['collectorId']) && $report !== 'collections') {
+    audit_event($pdo, 'ACCESS_DENIED', 'İcazə verilmədi: hesabat — ' . $report . ' (təhsilatçı istifadəçisi)', ['entity' => 'reports']);
+    fail(403, 'Bu hesabata baxmaq üçün icazəniz yoxdur.');
+}
 if (!$mobileOwn && !authz_can($ctx, $REPORT_SCREENS[$report], 1)) {
     audit_event($pdo, 'ACCESS_DENIED', 'İcazə verilmədi: hesabat — ' . $report, ['entity' => 'reports']);
     fail(403, 'Bu hesabata baxmaq üçün icazəniz yoxdur.');
@@ -100,3 +106,123 @@ if ($report === 'collections') {
     echo json_encode(['rows' => $rows, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
+
+/* ---------- Müqavilə axtarışı ----------
+   Filtrlər arasında VƏ. Sətirlər yalnız authz_contract_scope() şərtindən keçir. Mətn filtrləri hissə ilə (LIKE),
+   telefon rəqəmlərlə. Təhsilatçı/kurator: "cur" — hazırkı (indeksli sütun), "all" — tarixçədə nə vaxtsa olub
+   (SQL-də id mətninə görə ön-süzgəc, PHP-də JSON üzrə dəqiq yoxlama). Məhkəməlik = məhkəmə qeydi dolu.
+   Borc sahələri (ödənilib, qalıq, qrafik borcu) serverdə brauzerdəki düsturlarla hesablanır. */
+if ($report === 'contracts') {
+    $g = function ($k) { return trim((string) ($_GET[$k] ?? '')); };
+    $num = function ($k) use ($g) {
+        $v = str_replace(',', '.', $g($k));
+        if ($v === '') return null;
+        if (!is_numeric($v)) { fail(400, 'Rəqəm düzgün deyil (' . $k . ')'); }
+        return (float) $v;
+    };
+    $uuidP = function ($k) use ($g) {
+        $v = $g($k);
+        if ($v !== '' && $v !== '__none__' && !preg_match('/^[0-9a-fA-F-]{36}$/', $v)) { fail(400, 'Seçim düzgün deyil (' . $k . ')'); }
+        return $v;
+    };
+    $like = function ($v) { return '%' . addcslashes(mb_strtolower($v), '%_\\') . '%'; };
+
+    [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
+    $where = [$cSql];
+    if (($v = $g('nomre')) !== '') { $where[] = 'LOWER(c.nomre) LIKE :nomre'; $params[':nomre'] = $like($v); }
+    if (($v = $g('tarixDan')) !== '') { report_date_param('tarixDan'); $where[] = 'c.tarix >= :tdan'; $params[':tdan'] = $v; }
+    if (($v = $g('tarixDek')) !== '') { report_date_param('tarixDek'); $where[] = 'c.tarix <= :tdek'; $params[':tdek'] = $v; }
+    if (($v = preg_replace('/\s+/u', ' ', $g('musteri'))) !== '') {
+        $where[] = "LOWER(CONCAT_WS(' ', cu.soyad, cu.ad, cu.ataAdi)) LIKE :must"; $params[':must'] = $like($v);
+    }
+    if (($v = $g('fin')) !== '') { $where[] = 'LOWER(cu.finKod) LIKE :fin'; $params[':fin'] = $like($v); }
+    if (($v = preg_replace('/\D/', '', $g('tel'))) !== '') {
+        $clean = function ($col) { return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE($col,''),' ',''),'-',''),'(',''),')',''),'+','')"; };
+        $where[] = '(' . $clean('cu.elaqeNomre1') . ' LIKE :tel1 OR ' . $clean('cu.elaqeNomre2') . ' LIKE :tel2)';
+        $params[':tel1'] = '%' . $v . '%'; $params[':tel2'] = '%' . $v . '%';
+    }
+    if (($v = $uuidP('satici')) !== '') { $where[] = 'c.salespersonId = :sat'; $params[':sat'] = $v; }
+    $hist = [];   // PHP-də dəqiq yoxlanacaq "Ümumi" şərtləri
+    foreach ([['tehsilatci', 'currentCollectorId', 'tehsilatciTeyinatlari', 'collectorId'], ['kurator', 'currentCuratorId', 'kuratorTeyinatlari', 'curatorId']] as [$k, $curCol, $jsonCol, $idKey]) {
+        $v = $uuidP($k);
+        if ($v === '') continue;
+        $mode = ($g($k . 'Mode') === 'all') ? 'all' : 'cur';
+        if ($v === '__none__') {
+            if ($mode === 'cur') { $where[] = "(c.$curCol IS NULL OR c.$curCol = '')"; }
+            else { $hist[] = [$jsonCol, $idKey, null]; }   // tarixçəsi ümumiyyətlə boş olanlar
+        } elseif ($mode === 'cur') {
+            $where[] = "c.$curCol = :$k"; $params[":$k"] = $v;
+        } else {
+            $where[] = "c.$jsonCol LIKE :{$k}h"; $params[":{$k}h"] = '%' . $v . '%';
+            $hist[] = [$jsonCol, $idKey, $v];
+        }
+    }
+    foreach ([['satis', 'c.meblag'], ['ilkin', 'c.ilkinOdenis'], ['muddet', 'c.muddet']] as [$k, $col]) {
+        if (($x = $num($k . 'Min')) !== null) { $where[] = "$col >= :{$k}min"; $params[":{$k}min"] = $x; }
+        if (($x = $num($k . 'Max')) !== null) { $where[] = "$col <= :{$k}max"; $params[":{$k}max"] = $x; }
+    }
+    if (($v = $g('qeyd')) !== '') { $where[] = 'LOWER(c.qeyd) LIKE :qeyd'; $params[':qeyd'] = $like($v); }
+    $borcMin = $num('borcMin'); $borcMax = $num('borcMax'); $qMin = $num('qrafikMin'); $qMax = $num('qrafikMax');
+    $court = ($g('mehkeme') === '1');
+
+    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.customerId, c.salespersonId, c.meblag, c.ilkinOdenis, c.muddet,
+            c.tehsilatciTeyinatlari, c.kuratorTeyinatlari, c.mehkemeQeydleri, c.currentCollectorId, c.currentCuratorId,
+            cu.soyad, cu.ad, cu.ataAdi, cu.finKod, cu.elaqeNomre1, cu.elaqeNomre2,
+            COALESCE(ps.paid, 0) AS paid, COALESCE(ps.ret, 0) AS ret
+        FROM contracts c
+        LEFT JOIN customers cu ON cu.id = c.customerId
+        LEFT JOIN (SELECT contractId,
+                SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN 0 ELSE meblag END) AS paid,
+                SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN -meblag ELSE 0 END) AS ret
+            FROM payments GROUP BY contractId) ps ON ps.contractId = c.id
+        WHERE " . implode(' AND ', $where) . "
+        ORDER BY c.tarix DESC, c.nomre ASC");
+    $st->execute($params);
+
+    $today = baku_today();
+    $eps = 0.0001;
+    $rows = [];
+    foreach ($st->fetchAll() as $r) {
+        $tt = json_decode((string) $r['tehsilatciTeyinatlari'], true); $tt = is_array($tt) ? $tt : [];
+        $kt = json_decode((string) $r['kuratorTeyinatlari'], true); $kt = is_array($kt) ? $kt : [];
+        $mq = json_decode((string) $r['mehkemeQeydleri'], true); $mq = is_array($mq) ? $mq : [];
+        $ok = true;
+        foreach ($hist as [$jsonCol, $idKey, $id]) {
+            $list = ($jsonCol === 'tehsilatciTeyinatlari') ? $tt : $kt;
+            $ids = [];
+            foreach ($list as $a) { if (is_array($a) && (string) ($a[$idKey] ?? '') !== '') { $ids[] = (string) $a[$idKey]; } }
+            if ($id === null ? (count($ids) > 0) : !in_array($id, $ids, true)) { $ok = false; break; }
+        }
+        if (!$ok) continue;
+        if ($court && count($mq) === 0) continue;
+        $paid = (float) $r['paid']; $ret = (float) $r['ret'];
+        $net = (float) $r['meblag'] - $ret; $ilkin = (float) $r['ilkinOdenis']; $m = (int) $r['muddet'];
+        $monthly = $m > 0 ? max(0, ($net - $ilkin) / $m) : 0;
+        $debt = $net - $ilkin - $paid;
+        $sched = max(0, $monthly * schedule_due_count($r['tarix'], $m, $today) - $paid);
+        if ($borcMin !== null && $debt < $borcMin - $eps) continue;
+        if ($borcMax !== null && $debt > $borcMax + $eps) continue;
+        if ($qMin !== null && $sched < $qMin - $eps) continue;
+        if ($qMax !== null && $sched > $qMax + $eps) continue;
+        $hl = function ($list, $idKey) {
+            $o = [];
+            foreach ($list as $a) { if (is_array($a)) { $o[] = ['id' => (string) ($a[$idKey] ?? ''), 'from' => (string) ($a['baslama'] ?? ''), 'to' => (string) ($a['son'] ?? '')]; } }
+            return $o;
+        };
+        $rows[] = [
+            'id' => $r['id'], 'nomre' => (string) $r['nomre'], 'tarix' => (string) ($r['tarix'] ?? ''),
+            'cust' => audit_full_name($r), 'fin' => (string) ($r['finKod'] ?? ''),
+            'phones' => array_values(array_filter([(string) $r['elaqeNomre1'], (string) $r['elaqeNomre2']], 'strlen')),
+            'sp' => (string) $r['salespersonId'], 'col' => (string) ($r['currentCollectorId'] ?? ''), 'cur' => (string) ($r['currentCuratorId'] ?? ''),
+            'colHist' => $hl($tt, 'collectorId'), 'curHist' => $hl($kt, 'curatorId'),
+            'sale' => (float) $r['meblag'], 'ilkin' => $ilkin, 'muddet' => $m, 'paid' => round($paid, 2), 'ret' => round($ret, 2),
+            'debt' => round($debt, 2), 'sched' => round($sched, 2), 'court' => count($mq) > 0,
+        ];
+    }
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['rows' => $rows, 'today' => $today], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+fail(400, 'Naməlum hesabat');
+

@@ -147,6 +147,9 @@ t('Bağlı təhsilatçı: yalnız bugünkü tarix, yalnız müsbət ödəniş, t
     && authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => 5, 'reassignCollectorId' => $cid]) !== '');
 t('Bağlı olmayan istifadəçiyə bu məhdudiyyət tətbiq olunmur', authz_collector_payment_denied(mk(['payments' => 2]), ['odemeTarixi' => '2000-01-01', 'meblag' => 5]) === '');
 
+t('Müqavilə axtarışı: hüquq açarı və filtr siyahıları (adlar)', authz_can(mk(['report-contracts' => 1]), 'report-contracts', 1) && authz_read_tier(mk(['report-contracts' => 1]), 'curators') === 'ref' && authz_read_tier(mk(['report-contracts' => 1]), 'contracts') === null);
+t('Qrafik üzrə keçmiş aylar (brauzerlə eyni qayda)', schedule_due_count('2026-01-15', 10, '2026-03-01') === 2 && schedule_due_count('2026-01-15', 10, '2026-01-31') === 0 && schedule_due_count('2026-01-15', 10, '2026-02-28') === 1 && schedule_due_count('2025-12-31', 3, '2027-01-01') === 3 && schedule_due_count('', 10, '2026-01-01') === 0);
+
 /* ---------- 6) hazırkı təhsilatçı/kurator qaydası ---------- */
 t('Boş tarixçə → null', derive_current_assignee([], 'collectorId') === null && derive_current_assignee(null, 'collectorId') === null);
 t('Açıq (son boş) təyinat seçilir', derive_current_assignee([['collectorId' => 'A', 'baslama' => '1', 'son' => '2'], ['collectorId' => 'B', 'baslama' => '2', 'son' => '']], 'collectorId') === 'B');

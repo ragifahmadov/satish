@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail(405, 'Yalnız POST'); }
 $REPORTS = [
     'overdue' => ['Gecikmiş müqavilələr', 'report-overdue'],
     'collections' => ['Təhsilat hesabatı', 'report-collections'],
+    'contracts' => ['Müqavilə axtarışı', 'report-contracts'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

@@ -65,4 +65,8 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
 12. **Mobil təhsilat** (`tehsilat.php` + `mobile-api.php`): ekran açarı `collector-mobile`. Hesablama funksiyaları (`scheduleMonths`,
    `scheduleDueCount`, `currentScheduleIndex`) app.html ilə EYNİDİR — dəyişəndə ikisini də dəyişin (test yoxlayır).
    Ödəniş göndərərkən brauzer `clientId` (uuid) verir; server eyni id-ni ikinci dəfə yazmır (mobil internetdə təkrar göndərmə).
+13. **Müqavilə axtarışı** (`report-api.php?report=contracts`): bütün filtrlər serverdə, filtrlər arasında VƏ. Təhsilatçı/kurator "Ümumi"
+   rejimi tarixçəyə baxır (SQL-də id mətni ilə ön-süzgəc + PHP-də JSON üzrə dəqiq yoxlama). Qrafik borcu serverdə `schedule_due_count()`
+   ilə hesablanır — brauzerdəki `scheduleDueCount()` ilə EYNİ qayda (dəyişəndə ikisini də dəyişin). Təhsilatçıya bağlı istifadəçinin
+   `report-api.php`-də yalnız "collections" (öz ödənişləri) hesabatına girişi var.
 

@@ -404,7 +404,9 @@ function renderNav(){
       html+=kids.map(ch=>`<button class="navbtn navsub${ch.id===currentScreen?' active':''}" data-action="nav" data-screen="${ch.id}"><span>${ch.label}</span></button>`).join('');
     }
     return html;
-  }).join('');
+  }).join('')
+  // Mobil təhsilat ayrıca səhifədir (tehsilat.php) — hüququ olana menyuda keçid
+  +(can('collector-mobile',1)?`<a class="navbtn" href="tehsilat.php" style="text-decoration:none;">${ICONS.payment}<span>Təhsilat (mobil)</span></a>`:'');
   syncAdminGroup();
 }
 // "Administrasiya" qrupu: log ekranındaykən avtomatik açıq, əks halda düymə ilə açılıb-bağlanır
@@ -2493,7 +2495,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
@@ -2510,8 +2512,10 @@ async function uaApi(url,body){
   if(!r.ok) throw new Error((j&&j.error)||('Xəta ('+r.status+')'));
   return j;
 }
+function uaPersonName(key,id){ const p=(ua.people[key]||[]).find(x=>x.id===id); return p?p.name:'(silinmiş)'; }
 function uaSummary(u){
   if(u.role==='admin') return 'Bütün hüquqlar';
+  if(u.collectorId) return 'Təhsilatçı: '+uaPersonName('collectors',u.collectorId);
   const n=Object.values(u.screens).filter(v=>v>0).length;
   const sc=u.scope.mode==='all'?'bütün müqavilələr':((u.scope.salespeople.length+u.scope.collectors.length+u.scope.curators.length)+' seçim');
   return n+' ekran · '+sc;
@@ -2604,10 +2608,15 @@ function uaEditorHtml(){
     <div class="muted" style="font-size:12px;margin-top:6px;">Dəyişiklik hüququ Baxışı, Silmə isə hər ikisini özündə saxlayır.</div>
     <div class="section-title" style="margin:20px 0 6px;">Ayrıca hüquqlar</div>
     <div>${extras}</div>
+    <div class="section-title" style="margin:20px 0 8px;">Mobil təhsilatçı</div>
+    <div class="field" style="max-width:420px;margin-bottom:6px;"><label>Bağlı təhsilatçı</label>
+      <select data-ua-collector="1"><option value="">— bağlı deyil (adi istifadəçi) —</option>${(ua.people.collectors||[]).map(p=>`<option value="${esc(p.id)}"${d.collectorId===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
+    <div class="muted" style="font-size:12px;line-height:1.5;">Bağlı istifadəçi girişdə birbaşa mobil "Təhsilat" səhifəsinə keçir, yalnız hazırkı təhsilatçısı bu şəxs olan müqavilələri görür, ödənişi yalnız bugünkü tarixlə qəbul edir və hesabatda yalnız öz topladığı ödənişləri görür. Ona "Təhsilat (mobil)" ekranında Dəyişiklik hüququ verin.</div>
     <div class="section-title" style="margin:20px 0 8px;">Hansı müqavilələri görür</div>
+    ${d.collectorId?`<div class="notice">Bağlı təhsilatçı seçilib — bu istifadəçi yalnız <strong>${esc(uaPersonName('collectors',d.collectorId))}</strong> təhsilatçısı olan müqavilələri görür (aşağıdakı seçimlər tətbiq olunmur).</div>`:`
     <label class="ua-extra"><input type="radio" name="ua-mode" data-ua-mode="all"${selected?'':' checked'}> <span><strong>Bütün müqavilələr</strong></span></label>
     <label class="ua-extra"><input type="radio" name="ua-mode" data-ua-mode="selected"${selected?' checked':''}> <span><strong>Yalnız seçilənlər</strong><span class="muted" style="font-size:12px;"> — müqavilə seçilmiş satıcılardan, təhsilatçılardan və ya kuratorlardan birinə aiddirsə görünür (təhsilatçı/kurator üçün hazırkı aktiv təyinat)</span></span></label>
-    ${selected?`<div class="ua-scope">${UA_SCOPE_TYPES.map(([k,l])=>uaScopeListHtml(k,l)).join('')}</div>`:''}
+    ${selected?`<div class="ua-scope">${UA_SCOPE_TYPES.map(([k,l])=>uaScopeListHtml(k,l)).join('')}</div>`:''}`}
     <div class="ua-preview" id="ua-preview">${uaPreviewHtml()}</div>
     <div class="ua-bar" id="ua-bar">${uaBarHtml()}</div>
   </div>`;
@@ -2618,7 +2627,7 @@ function uaPreviewHtml(){
   if(!p) return '<span class="muted">Əhatə hesablanır…</span>';
   if(p.error) return `<span class="ua-err">${esc(p.error)}</span>`;
   const d=ua.draft;
-  if(d && d.scope.mode==='selected' && !d.scope.salespeople.length && !d.scope.collectors.length && !d.scope.curators.length){
+  if(d && !d.collectorId && d.scope.mode==='selected' && !d.scope.salespeople.length && !d.scope.collectors.length && !d.scope.curators.length){
     return '<strong>Heç nə seçilməyib — bu istifadəçi heç bir müqavilə görməyəcək.</strong>';
   }
   return `Bu istifadəçi <strong>${p.contracts}</strong> müqavilə (cəmi ${p.totalContracts}-dən) və <strong>${p.customers}</strong> müştəri görəcək <span class="muted">· sorğu ${p.ms} ms</span>`;
@@ -2635,7 +2644,7 @@ function uaSchedulePreview(delay){
   uaPreviewTimer=setTimeout(async ()=>{
     const my=++uaPreviewReq;
     try{
-      const j=await uaApi('users-api.php?action=preview',{scope:ua.draft.scope});
+      const j=await uaApi('users-api.php?action=preview',{scope:ua.draft.scope, collectorId:ua.draft.collectorId||''});
       if(my!==uaPreviewReq) return;
       ua.preview=j;
     }catch(err){ if(my!==uaPreviewReq) return; ua.preview={error:err.message}; }
@@ -2653,7 +2662,7 @@ function uaSelect(id){
   ua.selectedId=id; ua.msg=''; ua.preview=null;
   if(u.role==='admin'){ ua.draft=null; ua.orig=null; }
   else {
-    ua.orig={screens:uaClone(u.screens),extras:uaClone(u.extras),scope:uaClone(u.scope)};
+    ua.orig={screens:uaClone(u.screens),extras:uaClone(u.extras),scope:uaClone(u.scope),collectorId:u.collectorId||''};
     ua.draft=uaClone(ua.orig);
   }
   const list=document.getElementById('ua-users'); if(list) list.innerHTML=uaUsersListHtml();
@@ -2694,9 +2703,9 @@ function uaCancel(){
 async function uaSave(){
   const u=uaUser(); if(!u || !ua.draft) return;
   try{
-    const j=await uaApi('users-api.php?action=save',{userId:u.id, screens:ua.draft.screens, extras:ua.draft.extras, scope:ua.draft.scope});
+    const j=await uaApi('users-api.php?action=save',{userId:u.id, screens:ua.draft.screens, extras:ua.draft.extras, scope:ua.draft.scope, collectorId:ua.draft.collectorId||''});
     if(j.scope) ua.draft.scope=Object.assign({mode:ua.draft.scope.mode}, {salespeople:j.scope.salespeople,collectors:j.scope.collectors,curators:j.scope.curators});
-    u.screens=uaClone(ua.draft.screens); u.extras=uaClone(ua.draft.extras); u.scope=uaClone(ua.draft.scope); u.configured=true;
+    u.screens=uaClone(ua.draft.screens); u.extras=uaClone(ua.draft.extras); u.scope=uaClone(ua.draft.scope); u.collectorId=ua.draft.collectorId||null; u.configured=true;
     ua.orig=uaClone(ua.draft);
     ua.msg=j.changed===false?'Dəyişiklik yoxdur':'Yadda saxlandı ✓'; ua.msgOk=true;
   }catch(err){ ua.msg=err.message; ua.msgOk=false; }
@@ -2841,6 +2850,7 @@ document.addEventListener('change', (e)=>{
   if(ds.uaScreen && ua.draft){ uaSetLevel(ds.uaScreen, Number(ds.lv), t.checked); return; }
   if(ds.uaExtra && ua.draft){ ua.draft.extras[ds.uaExtra]=t.checked; ua.msg=''; uaRefreshBar(); return; }
   if(ds.uaMode && ua.draft){ ua.draft.scope.mode=ds.uaMode; ua.msg=''; uaRedrawEditor(); return; }
+  if(ds.uaCollector && ua.draft){ ua.draft.collectorId=t.value; ua.msg=''; uaRedrawEditor(); return; }
   if(ds.uaPerson && ua.draft){ uaTogglePerson(ds.uaPerson, t.value, t.checked); return; }
 });
 // Hesabat filtr sahəsində Enter = «Axtar»
@@ -2966,7 +2976,10 @@ setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Serv
     return;
   }
   applyMe(u);
+  // Təhsilatçıya bağlı istifadəçi yalnız mobil səhifəni işlədir (server index.php-də də yönləndirir)
+  if(u.collectorId){ location.href='tehsilat.php'; return; }
   const first=pickInitialScreen();
+  if(!first && can('collector-mobile',1)){ location.href='tehsilat.php'; return; }
   if(!first){
     currentScreen='none';
     renderNav();

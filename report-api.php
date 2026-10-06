@@ -34,7 +34,10 @@ $REPORT_SCREENS = [
 
 $report = (string) ($_GET['report'] ?? '');
 if (!isset($REPORT_SCREENS[$report])) { fail(400, 'Naməlum hesabat'); }
-if (!authz_can($ctx, $REPORT_SCREENS[$report], 1)) {
+// Təhsilatçıya bağlı istifadəçi "Mənim ödənişlərim" (mobil) üçün Təhsilat (mobil) hüququ ilə də baxa bilər —
+// onun üçün sətirlər yalnız öz ödənişləridir (authz_payment_collector_scope)
+$mobileOwn = ($report === 'collections' && !empty($ctx['collectorId']) && authz_can($ctx, 'collector-mobile', 1));
+if (!$mobileOwn && !authz_can($ctx, $REPORT_SCREENS[$report], 1)) {
     audit_event($pdo, 'ACCESS_DENIED', 'İcazə verilmədi: hesabat — ' . $report, ['entity' => 'reports']);
     fail(403, 'Bu hesabata baxmaq üçün icazəniz yoxdur.');
 }

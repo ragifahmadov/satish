@@ -12,4 +12,5 @@ echo json_encode([
     'screens' => $u['screens'],
     'extras' => $u['extras'],
     'scopeMode' => $u['scopeMode'],
+    'collectorId' => $u['collectorId'] ?? null,   // təhsilatçıya bağlıdırsa brauzer mobil səhifəyə keçir
 ]);

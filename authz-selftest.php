@@ -131,6 +131,22 @@ $ctrRow = ['id' => '1', 'createdAt' => 'x', 'nomre' => 'N', 'meblag' => 5, 'qeyd
 $cr = authz_project($ctrRow, 'contracts', 'ref', $SCHEMA['contracts']);
 t('Müqavilə "ref": qeyd və məhkəmə qeydləri GÖNDƏRİLMİR, maliyyə sahələri var', !isset($cr['qeyd']) && !isset($cr['mehkemeQeydleri']) && $cr['meblag'] === 5 && isset($cr['tehsilatciTeyinatlari']));
 
+/* ---------- 5b) təhsilatçıya bağlı istifadəçi (mobil təhsilat) ---------- */
+$cid = '11111111-2222-4333-8444-555555555555';
+$linked = authz_build_ctx(['id' => 'x'], ['role' => 'user', 'permissions' => json_encode(['screens' => ['collector-mobile' => 2]]), 'scope' => json_encode(['mode' => 'all']), 'collectorId' => $cid]);
+t('Bağlı təhsilatçı: əhatə məcburi — yalnız öz müqavilələri ("Bütün müqavilələr" seçimi nəzərə alınmır)',
+    authz_scoped($linked) && $linked['scope']['collectors'] === [$cid] && !$linked['scope']['salespeople'] && strpos(authz_contract_scope($linked, 'c', 'sc')[0], 'currentCollectorId') !== false);
+t('Bağlı təhsilatçı: hesabatda yalnız öz ödənişləri (payments.collectorId = özü)', authz_payment_collector_scope($linked, 'p', 'rs')[0] === 'p.collectorId = :rsme');
+t('Admin təhsilatçıya bağlana bilməz (bağlantı nəzərə alınmır)', authz_build_ctx(['id' => 'a'], ['role' => 'admin', 'collectorId' => $cid])['collectorId'] === null);
+t('Bağlı təhsilatçı: mobil hüququ ilə ödəniş qəbul edə bilir, dəyişə/silə bilmir',
+    authz_write_denied($linked, 'payments', 'POST', ['emeliyyatNovu' => 'Ödəniş']) === '' && authz_write_denied($linked, 'payments', 'PUT', ['meblag' => 1]) !== '' && authz_write_denied($linked, 'payments', 'DELETE', []) !== '');
+t('Bağlı təhsilatçı: yalnız bugünkü tarix, yalnız müsbət ödəniş, təhsilatçı dəyişikliyi yox',
+    authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => 5]) === ''
+    && authz_collector_payment_denied($linked, ['odemeTarixi' => '2000-01-01', 'meblag' => 5]) !== ''
+    && authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => -5, 'emeliyyatNovu' => 'Geri qaytarma']) !== ''
+    && authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => 5, 'reassignCollectorId' => $cid]) !== '');
+t('Bağlı olmayan istifadəçiyə bu məhdudiyyət tətbiq olunmur', authz_collector_payment_denied(mk(['payments' => 2]), ['odemeTarixi' => '2000-01-01', 'meblag' => 5]) === '');
+
 /* ---------- 6) hazırkı təhsilatçı/kurator qaydası ---------- */
 t('Boş tarixçə → null', derive_current_assignee([], 'collectorId') === null && derive_current_assignee(null, 'collectorId') === null);
 t('Açıq (son boş) təyinat seçilir', derive_current_assignee([['collectorId' => 'A', 'baslama' => '1', 'son' => '2'], ['collectorId' => 'B', 'baslama' => '2', 'son' => '']], 'collectorId') === 'B');

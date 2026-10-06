@@ -25,12 +25,14 @@ function ensure_users_table($pdo) {
         blocked TINYINT(1) DEFAULT 0,
         createdAt DATETIME,
         permissions MEDIUMTEXT NULL,
-        scope MEDIUMTEXT NULL
+        scope MEDIUMTEXT NULL,
+        collectorId CHAR(36) NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     // Köhnə cədvəl üçün: hüquq və əhatə sütunları əlavə olunur
     $addedPerm = add_column_if_missing($pdo, 'users', 'permissions', 'MEDIUMTEXT NULL');
     add_column_if_missing($pdo, 'users', 'scope', 'MEDIUMTEXT NULL');
+    add_column_if_missing($pdo, 'users', 'collectorId', 'CHAR(36) NULL');   // istifadəçi ↔ təhsilatçı (mobil təhsilat)
     if ($addedPerm) {
         // Yalnız sütunu İNDİ əlavə edən sorğu: mövcud adi istifadəçilər əvvəlki davranışı (hər şeyə tam giriş,
         // bütün müqavilələr) açıq şəkildə alır — admin sonra "Səlahiyyətlər" ekranında məhdudlaşdırır.
@@ -122,7 +124,7 @@ function require_login($jsonMode = false) {
     try {
         $pdo = get_pdo();
         ensure_users_table($pdo);
-        $stmt = $pdo->prepare("SELECT id, username, role, blocked, permissions, scope FROM users WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT id, username, role, blocked, permissions, scope, collectorId FROM users WHERE id = ?");
         $stmt->execute([$u['id']]);
         $row = $stmt->fetch();
     } catch (Throwable $e) {

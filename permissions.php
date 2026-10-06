@@ -10,7 +10,7 @@
 
 // Struktur dəyişəndə artırın — db.php strukturu yenidən yoxlasın
 const SCOPE_SCHEMA_VERSION = 'scope-v2';   // v2: payments.odemeTarixi indeksi (Təhsilat hesabatı)
-const USERS_SCHEMA_VERSION = 'users-v2';
+const USERS_SCHEMA_VERSION = 'users-v3';   // v3: users.collectorId (istifadəçi ↔ təhsilatçı bağlantısı)
 
 /* ---------- reyestr ---------- */
 
@@ -23,6 +23,7 @@ function perm_screens() {
         'customers' => 'Müştərilər',
         'contracts' => 'Müqavilələr',
         'payments' => 'Ödənişlər',
+        'collector-mobile' => 'Təhsilat (mobil)',
         'reassign-collector' => 'Təhsilatçı dəyişikliyi',
         'reassign-curator' => 'Kurator dəyişikliyi',
         'debt-inquiry' => 'Müştəri borc sorğusu',
@@ -58,6 +59,8 @@ function perm_screen_needs() {
         'customers' => ['customers' => 'full'],
         'contracts' => ['contracts' => 'full', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@cpay' => 1],
         'payments' => ['contracts' => 'ref', 'customers' => 'ref', 'collectors' => 'ref', 'payments' => 'full', '@sums' => 1, '@cpay' => 1],
+        // Mobil təhsilat ekranı öz yığcam API-si ilə işləyir (mobile-api.php) — ümumi siyahılara ehtiyac yoxdur
+        'collector-mobile' => [],
         'reassign-collector' => ['contracts' => 'ref', 'customers' => 'ref', 'collectors' => 'ref', '@sums' => 1],
         'reassign-curator' => ['contracts' => 'ref', 'customers' => 'ref', 'curators' => 'ref', '@sums' => 1],
         'debt-inquiry' => ['customers' => 'ref_addr', 'contracts' => 'ref', 'collectors' => 'ref', '@sums' => 1],
@@ -141,6 +144,14 @@ function authz_build_ctx($sessionUser, $row) {
     foreach (perm_extras() as $k => $_) {
         $extras[$k] = ($role === 'admin') ? true : !empty($perm['extras'][$k]);
     }
+    // Təhsilatçıya bağlı istifadəçi (mobil təhsilat): əhatə MƏCBURİDİR — yalnız hazırkı təhsilatçısı özü olan müqavilələr
+    // (Səlahiyyətlər ekranındakı əhatə seçimi nəzərə alınmır). Admin bağlana bilməz.
+    $collectorId = null;
+    $cRaw = (string) ($row['collectorId'] ?? '');
+    if ($role !== 'admin' && preg_match('/^[0-9a-fA-F-]{36}$/', $cRaw)) {
+        $collectorId = $cRaw;
+        $scope = ['mode' => 'selected', 'salespeople' => [], 'collectors' => [$collectorId], 'curators' => []];
+    }
     return [
         'id' => $sessionUser['id'] ?? ($row['id'] ?? null),
         'username' => $row['username'] ?? ($sessionUser['username'] ?? ''),
@@ -149,6 +160,7 @@ function authz_build_ctx($sessionUser, $row) {
         'extras' => $extras,
         'scopeMode' => ($role === 'admin') ? 'all' : $scope['mode'],
         'scope' => ['salespeople' => $scope['salespeople'], 'collectors' => $scope['collectors'], 'curators' => $scope['curators']],
+        'collectorId' => $collectorId,
     ];
 }
 
@@ -272,6 +284,8 @@ function authz_contract_visible($pdo, $ctx, $contractId) {
 // $pAlias — payments cədvəlinin ləqəbi. Qaytarır [sql, params]; məhdudiyyətsiz istifadəçi üçün ['1=1', []].
 function authz_payment_collector_scope($ctx, $pAlias, $prefix) {
     if (!authz_scoped($ctx)) return ['1=1', []];
+    // Təhsilatçıya bağlı istifadəçi: YALNIZ özünün topladığı ödənişlər (müqavilə əhatəsi buraya qatılmır)
+    if (!empty($ctx['collectorId'])) return ["$pAlias.collectorId = :{$prefix}me", [':' . $prefix . 'me' => $ctx['collectorId']]];
     [$cSql, $params] = authz_contract_scope($ctx, 'c', $prefix . 'c');
     $parts = [];
     if ($cSql !== '0=1') { $parts[] = "$pAlias.contractId IN (SELECT c.id FROM contracts c WHERE $cSql)"; }
@@ -330,7 +344,8 @@ function authz_write_needs($col, $method, $body) {
     if ($col === 'payments') {
         // Qəbul: Ödənişlər → Dəyişiklik. Mövcud ödənişi dəyişmək / silmək: ekrana baxış + ayrıca hüquq
         // ("Ödənişi dəyişmək" / "Ödənişi silmək"); ödəniş qəbul edən hər kəs avtomatik redaktə/silmə hüququ almır.
-        if ($method === 'POST') { $needs[] = ['screen' => 'payments', 'level' => 2]; }
+        // Qəbul: Ödənişlər → Dəyişiklik VƏ YA Təhsilat (mobil) → Dəyişiklik
+        if ($method === 'POST') { $needs[] = ['any' => [['screen' => 'payments', 'level' => 2], ['screen' => 'collector-mobile', 'level' => 2]]]; }
         elseif ($method === 'PUT') { $needs[] = ['screen' => 'payments', 'level' => 1]; $needs[] = ['extra' => 'payment-edit']; }
         else { $needs[] = ['screen' => 'payments', 'level' => 1]; $needs[] = ['extra' => 'payment-delete']; }
         if ($method !== 'DELETE' && is_array($body) && (($body['emeliyyatNovu'] ?? '') === 'Geri qaytarma')) {
@@ -349,7 +364,17 @@ function authz_write_denied($ctx, $col, $method, $body) {
     $extras = perm_extras();
     $levels = perm_level_labels();
     foreach (authz_write_needs($col, $method, $body) as $n) {
-        if (isset($n['screen'])) {
+        if (isset($n['any'])) {
+            $ok = false;
+            $names = [];
+            foreach ($n['any'] as $alt) {
+                if (authz_can($ctx, $alt['screen'], $alt['level'])) { $ok = true; break; }
+                $names[] = '"' . ($screens[$alt['screen']] ?? $alt['screen']) . '"';
+            }
+            if (!$ok) {
+                return 'İcazə yoxdur: ' . implode(' və ya ', $names) . ' üzrə "' . ($levels[$n['any'][0]['level']] ?? '') . '" hüququ lazımdır.';
+            }
+        } elseif (isset($n['screen'])) {
             if (!authz_can($ctx, $n['screen'], $n['level'])) {
                 return 'İcazə yoxdur: "' . ($screens[$n['screen']] ?? $n['screen']) . '" üzrə "' . ($levels[$n['level']] ?? '') . '" hüququ lazımdır.';
             }
@@ -509,4 +534,14 @@ function collector_reassign_list($list, $newCollectorId, $today) {
     }
     $out[] = ['collectorId' => $newCollectorId, 'baslama' => $today, 'son' => ''];
     return $out;
+}
+
+// Təhsilatçıya bağlı istifadəçinin ödəniş qəbulu: yalnız BU GÜNÜN tarixi, yalnız adi ödəniş (geri qaytarma yox),
+// müqavilənin təhsilatçısını dəyişmək yox. Boş sətir = icazə var.
+function authz_collector_payment_denied($ctx, $body) {
+    if (empty($ctx['collectorId'])) return '';
+    if ((string) ($body['odemeTarixi'] ?? '') !== baku_today()) return 'Təhsilatçı ödənişi yalnız bugünkü tarixlə qəbul edə bilər.';
+    if ((string) ($body['emeliyyatNovu'] ?? '') === 'Geri qaytarma' || (float) ($body['meblag'] ?? 0) <= 0) return 'Təhsilatçı yalnız müsbət məbləğli ödəniş qəbul edə bilər.';
+    if ((string) ($body['reassignCollectorId'] ?? '') !== '') return 'Təhsilatçı müqavilənin təhsilatçısını dəyişə bilməz.';
+    return '';
 }

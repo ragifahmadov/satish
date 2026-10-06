@@ -38,10 +38,12 @@ $action = isset($_GET['action']) ? $_GET['action'] : 'list';
 
 /* ---------- list ---------- */
 if ($action === 'list') {
-    $rows = $pdo->query("SELECT id, username, role, blocked, createdAt, permissions, scope FROM users ORDER BY createdAt ASC")->fetchAll();
+    $rows = $pdo->query("SELECT id, username, role, blocked, createdAt, permissions, scope, collectorId FROM users ORDER BY createdAt ASC")->fetchAll();
     $users = [];
     foreach ($rows as $r) {
         $c = authz_build_ctx(['id' => $r['id']], $r);
+        $cRaw = authz_build_ctx(['id' => $r['id']], array_merge($r, ['collectorId' => null]));   // redaktor üçün saxlanmış əhatə
+        $c['scopeMode'] = $cRaw['scopeMode']; $c['scope'] = $cRaw['scope'];
         $users[] = [
             'id' => $r['id'],
             'username' => $r['username'],
@@ -50,6 +52,7 @@ if ($action === 'list') {
             'configured' => ($r['permissions'] !== null),   // false: yeni istifadəçi, hüquq hələ təyin olunmayıb
             'screens' => $c['screens'],
             'extras' => $c['extras'],
+            'collectorId' => $c['collectorId'] ?? null,   // bağlı təhsilatçı (mobil təhsilat); varsa əhatə ondan gəlir
             'scope' => ['mode' => $c['scopeMode'], 'salespeople' => $c['scope']['salespeople'], 'collectors' => $c['scope']['collectors'], 'curators' => $c['scope']['curators']],
         ];
     }
@@ -73,6 +76,10 @@ if ($action === 'preview') {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail(405, 'Yalnız POST'); }
     $in = users_body();
     $scope = perm_normalize_scope($in['scope'] ?? []);
+    $pcol = (string) ($in['collectorId'] ?? '');
+    if (preg_match('/^[0-9a-fA-F-]{36}$/', $pcol)) {   // bağlı təhsilatçı: əhatə yalnız onun müqavilələri
+        $scope = ['mode' => 'selected', 'salespeople' => [], 'collectors' => [$pcol], 'curators' => []];
+    }
     $pc = ['id' => 'preview', 'role' => 'user', 'scopeMode' => $scope['mode'],
         'scope' => ['salespeople' => $scope['salespeople'], 'collectors' => $scope['collectors'], 'curators' => $scope['curators']]];
     $t = microtime(true);
@@ -99,7 +106,7 @@ if ($action === 'save') {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail(405, 'Yalnız POST'); }
     $in = users_body();
     $uid = (string) ($in['userId'] ?? '');
-    $st = $pdo->prepare("SELECT id, username, role, permissions, scope FROM users WHERE id = ?");
+    $st = $pdo->prepare("SELECT id, username, role, permissions, scope, collectorId FROM users WHERE id = ?");
     $st->execute([$uid]);
     $row = $st->fetch();
     if (!$row) { fail(404, 'İstifadəçi tapılmadı'); }
@@ -108,6 +115,13 @@ if ($action === 'save') {
     $newScreens = perm_normalize_screens($in['screens'] ?? []);
     $newExtras = perm_normalize_extras($in['extras'] ?? []);
     $newScope = perm_normalize_scope($in['scope'] ?? []);
+    $newCol = (string) ($in['collectorId'] ?? '');
+    if ($newCol !== '') {
+        $q = $pdo->prepare("SELECT 1 FROM collectors WHERE id = ?");
+        $q->execute([$newCol]);
+        if (!$q->fetchColumn()) { fail(400, 'Seçilən təhsilatçı tapılmadı.'); }
+    }
+    $oldCol = (string) ($row['collectorId'] ?? '');
 
     // Bazada olmayan id-ləri at (silinmiş satıcı/təhsilatçı/kurator)
     $tables = ['salespeople' => 'salespeople', 'collectors' => 'collectors', 'curators' => 'curators'];
@@ -119,7 +133,7 @@ if ($action === 'save') {
         $newScope[$key] = array_values(array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)));
     }
 
-    $old = authz_build_ctx(['id' => $uid], $row);
+    $old = authz_build_ctx(['id' => $uid], array_merge($row, ['collectorId' => null]));   // saxlanmış (redaktə olunan) əhatə
     $levels = perm_level_labels();
     $changes = [];
     foreach (perm_screens() as $k => $label) {
@@ -152,6 +166,10 @@ if ($action === 'save') {
         }
     }
 
+    if ($oldCol !== $newCol) {
+        $changes[] = ['f' => 'collectorId', 'l' => 'Bağlı təhsilatçı (mobil təhsilat)',
+            'o' => $oldCol !== '' ? audit_ref_label($pdo, 'collectors', $oldCol) : '', 'n' => $newCol !== '' ? audit_ref_label($pdo, 'collectors', $newCol) : ''];
+    }
     if (!$changes) {
         users_out(['ok' => true, 'changed' => false]);
         exit;
@@ -160,8 +178,8 @@ if ($action === 'save') {
     // Dəyişiklik və onun logu eyni əməliyyatda (səlahiyyət dəyişikliyi üçün log MƏCBURİDİR)
     $pdo->beginTransaction();
     try {
-        $upd = $pdo->prepare("UPDATE users SET permissions = ?, scope = ? WHERE id = ?");
-        $upd->execute([json_encode(['screens' => $newScreens, 'extras' => $newExtras]), json_encode($newScope), $uid]);
+        $upd = $pdo->prepare("UPDATE users SET permissions = ?, scope = ?, collectorId = ? WHERE id = ?");
+        $upd->execute([json_encode(['screens' => $newScreens, 'extras' => $newExtras]), json_encode($newScope), $newCol !== '' ? $newCol : null, $uid]);
         audit_insert($pdo, [
             'action' => 'USER_PERMISSIONS',
             'entity' => 'users',
@@ -176,7 +194,7 @@ if ($action === 'save') {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
         throw $e;
     }
-    users_out(['ok' => true, 'changed' => true, 'scope' => $newScope]);
+    users_out(['ok' => true, 'changed' => true, 'scope' => $newScope, 'collectorId' => $newCol !== '' ? $newCol : null]);
     exit;
 }
 

@@ -59,3 +59,10 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    "Geri qaytarma" sətrinə toxunmaq üçün əlavə "Mal qaytarılması" (`authz_payment_row_denied`).
 10. Təhsilat hesabatında əhatə: müqavilə əhatədədir VƏ YA ödənişin təhsilatçısı əhatədədir (`authz_payment_collector_scope`).
    Bu qayda HƏLƏLİK yalnız bu hesabatdadır; digər ekranlar müqavilə əhatəsi (`authz_contract_scope`) ilə işləyir.
+11. **Təhsilatçıya bağlı istifadəçi** (`users.collectorId`, Səlahiyyətlər ekranında "Bağlı təhsilatçı"): əhatə `authz_build_ctx()`-də MƏCBURİ
+   təyin olunur (yalnız hazırkı təhsilatçısı özü olan müqavilələr), hesabatda yalnız öz ödənişləri; ödəniş yalnız bu günün (Bakı) tarixi ilə,
+   geri qaytarma/təhsilatçı dəyişikliyi yox (`authz_collector_payment_denied`). Girişdə `tehsilat.php`-yə yönləndirilir.
+12. **Mobil təhsilat** (`tehsilat.php` + `mobile-api.php`): ekran açarı `collector-mobile`. Hesablama funksiyaları (`scheduleMonths`,
+   `scheduleDueCount`, `currentScheduleIndex`) app.html ilə EYNİDİR — dəyişəndə ikisini də dəyişin (test yoxlayır).
+   Ödəniş göndərərkən brauzer `clientId` (uuid) verir; server eyni id-ni ikinci dəfə yazmır (mobil internetdə təkrar göndərmə).
+

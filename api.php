@@ -170,7 +170,25 @@ try {
             // "Təhsilatçı dəyişikliyi" qaydası ilə dəyişdirilir (cari təyinat bu günlə bağlanır, seçilən bu gündən təyin olunur)
             // və ödəniş yeni təhsilatçıya yazılır — hamısı BİR əməliyyatda. Hüquq: "Təhsilatçı dəyişikliyi" → Dəyişiklik.
             $reassignTo = null;
+            $clientId = '';
             if ($col === 'payments') {
+                // Təhsilatçıya bağlı istifadəçi: yalnız bu günün tarixi, yalnız adi ödəniş, təhsilatçı dəyişikliyi yox
+                $why = authz_collector_payment_denied($ctx, $body);
+                if ($why !== '') { api_deny($why); }
+                // Təkrar göndərməyə qarşı (mobil internet): brauzer hər cəhdə unikal clientId verir; eyni id ikinci dəfə yazılmır
+                $clientId = (string) ($body['clientId'] ?? '');
+                if ($clientId !== '') {
+                    if (!preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $clientId)) { fail(400, 'clientId düzgün deyil'); }
+                    $ex = $pdo->prepare("SELECT * FROM payments WHERE id = ?");
+                    $ex->execute([$clientId]);
+                    $exRow = $ex->fetch();
+                    if ($exRow) {
+                        if ((string) $exRow['contractId'] !== (string) ($body['contractId'] ?? '')) { fail(409, 'Bu ödəniş nömrəsi artıq istifadə olunub.'); }
+                        $out = row_out($exRow, $schema); $out['_duplicate'] = true;
+                        json_out($out);   // artıq yazılıb — ikinci dəfə yazılmır, eyni cavab qaytarılır
+                        exit;
+                    }
+                }
                 $cid = (string) ($body['contractId'] ?? '');
                 $pc = payment_collector_for_contract($pdo, $cid);
                 $want = (string) ($body['reassignCollectorId'] ?? '');
@@ -192,7 +210,7 @@ try {
                 $body['collectorId'] = $pc;
             }
 
-            $newId = make_uuid();
+            $newId = ($clientId !== '') ? strtolower($clientId) : make_uuid();
             $now = date('Y-m-d H:i:s');
             $cols = ['id', 'createdAt'];
             $placeholders = [':id', ':createdAt'];
@@ -238,6 +256,13 @@ try {
                 $pdo->commit();
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                // eyni clientId ilə paralel ikinci sorğu: birincisi artıq yazıb — onun nəticəsini qaytar
+                if ($clientId !== '' && $e instanceof PDOException && (string) $e->getCode() === '23000') {
+                    $ex = $pdo->prepare("SELECT * FROM payments WHERE id = ?");
+                    $ex->execute([$newId]);
+                    $exRow = $ex->fetch();
+                    if ($exRow) { $out = row_out($exRow, $schema); $out['_duplicate'] = true; json_out($out); exit; }
+                }
                 throw $e;
             }
             if ($reassignTo !== null) {

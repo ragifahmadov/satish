@@ -57,6 +57,9 @@ $court = mk(['contracts' => 1], ['court-notes' => true]);
 $pay = mk(['payments' => 2]);
 $payRet = mk(['payments' => 2], ['goods-return' => true]);
 $cust = mk(['customers' => 2]);
+$payEd = mk(['payments' => 1], ['payment-edit' => true]);
+$payDel = mk(['payments' => 1], ['payment-delete' => true]);
+$payEdNoScreen = mk([], ['payment-edit' => true, 'payment-delete' => true]);
 $cases = [
     // [ad, ctx, kolleksiya, metod, body, icazə verilməlidir?]
     ['Baxış-only: müqavilə yarada bilmir', $view, 'contracts', 'POST', [], false],
@@ -79,6 +82,13 @@ $cases = [
     ['"Mal qaytarılması" hüququ ilə geri qaytarma yaza bilir', $payRet, 'payments', 'POST', ['emeliyyatNovu' => 'Geri qaytarma'], true],
     ['Ödənişi "Geri qaytarma"-ya çevirmək də hüquq tələb edir', $pay, 'payments', 'PUT', ['emeliyyatNovu' => 'Geri qaytarma'], false],
     ['Ödənişi silə BİLMİR (yalnız dəyişiklik)', $pay, 'payments', 'DELETE', [], false],
+    ['Ödəniş qəbul edən (Dəyişiklik) "Ödənişi dəyişmək" olmadan ödənişi DƏYİŞƏ BİLMİR', $pay, 'payments', 'PUT', ['meblag' => 5], false],
+    ['"Ödənişi dəyişmək" hüququ ilə dəyişə bilir', $payEd, 'payments', 'PUT', ['meblag' => 5], true],
+    ['"Ödənişi dəyişmək" hüququ ilə silə BİLMİR', $payEd, 'payments', 'DELETE', [], false],
+    ['"Ödənişi dəyişmək" hüququ ilə yeni ödəniş qəbul edə BİLMİR (Baxış)', $payEd, 'payments', 'POST', ['emeliyyatNovu' => 'Ödəniş'], false],
+    ['"Ödənişi silmək" hüququ ilə silə bilir', $payDel, 'payments', 'DELETE', [], true],
+    ['Köhnə "Silmə" səviyyəsi ödənişi silməyə kifayət etmir', mk(['payments' => 3]), 'payments', 'DELETE', [], false],
+    ['Ödənişlər ekranı olmadan əlavə hüquqlar işləmir', $payEdNoScreen, 'payments', 'PUT', ['meblag' => 5], false],
     ['Müştəri yarada bilir', $cust, 'customers', 'POST', [], true],
     ['Müştəri ekranı hüququ ilə müqavilə yarada BİLMİR', $cust, 'contracts', 'POST', [], false],
     ['Müştəri ekranı hüququ ilə satıcı yarada BİLMİR', $cust, 'salespeople', 'POST', [], false],

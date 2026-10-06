@@ -166,8 +166,28 @@ try {
 
             // Ödənişin təhsilatçısı: müqavilənin HAZIRKI təhsilatçısı (server özü yazır, brauzerin göndərdiyi nəzərə alınmır).
             // Təhsilatçı təyin olunmayıbsa ödəniş də, geri qaytarma da qəbul edilmir.
+            // İstifadəçi ödəniş ekranında başqa təhsilatçı seçibsə (reassignCollectorId): müqavilənin təhsilatçısı
+            // "Təhsilatçı dəyişikliyi" qaydası ilə dəyişdirilir (cari təyinat bu günlə bağlanır, seçilən bu gündən təyin olunur)
+            // və ödəniş yeni təhsilatçıya yazılır — hamısı BİR əməliyyatda. Hüquq: "Təhsilatçı dəyişikliyi" → Dəyişiklik.
+            $reassignTo = null;
             if ($col === 'payments') {
-                $pc = payment_collector_for_contract($pdo, $body['contractId'] ?? '');
+                $cid = (string) ($body['contractId'] ?? '');
+                $pc = payment_collector_for_contract($pdo, $cid);
+                $want = (string) ($body['reassignCollectorId'] ?? '');
+                if ($want !== '' && $want !== $pc) {
+                    $why = authz_write_denied($ctx, 'contracts', 'PUT', ['tehsilatciTeyinatlari' => []]);
+                    if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, 'contracts', 'PUT', $cid, ['tehsilatciTeyinatlari' => []]); }
+                    if ($why !== '') { api_deny($why); }
+                    $chk = $pdo->prepare("SELECT 1 FROM collectors WHERE id = ?");
+                    $chk->execute([$want]);
+                    if (!$chk->fetchColumn()) { fail(400, 'Seçilən təhsilatçı tapılmadı.'); }
+                    $reassignTo = $want;
+                    $pc = $want;
+                    if (audit_op_context()[0] === null) {   // logda müqavilə dəyişikliyi və ödəniş bir əməliyyat kimi qruplaşsın
+                        $_SERVER['HTTP_X_OP_ID'] = make_uuid();
+                        $_SERVER['HTTP_X_OP_LABEL'] = rawurlencode('Ödəniş + təhsilatçı dəyişikliyi');
+                    }
+                }
                 if ($pc === null) { fail(400, PAYMENT_NO_COLLECTOR_MSG); }
                 $body['collectorId'] = $pc;
             }
@@ -198,6 +218,18 @@ try {
             // Əlavə və onun logu eyni əməliyyatda: log yazılmasa əlavə də olmur
             $pdo->beginTransaction();
             try {
+                if ($reassignTo !== null) {
+                    $cs = $SCHEMA['contracts'];
+                    $cSel = $pdo->prepare("SELECT * FROM contracts WHERE id = :id FOR UPDATE");
+                    $cSel->execute([':id' => $body['contractId']]);
+                    $cOld = row_out($cSel->fetch(), $cs);
+                    $newList = collector_reassign_list($cOld['tehsilatciTeyinatlari'], $reassignTo, baku_today());
+                    $pdo->prepare("UPDATE contracts SET tehsilatciTeyinatlari = :t, currentCollectorId = :cc WHERE id = :id")
+                        ->execute([':t' => cast_in($newList, 'json'), ':cc' => derive_current_assignee($newList, 'collectorId'), ':id' => $body['contractId']]);
+                    $cSel2 = $pdo->prepare("SELECT * FROM contracts WHERE id = :id");
+                    $cSel2->execute([':id' => $body['contractId']]);
+                    audit_log_update($pdo, 'contracts', $cs, $cOld, row_out($cSel2->fetch(), $cs));
+                }
                 $pdo->prepare($sql)->execute($params);
                 $sel = $pdo->prepare("SELECT * FROM `$col` WHERE id = :id");
                 $sel->execute([':id' => $newId]);
@@ -207,6 +239,13 @@ try {
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) { $pdo->rollBack(); }
                 throw $e;
+            }
+            if ($reassignTo !== null) {
+                // brauzer müqavilənin yeni təyinatlarını yeniləsin (istifadəçinin oxuma səviyyəsinə görə kəsilmiş)
+                $cSel3 = $pdo->prepare("SELECT * FROM contracts WHERE id = :id");
+                $cSel3->execute([':id' => $body['contractId']]);
+                $tier = authz_read_tier($ctx, 'contracts');
+                if ($tier !== null) { $rowOut['_contract'] = authz_project(row_out($cSel3->fetch(), $SCHEMA['contracts']), 'contracts', $tier, $SCHEMA['contracts']); }
             }
             json_out($rowOut);
             break;
@@ -218,8 +257,21 @@ try {
             $why = authz_write_denied($ctx, $col, 'PUT', $body);
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'PUT', $id, $body); }
             if ($why !== '') { api_deny($why); }
-            // Ödənişin təhsilatçısı yalnız yaradılanda yazılır, sonra dəyişmir
-            if ($col === 'payments') { unset($body['collectorId']); }
+            if ($col === 'payments') {
+                $why = authz_payment_row_denied($pdo, $ctx, $id);   // "Geri qaytarma" sətri → "Mal qaytarılması" hüququ
+                if ($why !== '') { api_deny($why); }
+                // Ödənişin təhsilatçısı və müqaviləsi redaktədə dəyişmir (yalnız məbləğ, tarix, qeyd)
+                unset($body['collectorId'], $body['contractId'], $body['reassignCollectorId']);
+                if (array_key_exists('meblag', $body)) {
+                    $st = $pdo->prepare("SELECT emeliyyatNovu FROM payments WHERE id = ?");
+                    $st->execute([(string) $id]);
+                    $isRet = (($body['emeliyyatNovu'] ?? $st->fetchColumn()) === 'Geri qaytarma');
+                    $m = (float) $body['meblag'];
+                    if ($m == 0 || ($isRet && $m > 0) || (!$isRet && $m < 0)) {
+                        fail(400, 'Məbləğ düzgün deyil' . ($isRet ? ' (geri qaytarma mənfi yazılır).' : ' (müsbət olmalıdır).'));
+                    }
+                }
+            }
 
             $sets = [];
             $params = [':id' => $id];
@@ -273,6 +325,7 @@ try {
             if (!$id) { fail(400, 'id parametri lazımdır'); }
             $why = authz_write_denied($ctx, $col, 'DELETE', []);
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'DELETE', $id, []); }
+            if ($why === '' && $col === 'payments') { $why = authz_payment_row_denied($pdo, $ctx, $id); }
             if ($why !== '') { api_deny($why); }
 
             $pdo->beginTransaction();

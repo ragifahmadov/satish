@@ -52,6 +52,10 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
 8. Server tərəfli hesabat məlumatı `report-api.php`-dədir (hesabat açarı → ekran hüququ `$REPORT_SCREENS`). Yeni hesabat üçün orada
    ayrıca bölmə yazın; sətirlər yalnız `permissions.php`-dəki əhatə funksiyalarından keçsin.
 9. Ödənişin təhsilatçısı (`payments.collectorId`) YALNIZ serverdə, ödəniş yaradılanda yazılır: müqavilənin hazırkı təhsilatçısı
-   (`payment_collector_for_contract`). Təhsilatçısız müqaviləyə ödəniş/geri qaytarma qəbul edilmir; redaktədə təhsilatçı dəyişmir.
+   (`payment_collector_for_contract`). Təhsilatçısız müqaviləyə ödəniş/geri qaytarma qəbul edilmir; redaktədə təhsilatçı və müqavilə dəyişmir.
+   Ödəniş ekranında başqa təhsilatçı seçilibsə (`reassignCollectorId`, "Təhsilatçı dəyişikliyi" → Dəyişiklik hüququ): müqavilənin
+   təhsilatçısı `collector_reassign_list` ilə dəyişir (cari təyinat bu günlə bağlanır) və ödəniş BİR əməliyyatda, bir opId ilə loga düşür.
+9a. Ödəniş hüquqları: qəbul = Ödənişlər → Dəyişiklik; mövcud ödənişi dəyişmək/silmək = ekrana baxış + "Ödənişi dəyişmək"/"Ödənişi silmək";
+   "Geri qaytarma" sətrinə toxunmaq üçün əlavə "Mal qaytarılması" (`authz_payment_row_denied`).
 10. Təhsilat hesabatında əhatə: müqavilə əhatədədir VƏ YA ödənişin təhsilatçısı əhatədədir (`authz_payment_collector_scope`).
    Bu qayda HƏLƏLİK yalnız bu hesabatdadır; digər ekranlar müqavilə əhatəsi (`authz_contract_scope`) ilə işləyir.

@@ -1154,7 +1154,8 @@ function buildOperationsRowsHtml(contract){
     const d=(b.odemeTarixi||'').localeCompare(a.odemeTarixi||'');
     return d || (b.createdAt||'').localeCompare(a.createdAt||'');
   });
-  if(!list.length) return `<tr><td colspan="5" class="empty" style="padding:26px;">Hələ əməliyyat yoxdur</td></tr>`;
+  const actCol=paymentActionsVisible();
+  if(!list.length) return `<tr><td colspan="${actCol?6:5}" class="empty" style="padding:26px;">Hələ əməliyyat yoxdur</td></tr>`;
   return list.map(p=>{
     const ret=isReturnPayment(p);
     const amt=Number(p.meblag)||0;
@@ -1164,6 +1165,7 @@ function buildOperationsRowsHtml(contract){
       <td class="num" style="${amt<0?'color:var(--red);':''}">${fmtMoney(amt)}</td>
       <td class="muted">${p.collectorId?esc(collectorName(p.collectorId)):'—'}</td>
       <td class="muted">${esc(p.qrafikAyLabel||'—')}</td>
+      ${actCol?`<td class="actions" style="white-space:nowrap;">${paymentRowButtons(p)}</td>`:''}
     </tr>`;
   }).join('');
 }
@@ -1219,7 +1221,9 @@ function renderPaymentsPanel(contract){
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
         <div class="field" style="max-width:130px;margin-bottom:0;"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" id="qp-amount"></div>
         <div class="field" style="max-width:160px;margin-bottom:0;"><label>Tarix</label><input type="date" id="qp-date" value="${todayIso()}"></div>
-        <div class="field" style="max-width:240px;margin-bottom:0;"><label>Təhsilatçı</label><input type="text" id="qp-collector" readonly tabindex="-1" style="background:var(--bg-page);" value="${payCollectorId?esc(collectorName(payCollectorId)):''}" placeholder="Təyin olunmayıb"></div>
+        <div class="field" style="max-width:240px;margin-bottom:0;"><label>Təhsilatçı</label>${can('reassign-collector',2)
+          ? `<select id="qp-collector-sel"><option value="">— seçin —</option>${state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az')).map(x=>`<option value="${x.id}"${x.id===payCollectorId?' selected':''}>${esc(fullName(x))}</option>`).join('')}</select>`
+          : `<input type="text" id="qp-collector" readonly tabindex="-1" style="background:var(--bg-page);" value="${payCollectorId?esc(collectorName(payCollectorId)):''}" placeholder="Təyin olunmayıb">`}</div>
         ${canExtra('goods-return')?`<div class="field" style="margin-bottom:0;"><label style="visibility:hidden;">.</label>
           <label class="check"><input type="checkbox" id="qp-return"> Mal qaytarılması</label>
         </div>`:''}
@@ -1235,7 +1239,7 @@ function renderPaymentsPanel(contract){
     </table></div></div>
     <div class="section-title" style="margin:18px 0 8px;">Əməliyyatlar</div>
     <div class="card"><div class="table-scroll"><table class="table-compact">
-      <thead><tr><th>Tarix</th><th>Əməliyyat növü</th><th class="num">Məbləğ</th><th>Təhsilatçı</th><th>Qrafik ayı</th></tr></thead>
+      <thead><tr><th>Tarix</th><th>Əməliyyat növü</th><th class="num">Məbləğ</th><th>Təhsilatçı</th><th>Qrafik ayı</th>${paymentActionsVisible()?'<th></th>':''}</tr></thead>
       <tbody>${opsHtml}</tbody>
     </table></div></div>
   `);
@@ -1247,6 +1251,83 @@ function updateReturnToggleUi(checked){
   if(hint) hint.style.display=checked?'block':'none';
   const btn=document.getElementById('qp-btn');
   if(btn) btn.textContent=checked?'Geri qaytarmanı qeyd et':'Qeyd et';
+}
+
+/* ---- Qeyd olunmuş ödənişi dəyişmək / silmək (ayrıca hüquqlar; "Geri qaytarma" üçün "Mal qaytarılması" da) ---- */
+function paymentActionsVisible(){ return canExtra('payment-edit') || canExtra('payment-delete'); }
+function paymentRowButtons(p){
+  const ret=isReturnPayment(p);
+  if(ret && !canExtra('goods-return')) return '';
+  return (canExtra('payment-edit')?`<button class="iconbtn" data-action="edit-payment" data-id="${p.id}" title="Dəyiş">${ICONS.edit}</button> `:'')
+    +(canExtra('payment-delete')?`<button class="iconbtn" data-action="delete-payment" data-id="${p.id}" title="Sil">${ICONS.trash}</button>`:'');
+}
+// Müqavilənin yerli cəmlərini (ödəniş, geri qaytarma, son ödəniş) yüklənmiş ödənişlərdən yenidən hesablayır
+function recalcContractPaymentAggregates(cid){
+  const list=state.payments.filter(p=>p.contractId===cid);
+  let paid=0, ret=0, last='';
+  for(const p of list){
+    const a=Number(p.meblag)||0;
+    if(isReturnPayment(p)) ret+=Math.abs(a);
+    else { paid+=a; if(a>0 && (p.odemeTarixi||'')>last) last=p.odemeTarixi; }
+  }
+  paymentSums[cid]=paid;
+  if(ret) returnSums[cid]=ret; else delete returnSums[cid];
+  if(last) paymentLast[cid]=last; else delete paymentLast[cid];
+}
+function monthPart(p){ return (!p || isReturnPayment(p) || (p.odemeTarixi||'').slice(0,7)!==currentYm())?0:(Number(p.meblag)||0); }
+function openPaymentEdit(id){
+  const p=byId(state.payments,id);
+  if(!p) return;
+  const ret=isReturnPayment(p);
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>${ret?'Geri qaytarmanı':'Ödənişi'} dəyiş</h2>
+    <form id="payment-edit-form" data-id="${p.id}">
+      <div class="field"><label>Əməliyyat növü</label><input type="text" readonly value="${ret?'Geri qaytarma':'Ödəniş'}" style="background:var(--bg-page);"></div>
+      <div class="field"><label>Təhsilatçı</label><input type="text" readonly value="${p.collectorId?esc(collectorName(p.collectorId)):'Təyin olunmayıb'}" style="background:var(--bg-page);"></div>
+      <div class="field"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" name="meblag" id="pe-amount" value="${Math.abs(Number(p.meblag)||0)}" required></div>
+      <div class="field"><label>Tarix</label><input type="date" name="odemeTarixi" id="pe-date" value="${esc(p.odemeTarixi||'')}" required></div>
+      <div class="field-err" id="pe-err" style="display:none;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+        <button type="submit" class="btn btn-primary">Yadda saxla</button>
+      </div>
+    </form>`;
+  openModal();
+}
+async function submitPaymentEdit(form){
+  const p=byId(state.payments,form.dataset.id);
+  const errEl=document.getElementById('pe-err');
+  errEl.style.display='none';
+  if(!p) return;
+  const amount=Number(document.getElementById('pe-amount').value);
+  const date=document.getElementById('pe-date').value;
+  if(!amount || amount<=0){ errEl.textContent='Məbləği düzgün daxil edin.'; errEl.style.display='block'; return; }
+  if(!date){ errEl.textContent='Tarixi seçin.'; errEl.style.display='block'; return; }
+  const ret=isReturnPayment(p);
+  try{
+    const before=monthPart(p);
+    const saved=await apiUpdate('payments', p.id, {meblag:ret?-amount:amount, odemeTarixi:date});
+    upsertInState('payments', saved);
+    recalcContractPaymentAggregates(saved.contractId);
+    dashMonthTotal+=monthPart(saved)-before;
+    closeModal();
+    renderScreen();
+  }catch(err){
+    errEl.textContent='Yadda saxlanmadı: '+err.message; errEl.style.display='block';
+  }
+}
+async function deletePayment(id){
+  const p=byId(state.payments,id);
+  if(!p) return;
+  const ret=isReturnPayment(p);
+  if(!confirm((ret?'Geri qaytarma':'Ödəniş')+' silinsin? '+fmtMoney(Math.abs(Number(p.meblag)||0))+', '+fmtDate(p.odemeTarixi))) return;
+  try{
+    await apiDelete('payments', id);
+  }catch(err){ alert('Silinmədi: '+err.message); return; }
+  dashMonthTotal-=monthPart(p);
+  removeFromState('payments', id);
+  recalcContractPaymentAggregates(p.contractId);
+  renderScreen();
 }
 
 // Serverdəki PAYMENT_NO_COLLECTOR_MSG ilə eyni mətn (permissions.php)
@@ -1263,7 +1344,15 @@ async function recordQuickPayment(contractId){
   if(!amount || amount<=0){ errEl.textContent='Məbləği düzgün daxil edin.'; errEl.style.display='block'; return; }
   if(!date){ errEl.textContent='Tarixi seçin.'; errEl.style.display='block'; return; }
   const payCollectorId=activeCollectorForContract(contract)||'';
-  if(!payCollectorId){ errEl.textContent=PAYMENT_NO_COLLECTOR_MSG; errEl.style.display='block'; return; }
+  // Təhsilatçı dəyişikliyi hüququ olan istifadəçi başqa təhsilatçı seçə bilər → müqavilənin təhsilatçısı da dəyişir
+  const selEl=can('reassign-collector',2)?document.getElementById('qp-collector-sel'):null;   // siyahı yalnız bu hüquqla göstərilir
+  const chosen=selEl?selEl.value:payCollectorId;
+  if(!chosen){ errEl.textContent=selEl?'Təhsilatçı seçin.':PAYMENT_NO_COLLECTOR_MSG; errEl.style.display='block'; return; }
+  const reassign=chosen!==payCollectorId;
+  if(reassign && !confirm('Müqavilənin təhsilatçısı dəyişdiriləcək: '+(payCollectorId?collectorName(payCollectorId):'(təyin olunmayıb)')+' → '+collectorName(chosen)
+      +'.\n'+(payCollectorId?'Cari təhsilatçının təyinatı bu günlə bağlanacaq, ':'')+'seçilən təhsilatçı bu gündən müqaviləyə təyin olunacaq və ödəniş ona yazılacaq. Davam edilsin?')){
+    errEl.textContent='Əməliyyat yadda saxlanmadı (təsdiqləmədiniz).'; errEl.style.display='block'; return;
+  }
   if(isReturn){
     const netSale=contractNetSale(contract);
     if(amount>netSale+0.01 && !confirm('Geri qaytarılan məbləğ ('+fmtMoney(amount)+') müqavilənin qalan satış məbləğindən ('+fmtMoney(netSale)+') çoxdur. Davam edilsin?')){
@@ -1275,10 +1364,12 @@ async function recordQuickPayment(contractId){
   const curMonth=months.find(m=>m.index===curIdx);
   try{
     const saved=await apiAdd('payments', {
-      contractId:contract.id, meblag:isReturn?-amount:amount, odemeTarixi:date, collectorId:payCollectorId,   // server özü yenidən təyin edir
+      contractId:contract.id, meblag:isReturn?-amount:amount, odemeTarixi:date, collectorId:chosen,   // server özü yenidən təyin edir
+      ...(reassign?{reassignCollectorId:chosen}:{}),
       qeyd:'', qrafikAyIndex:curIdx, qrafikAyLabel:curMonth?curMonth.label:'',
       emeliyyatNovu:isReturn?'Geri qaytarma':'Ödəniş',
     });
+    if(saved._contract){ upsertInState('contracts', saved._contract); delete saved._contract; }   // təhsilatçı dəyişdisə
     upsertInState('payments', saved);
     const cid=saved.contractId, amt=Number(saved.meblag)||0;
     if(isReturnPayment(saved)){
@@ -2402,9 +2493,9 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
-const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)'};
+const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
 let ua={loaded:false,users:[],people:{},screens:[],extras:[],selectedId:null,orig:null,draft:null,preview:null,msg:'',msgOk:true};
 let uaPreviewTimer=null, uaPreviewReq=0;
@@ -2656,6 +2747,8 @@ document.addEventListener('click', async (e)=>{
   if(action==='delete-contracts'){ await withButtonLoading(btn, ()=>deleteRecord('contracts', id, 'müqavilə')); return; }
   if(action==='pay-change-contract'){ paymentsContractId=null; renderPayments(); return; }
   if(action==='record-payment'){ await withButtonLoading(btn, ()=>recordQuickPayment(btn.dataset.contractId)); return; }
+  if(action==='edit-payment'){ openPaymentEdit(id); return; }
+  if(action==='delete-payment'){ await withButtonLoading(btn, ()=>deletePayment(id)); return; }
   if(action==='remove-reassign'){ removeReassignContract(btn.dataset.role||'collector', id); return; }
   if(action==='apply-reassign'){ await withButtonLoading(btn, ()=>applyReassign(btn.dataset.role||'collector')); return; }
   if(action==='page-prev' || action==='page-next'){
@@ -2737,6 +2830,7 @@ document.addEventListener('submit', async (e)=>{
   if(e.target.id==='customer-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCustomerForm(e.target)); }
   if(e.target.id==='contract-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitContractForm(e.target)); }
   if(e.target.id==='court-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCourtForm(e.target)); }
+  if(e.target.id==='payment-edit-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPaymentEdit(e.target)); }
 });
 // "Mal qaytarılması" işarəsi dəyişəndə ödəniş blokunun görünüşünü yenilə
 document.addEventListener('change', (e)=>{

@@ -37,6 +37,8 @@ function perm_extras() {
         'goods-return' => 'Mal qaytarılması',
         'court-notes' => 'Məhkəmə qeydi',
         'export' => 'Excelə export',
+        'payment-edit' => 'Ödənişi dəyişmək',
+        'payment-delete' => 'Ödənişi silmək',
     ];
 }
 
@@ -326,7 +328,11 @@ function authz_write_needs($col, $method, $body) {
         return $needs;
     }
     if ($col === 'payments') {
-        $needs[] = ['screen' => 'payments', 'level' => $lvl];
+        // Qəbul: Ödənişlər → Dəyişiklik. Mövcud ödənişi dəyişmək / silmək: ekrana baxış + ayrıca hüquq
+        // ("Ödənişi dəyişmək" / "Ödənişi silmək"); ödəniş qəbul edən hər kəs avtomatik redaktə/silmə hüququ almır.
+        if ($method === 'POST') { $needs[] = ['screen' => 'payments', 'level' => 2]; }
+        elseif ($method === 'PUT') { $needs[] = ['screen' => 'payments', 'level' => 1]; $needs[] = ['extra' => 'payment-edit']; }
+        else { $needs[] = ['screen' => 'payments', 'level' => 1]; $needs[] = ['extra' => 'payment-delete']; }
         if ($method !== 'DELETE' && is_array($body) && (($body['emeliyyatNovu'] ?? '') === 'Geri qaytarma')) {
             $needs[] = ['extra' => 'goods-return'];
         }
@@ -473,3 +479,34 @@ function payment_collector_for_contract($pdo, $contractId) {
 }
 
 const PAYMENT_NO_COLLECTOR_MSG = 'Bu müqaviləyə təhsilatçı təyin olunmayıb. Ödəniş qəbul etmək üçün əvvəlcə «Təhsilatçı dəyişikliyi» ekranında müqaviləyə təhsilatçı təyin edin.';
+
+// Mövcud ödənişi dəyişmək/silmək (DB-yə baxır): "Geri qaytarma" sətrinə toxunmaq üçün "Mal qaytarılması" hüququ da lazımdır.
+// Boş sətir = icazə var. Sətir tapılmasa boş qaytarır (api.php özü 404 / heç nə etmir).
+function authz_payment_row_denied($pdo, $ctx, $id) {
+    if (authz_is_admin($ctx)) return '';
+    $st = $pdo->prepare("SELECT emeliyyatNovu FROM payments WHERE id = ?");
+    $st->execute([(string) $id]);
+    $nov = $st->fetchColumn();
+    if ($nov === 'Geri qaytarma' && !authz_extra($ctx, 'goods-return')) {
+        return 'İcazə yoxdur: "' . perm_extras()['goods-return'] . '" hüququ lazımdır.';
+    }
+    return '';
+}
+
+// Bakı vaxtı ilə bugünkü tarix (təyinatların başlama/son tarixi üçün)
+function baku_today() {
+    return (new DateTime('now', new DateTimeZone('Asia/Baku')))->format('Y-m-d');
+}
+
+// Təhsilatçı dəyişikliyi ("Təhsilatçı dəyişikliyi" ekranı ilə EYNİ qayda): açıq təyinatlar bu günlə bağlanır,
+// yeni təhsilatçı bu gündən açıq təyinat kimi əlavə olunur.
+function collector_reassign_list($list, $newCollectorId, $today) {
+    $out = [];
+    foreach ((is_array($list) ? $list : []) as $a) {
+        if (!is_array($a)) continue;
+        if (($a['son'] ?? '') === '' || $a['son'] === null) { $a['son'] = $today; }
+        $out[] = $a;
+    }
+    $out[] = ['collectorId' => $newCollectorId, 'baslama' => $today, 'son' => ''];
+    return $out;
+}

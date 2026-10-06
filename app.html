@@ -148,6 +148,11 @@
   .chip{padding:6px 13px;border:1px solid var(--border);border-radius:20px;background:var(--bg-card);color:var(--text);font-size:12.5px;cursor:pointer;font-family:inherit;}
   .chip:hover{border-color:var(--accent);}
   .chip.active{background:var(--accent);border-color:var(--accent);color:#2A1D08;font-weight:600;}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;}
+  .tab{padding:9px 16px;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--text-muted);font-size:13.5px;font-weight:500;cursor:pointer;font-family:inherit;margin-bottom:-1px;}
+  .tab:hover{color:var(--text);}
+  .tab.active{color:var(--text);border-bottom-color:var(--accent);font-weight:600;}
+  tr.total-row td{font-weight:600;background:rgba(184,134,63,.09);}
   .diff td{vertical-align:top;white-space:pre-wrap;word-break:break-word;}
   .scroll-y{max-height:58vh;overflow-y:auto;}
   .scroll-y thead th{position:sticky;top:0;background:var(--bg-card);z-index:1;}
@@ -297,20 +302,21 @@ const SCREENS=[
   {id:'reassign',label:'Təhsilatçı dəyişikliyi',icon:'reassign'},
   {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'},
   {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
-  {id:'reports',label:'Hesabatlar',icon:'reports',children:[{id:'report-overdue',label:'Gecikmiş müqavilələr'}]},
+  {id:'reports',label:'Hesabatlar',icon:'reports',children:[{id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'}]},
 ];
 
 /* ============ SƏLAHİYYƏTLƏR (brauzer yalnız rahatlıq üçün gizlədir; əsl nəzarət SERVERDƏDİR) ============ */
 let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
 const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
 const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
+const REPORT_SCREENS=['report-overdue','report-collections'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
 function isAdmin(){ return me.role==='admin'; }
 function permKey(id){ return SCREEN_PERM[id]||id; }
 function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(id)]||0)>=level; }   // 1 baxış, 2 dəyişiklik, 3 silmə
 function canExtra(key){ return isAdmin() || !!me.extras[key]; }
 function screenAllowed(id){
   if(ADMIN_ONLY_SCREENS.includes(id)) return isAdmin();
-  if(id==='reports') return can('report-overdue',1);
+  if(id==='reports') return REPORT_SCREENS.some(r=>can(r,1));
   return can(id,1);
 }
 function pickInitialScreen(){
@@ -422,12 +428,13 @@ const SCREEN_DEPS={
   curators:['curators'],
   customers:['customers'],
   contracts:['contracts','customers','salespeople','collectors','curators','paymentSums'],
-  payments:['contracts','customers','paymentSums'],
+  payments:['contracts','customers','collectors','paymentSums'],
   reassign:['contracts','customers','collectors','paymentSums'],
   'reassign-curator':['contracts','customers','curators','paymentSums'],
   'debt-inquiry':['customers','contracts','collectors','paymentSums'],
   reports:[],
   'report-overdue':['contracts','customers','salespeople','collectors','curators','paymentSums','paymentLast'],
+  'report-collections':['collectors'],   // sətirlər report-api.php-dən (server əhatəni tətbiq edir)
   'audit-log':[],
   'user-access':[],
 };
@@ -494,6 +501,7 @@ async function renderScreen(){
     case 'debt-inquiry': return renderDebtInquiry();
     case 'reports': return renderReports();
     case 'report-overdue': return renderReportOverdue();
+    case 'report-collections': return renderReportCollections();
     case 'audit-log': return renderAuditLog();
     case 'user-access': return renderUserAccess();
   }
@@ -566,7 +574,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'audit-log':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -1145,7 +1153,7 @@ function buildOperationsRowsHtml(contract){
     const d=(b.odemeTarixi||'').localeCompare(a.odemeTarixi||'');
     return d || (b.createdAt||'').localeCompare(a.createdAt||'');
   });
-  if(!list.length) return `<tr><td colspan="4" class="empty" style="padding:26px;">Hələ əməliyyat yoxdur</td></tr>`;
+  if(!list.length) return `<tr><td colspan="5" class="empty" style="padding:26px;">Hələ əməliyyat yoxdur</td></tr>`;
   return list.map(p=>{
     const ret=isReturnPayment(p);
     const amt=Number(p.meblag)||0;
@@ -1153,6 +1161,7 @@ function buildOperationsRowsHtml(contract){
       <td>${fmtDate(p.odemeTarixi)}</td>
       <td><span class="tag ${ret?'tag-red':'tag-green'}">${ret?'Geri qaytarma':'Ödəniş'}</span></td>
       <td class="num" style="${amt<0?'color:var(--red);':''}">${fmtMoney(amt)}</td>
+      <td class="muted">${p.collectorId?esc(collectorName(p.collectorId)):'—'}</td>
       <td class="muted">${esc(p.qrafikAyLabel||'—')}</td>
     </tr>`;
   }).join('');
@@ -1186,6 +1195,8 @@ function renderPaymentsPanel(contract){
   const scheduleDebt=contractScheduleDebt(contract);
   const rowsHtml=buildScheduleRowsHtml(contract);
   const opsHtml=buildOperationsRowsHtml(contract);
+  // Ödənişin təhsilatçısı = müqavilənin hazırkı təhsilatçısı (dəyişdirilmir; server də özü yoxlayır və yazır)
+  const payCollectorId=activeCollectorForContract(contract)||'';
 
   setContent(`
     <div class="topbar" style="margin-bottom:12px;">
@@ -1207,6 +1218,7 @@ function renderPaymentsPanel(contract){
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
         <div class="field" style="max-width:130px;margin-bottom:0;"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" id="qp-amount"></div>
         <div class="field" style="max-width:160px;margin-bottom:0;"><label>Tarix</label><input type="date" id="qp-date" value="${todayIso()}"></div>
+        <div class="field" style="max-width:240px;margin-bottom:0;"><label>Təhsilatçı</label><input type="text" id="qp-collector" readonly tabindex="-1" style="background:var(--bg-page);" value="${payCollectorId?esc(collectorName(payCollectorId)):''}" placeholder="Təyin olunmayıb"></div>
         ${canExtra('goods-return')?`<div class="field" style="margin-bottom:0;"><label style="visibility:hidden;">.</label>
           <label class="check"><input type="checkbox" id="qp-return"> Mal qaytarılması</label>
         </div>`:''}
@@ -1222,7 +1234,7 @@ function renderPaymentsPanel(contract){
     </table></div></div>
     <div class="section-title" style="margin:18px 0 8px;">Əməliyyatlar</div>
     <div class="card"><div class="table-scroll"><table class="table-compact">
-      <thead><tr><th>Tarix</th><th>Əməliyyat növü</th><th class="num">Məbləğ</th><th>Qrafik ayı</th></tr></thead>
+      <thead><tr><th>Tarix</th><th>Əməliyyat növü</th><th class="num">Məbləğ</th><th>Təhsilatçı</th><th>Qrafik ayı</th></tr></thead>
       <tbody>${opsHtml}</tbody>
     </table></div></div>
   `);
@@ -1236,6 +1248,8 @@ function updateReturnToggleUi(checked){
   if(btn) btn.textContent=checked?'Geri qaytarmanı qeyd et':'Qeyd et';
 }
 
+// Serverdəki PAYMENT_NO_COLLECTOR_MSG ilə eyni mətn (permissions.php)
+const PAYMENT_NO_COLLECTOR_MSG='Bu müqaviləyə təhsilatçı təyin olunmayıb. Ödəniş qəbul etmək üçün əvvəlcə «Təhsilatçı dəyişikliyi» ekranında müqaviləyə təhsilatçı təyin edin.';
 async function recordQuickPayment(contractId){
   const errEl=document.getElementById('qp-err');
   errEl.style.display='none';
@@ -1247,6 +1261,8 @@ async function recordQuickPayment(contractId){
   const isReturn=!!(rc && rc.checked);
   if(!amount || amount<=0){ errEl.textContent='Məbləği düzgün daxil edin.'; errEl.style.display='block'; return; }
   if(!date){ errEl.textContent='Tarixi seçin.'; errEl.style.display='block'; return; }
+  const payCollectorId=activeCollectorForContract(contract)||'';
+  if(!payCollectorId){ errEl.textContent=PAYMENT_NO_COLLECTOR_MSG; errEl.style.display='block'; return; }
   if(isReturn){
     const netSale=contractNetSale(contract);
     if(amount>netSale+0.01 && !confirm('Geri qaytarılan məbləğ ('+fmtMoney(amount)+') müqavilənin qalan satış məbləğindən ('+fmtMoney(netSale)+') çoxdur. Davam edilsin?')){
@@ -1258,7 +1274,7 @@ async function recordQuickPayment(contractId){
   const curMonth=months.find(m=>m.index===curIdx);
   try{
     const saved=await apiAdd('payments', {
-      contractId:contract.id, meblag:isReturn?-amount:amount, odemeTarixi:date, collectorId:'',
+      contractId:contract.id, meblag:isReturn?-amount:amount, odemeTarixi:date, collectorId:payCollectorId,   // server özü yenidən təyin edir
       qeyd:'', qrafikAyIndex:curIdx, qrafikAyLabel:curMonth?curMonth.label:'',
       emeliyyatNovu:isReturn?'Geri qaytarma':'Ödəniş',
     });
@@ -1497,6 +1513,10 @@ function renderReports(){
         <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Gecikmiş müqavilələr</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">Son ödənişindən 2 ay və daha çox keçən, borcu qalan müqavilələr</div>
       </div>`:''}
+      ${can('report-collections',1)?`<div class="card" data-action="nav" data-screen="report-collections" style="padding:18px 20px;cursor:pointer;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Təhsilat hesabatı</div>
+        <div class="muted" style="font-size:13px;line-height:1.5;">Seçilmiş dövrdə təhsilatçılar üzrə toplanmış məbləğlər və geri qaytarmalar</div>
+      </div>`:''}
     </div>
   `);
 }
@@ -1680,6 +1700,159 @@ function renderReportOverdue(){
   refreshOverdueTable();
 }
 
+/* ---- Hesabat 2: Təhsilat hesabatı ----
+   Sətirlər serverdən gəlir (report-api.php?report=collections): yalnız seçilmiş dövrün ödəniş və geri qaytarmaları,
+   əhatə serverdə tətbiq olunur. İlkin ödəniş daxil deyil (o, ödəniş sətri deyil, müqavilənin üstündədir).
+   Təhsilatçı = ödənişin ÖZÜNƏ yazılmış təhsilatçı (ödəniş qəbul edilərkən müqavilənin hazırkı təhsilatçısı);
+   boşdursa "Təyin olunmayıb". Geri qaytarma toplanmış məbləğə qatılmır, ayrıca sütunda göstərilir. */
+const COLL_PAGE_SIZE=50;
+const COLL_NONE='__none__';
+let collFilters={};
+let coll={tab:'summary', rows:[], loadedKey:'', loading:false, err:'', req:0};
+function resetCollFilters(){
+  const today=bakuDateIso();
+  collFilters={from:today.slice(0,8)+'01', to:today, collector:''};
+}
+resetCollFilters();
+function collKey(){ return collFilters.from+'|'+collFilters.to+'|'+collFilters.collector; }
+function collCollectorName(id){
+  if(!id) return 'Təyin olunmayıb';
+  const o=byId(state.collectors,id);
+  return o?fullName(o):'(silinmiş təhsilatçı)';
+}
+function collFilterError(){
+  const f=collFilters;
+  if(!f.from || !f.to) return 'Hər iki tarixi seçin.';
+  if(f.from>f.to) return 'Başlanğıc tarixi son tarixdən böyük ola bilməz.';
+  return '';
+}
+async function loadCollections(){
+  const e=collFilterError();
+  if(e){ coll.err=e; coll.rows=[]; coll.loadedKey=''; coll.loading=false; return; }
+  const key=collKey();
+  const my=++coll.req;
+  coll.loading=true; coll.err='';
+  try{
+    const f=collFilters;
+    const r=await fetch('report-api.php?report=collections&from='+encodeURIComponent(f.from)+'&to='+encodeURIComponent(f.to)+'&collector='+encodeURIComponent(f.collector));
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json();
+    if(my!==coll.req) return;                       // arada filtr dəyişib — köhnə cavab atılır
+    coll.rows=(j.rows||[]).map(x=>Object.assign({}, x, {colName:collCollectorName(x.col)}));
+    coll.loadedKey=key;
+  }catch(err){
+    if(my!==coll.req) return;
+    coll.rows=[]; coll.loadedKey=''; coll.err='Məlumat yüklənmədi: '+err.message;
+  }finally{
+    if(my===coll.req) coll.loading=false;
+  }
+}
+// Ümumiləşdirilmiş: təhsilatçı üzrə cəmlər ("Təyin olunmayıb" sonda)
+function collSummaryRows(rows){
+  const m=new Map();
+  for(const r of rows){
+    let g=m.get(r.col);
+    if(!g){ g={col:r.col, name:r.colName, cnt:0, paid:0, ret:0}; m.set(r.col,g); }
+    if(r.ret) g.ret+=r.amt; else { g.cnt++; g.paid+=r.amt; }
+  }
+  const out=[...m.values()].map(g=>Object.assign(g,{net:g.paid-g.ret}));
+  out.sort((a,b)=>(a.col?0:1)-(b.col?0:1) || a.name.localeCompare(b.name,'az'));
+  return out;
+}
+function collTotals(sumRows){
+  return sumRows.reduce((t,g)=>({cnt:t.cnt+g.cnt, paid:t.paid+g.paid, ret:t.ret+g.ret, net:t.net+g.net}),{cnt:0,paid:0,ret:0,net:0});
+}
+// Sütunların tək elanı (ekran + Excel)
+const COLL_SUMMARY_COLUMNS=[
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:36, td:r=>`<td>${esc(r.name)}</td>`, val:r=>r.name},
+  {th:'<th class="num">Ödəniş sayı</th>', xl:'Ödəniş sayı', type:'int', width:14, td:r=>`<td class="num">${r.cnt}</td>`, val:r=>r.cnt},
+  {th:'<th class="num">Toplanmış məbləğ</th>', xl:'Toplanmış məbləğ', type:'money', width:18, td:r=>`<td class="num">${fmtMoney(r.paid)}</td>`, val:r=>r.paid},
+  {th:'<th class="num">Geri qaytarma</th>', xl:'Geri qaytarma', type:'money', width:16, td:r=>`<td class="num"${r.ret?' style="color:var(--red);"':''}>${fmtMoney(r.ret)}</td>`, val:r=>r.ret},
+  {th:'<th class="num">Xalis</th>', xl:'Xalis', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.net)}</td>`, val:r=>r.net},
+];
+const COLL_DETAIL_COLUMNS=[
+  {th:'<th>Müqavilə №</th>', xl:'Müqavilə №', type:'text', width:14, td:r=>`<td>${esc(r.nomre||'—')}</td>`, val:r=>r.nomre},
+  {th:'<th>Müştəri (SAA)</th>', xl:'Müştəri (SAA)', type:'text', width:36, td:r=>`<td>${esc(r.cust||'—')}</td>`, val:r=>r.cust},
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:30, td:r=>`<td class="muted">${esc(r.colName)}</td>`, val:r=>r.colName},
+  {th:'<th>Tip</th>', xl:'Tip', type:'text', width:15, td:r=>`<td><span class="tag ${r.ret?'tag-red':'tag-green'}">${r.ret?'Geri qaytarma':'Ödəniş'}</span></td>`, val:r=>r.ret?'Geri qaytarma':'Ödəniş'},
+  {th:'<th class="num">Daxil olma<br>məbləği</th>', xl:'Daxil olma məbləği', type:'money', width:18, td:r=>`<td class="num">${r.ret?'':fmtMoney(r.amt)}</td>`, val:r=>r.ret?null:r.amt},
+  {th:'<th class="num">Geri<br>qaytarma</th>', xl:'Geri qaytarma', type:'money', width:16, td:r=>`<td class="num" style="color:var(--red);">${r.ret?fmtMoney(r.amt):''}</td>`, val:r=>r.ret?r.amt:null},
+  {th:'<th>Tarix</th>', xl:'Tarix', type:'date', width:14, td:r=>`<td>${fmtDate(r.date)}</td>`, val:r=>r.date},
+];
+function collFilterDescription(){
+  const f=collFilters, out=[{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)}];
+  if(f.collector) out.push({l:'Təhsilatçı',v:collCollectorName(f.collector===COLL_NONE?'':f.collector)});
+  return out;
+}
+function refreshCollections(){
+  const box=document.getElementById('coll-body');
+  if(!box) return;
+  const eb=document.getElementById('export-btn');
+  const ready=!coll.loading && !coll.err && coll.loadedKey===collKey();
+  if(eb){ eb.disabled=!(ready && coll.rows.length); eb.textContent=(ready && coll.rows.length)?('Excelə yüklə — '+coll.rows.length+' sətir'):'Excelə yüklə'; }
+  const sumEl=document.getElementById('coll-summary');
+  if(coll.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(coll.err)}</div>`; return; }
+  if(!ready){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Yüklənir…</div>`; return; }
+  const sum=collSummaryRows(coll.rows), tot=collTotals(sum);
+  sumEl.innerHTML=
+    `<strong>${tot.cnt}</strong> ödəniş &nbsp;·&nbsp; Toplanmış: <strong>${fmtMoney(tot.paid)}</strong> &nbsp;·&nbsp; Geri qaytarma: <strong>${fmtMoney(tot.ret)}</strong> &nbsp;·&nbsp; Xalis: <strong>${fmtMoney(tot.net)}</strong>`;
+  if(coll.tab==='summary'){
+    const body=sum.length
+      ? sum.map(g=>`<tr>${COLL_SUMMARY_COLUMNS.map(c=>c.td(g)).join('')}</tr>`).join('')
+        +`<tr class="total-row"><td>Cəmi</td><td class="num">${tot.cnt}</td><td class="num">${fmtMoney(tot.paid)}</td><td class="num">${fmtMoney(tot.ret)}</td><td class="num">${fmtMoney(tot.net)}</td></tr>`
+      : `<tr><td colspan="${COLL_SUMMARY_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə ödəniş yoxdur</td></tr>`;
+    box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="coll-table">
+      <thead><tr>${COLL_SUMMARY_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${body}</tbody></table></div></div>`;
+    return;
+  }
+  const {pageRows, totalPages, total}=paginateArr(coll.rows,'report-collections',COLL_PAGE_SIZE);
+  const body=pageRows.length
+    ? pageRows.map(r=>`<tr>${COLL_DETAIL_COLUMNS.map(c=>c.td(r)).join('')}</tr>`).join('')
+    : `<tr><td colspan="${COLL_DETAIL_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə ödəniş yoxdur</td></tr>`;
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="coll-table" style="min-width:900px;">
+    <thead><tr>${COLL_DETAIL_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+    <div id="pagination-report-collections" style="padding:0 14px 14px;">${paginationHtml('report-collections',totalPages,total)}</div></div>`;
+}
+async function reloadCollections(){
+  pageNum['report-collections']=1;
+  const p=loadCollections();
+  refreshCollections();
+  await p;
+  if(currentScreen==='report-collections') refreshCollections();
+}
+async function renderReportCollections(){
+  const f=collFilters;
+  const sorted=state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az'));
+  const opts='<option value="">Hamısı</option>'
+    +sorted.map(x=>`<option value="${x.id}"${f.collector===x.id?' selected':''}>${esc(fullName(x))}</option>`).join('')
+    +`<option value="${COLL_NONE}"${f.collector===COLL_NONE?' selected':''}>Təyin olunmayıb</option>`;
+  const tab=(id,label)=>`<button type="button" class="tab${coll.tab===id?' active':''}" data-action="coll-tab" data-tab="${id}">${label}</button>`;
+  setContent(`
+    <div class="topbar">
+      <div><h1>Təhsilat hesabatı</h1><div class="sub">Təhsilatçılar üzrə toplanmış məbləğlər (ilkin ödəniş daxil deyil)</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="collections" disabled>Excelə yüklə</button>`:''}
+        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      </div>
+    </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:14px;">
+      <div class="filters">
+        <div class="field"><label>Tarixdən</label><input type="date" data-cfilter="from" value="${esc(f.from)}"></div>
+        <div class="field"><label>Tarixədək</label><input type="date" data-cfilter="to" value="${esc(f.to)}"></div>
+        <div class="field"><label>Təhsilatçı</label><select data-cfilter="collector">${opts}</select></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-ghost btn-sm" data-action="coll-reset">Filtrləri təmizlə</button>
+      </div>
+    </div>
+    <div class="tabs">${tab('summary','Ümumiləşdirilmiş')}${tab('detail','Detallı')}</div>
+    <div id="coll-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="coll-body"></div>
+  `);
+  await reloadCollections();   // ekran hər açılanda təzə məlumat (arada ödəniş qeyd oluna bilər)
+}
+
+
 /* ============ EXCEL (.xlsx) EXPORT — brauzerdə, kənar kitabxanasız ============
    Qaydalar (QAYDALAR.md): hər hesabat REPORT_EXPORTS-da elan olunur və export düyməsini avtomatik alır;
    fayl yaradılmazdan ƏVVƏL export loga yazılır — loga yazılmasa fayl yaradılmır. */
@@ -1846,6 +2019,21 @@ const REPORT_EXPORTS={
     filters:()=>overdueFilterDescription(),
     totals:(rows)=>[['Cəmi cari borc',rows.reduce((a,r)=>a+r.debt,0)],['Cəmi qrafik borcu',rows.reduce((a,r)=>a+r.scheduleDebt,0)]],
   },
+  collections:{
+    title:'Təhsilat hesabatı', file:'Tehsilat_hesabati',
+    rows:()=>(coll.loadedKey===collKey() && !coll.loading && !coll.err)?coll.rows:[],   // ekrandakı (serverdən gələn) sətirlər
+    filters:()=>collFilterDescription(),
+    totals:(rows)=>{ const t=collTotals(collSummaryRows(rows)); return [['Toplanmış məbləğ',t.paid],['Geri qaytarma',t.ret],['Xalis',t.net]]; },
+    // İki vərəq: hər tab ayrıca (sütunlar ekrandakı ilə eyni elandan)
+    sheets:(rows)=>{
+      const sum=collSummaryRows(rows), t=collTotals(sum);
+      return [
+        {name:'Ümumiləşdirilmiş', columns:COLL_SUMMARY_COLUMNS, rows:sum, filter:false,
+          extraRows:[[{v:'Cəmi',s:5},{v:t.cnt,t:'int'},{v:t.paid,t:'money'},{v:t.ret,t:'money'},{v:t.net,t:'money'}]]},
+        {name:'Detallı', columns:COLL_DETAIL_COLUMNS, rows},
+      ];
+    },
+  },
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -1863,12 +2051,13 @@ async function exportReport(key){
   if(!rows.length) throw new Error('Export üçün sətir yoxdur.');
   const filters=def.filters();
   await logExport(key, rows.length, filters);                       // 1) əvvəl log
-  const cols=def.columns();
-  const dataSheet={
-    name:def.title, freeze:true, filter:true,
-    columns:cols.map(c=>({label:c.xl, type:c.type, width:c.width})),
-    rows:rows.map(r=>cols.map(c=>c.val(r))),
-  };
+  // Hesabat bir neçə vərəq elan edə bilər (sheets); elan etməyibsə bir vərəq — sütunlar ekrandakı elandan
+  const defs=def.sheets?def.sheets(rows):[{name:def.title, columns:def.columns(), rows}];
+  const dataSheets=defs.map(sd=>({
+    name:sd.name, freeze:true, filter:sd.filter!==false,
+    columns:sd.columns.map(c=>({label:c.xl, type:c.type, width:c.width})),
+    rows:sd.rows.map(r=>sd.columns.map(c=>c.val(r))).concat(sd.extraRows||[]),
+  }));
   const info=[
     [{v:'Hesabat',s:5}, def.title],
     [{v:'Yüklənmə vaxtı (Bakı)',s:5}, fmtBaku(new Date().toISOString().slice(0,19).replace('T',' '))],
@@ -1879,7 +2068,7 @@ async function exportReport(key){
     [{v:'Tətbiq olunan filtrlər',s:5}, filters.length?'':'Filtr yoxdur (bütün nəticələr)'],
     ...filters.map(f=>[f.l, f.v]),
   ];
-  const blob=await xlBuildBlob([dataSheet,{name:'Məlumat', widths:[30,60], rows:info}]);   // 2) fayl
+  const blob=await xlBuildBlob([...dataSheets,{name:'Məlumat', widths:[30,60], rows:info}]);   // 2) fayl
   downloadBlob(blob, def.file+'_'+bakuDateIso()+'.xlsx');
 }
 
@@ -2145,7 +2334,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,'debt-inquiry':1,'report-overdue':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
@@ -2405,6 +2594,7 @@ document.addEventListener('click', async (e)=>{
     const key=btn.dataset.key;
     pageNum[key]=(pageNum[key]||1)+(action==='page-prev'?-1:1);
     if(key==='report-overdue'){ refreshOverdueTable(); return; }
+    if(key==='report-collections'){ refreshCollections(); return; }
     if(key==='audit-log'){ loadAuditPage(); return; }
     const searchInput=document.getElementById('search-'+key);
     const rawVal=searchInput?searchInput.value:'';
@@ -2431,6 +2621,9 @@ document.addEventListener('click', async (e)=>{
   if(action==='show-court'){ openCourtModal(id); return; }
   if(action==='delete-court-note'){ await withButtonLoading(btn, ()=>deleteCourtNote(id, btn.dataset.idx)); return; }
   if(action==='overdue-reset'){ resetOverdueFilters(); renderReportOverdue(); return; }
+  if(action==='coll-reset'){ resetCollFilters(); renderReportCollections(); return; }
+  if(action==='coll-tab'){ coll.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-collections']=1;
+    document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===coll.tab)); refreshCollections(); return; }
   if(action==='export-report'){
     await withButtonLoading(btn, async()=>{ try{ await exportReport(btn.dataset.report); }catch(err){ alert(err.message); } });
     return;
@@ -2481,6 +2674,7 @@ document.addEventListener('change', (e)=>{
   const t=e.target; if(!t) return;
   if(t.id==='qp-return'){ updateReturnToggleUi(t.checked); return; }
   const ds=t.dataset||{};
+  if(ds.cfilter){ collFilters[ds.cfilter]=t.value; reloadCollections(); return; }   // Təhsilat hesabatı filtrləri (tarix/təhsilatçı)
   if(ds.uaScreen && ua.draft){ uaSetLevel(ds.uaScreen, Number(ds.lv), t.checked); return; }
   if(ds.uaExtra && ua.draft){ ua.draft.extras[ds.uaExtra]=t.checked; ua.msg=''; uaRefreshBar(); return; }
   if(ds.uaMode && ua.draft){ ua.draft.scope.mode=ds.uaMode; ua.msg=''; uaRedrawEditor(); return; }

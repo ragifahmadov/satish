@@ -9,7 +9,7 @@
 //  * Yeni ekran/hesabat əlavə edəndə perm_screens() və perm_screen_needs()-də elan edin.
 
 // Struktur dəyişəndə artırın — db.php strukturu yenidən yoxlasın
-const SCOPE_SCHEMA_VERSION = 'scope-v1';
+const SCOPE_SCHEMA_VERSION = 'scope-v2';   // v2: payments.odemeTarixi indeksi (Təhsilat hesabatı)
 const USERS_SCHEMA_VERSION = 'users-v2';
 
 /* ---------- reyestr ---------- */
@@ -27,6 +27,7 @@ function perm_screens() {
         'reassign-curator' => 'Kurator dəyişikliyi',
         'debt-inquiry' => 'Müştəri borc sorğusu',
         'report-overdue' => 'Hesabat: Gecikmiş müqavilələr',
+        'report-collections' => 'Hesabat: Təhsilat hesabatı',
     ];
 }
 
@@ -54,11 +55,13 @@ function perm_screen_needs() {
         'curators' => ['curators' => 'full'],
         'customers' => ['customers' => 'full'],
         'contracts' => ['contracts' => 'full', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@cpay' => 1],
-        'payments' => ['contracts' => 'ref', 'customers' => 'ref', 'payments' => 'full', '@sums' => 1, '@cpay' => 1],
+        'payments' => ['contracts' => 'ref', 'customers' => 'ref', 'collectors' => 'ref', 'payments' => 'full', '@sums' => 1, '@cpay' => 1],
         'reassign-collector' => ['contracts' => 'ref', 'customers' => 'ref', 'collectors' => 'ref', '@sums' => 1],
         'reassign-curator' => ['contracts' => 'ref', 'customers' => 'ref', 'curators' => 'ref', '@sums' => 1],
         'debt-inquiry' => ['customers' => 'ref_addr', 'contracts' => 'ref', 'collectors' => 'ref', '@sums' => 1],
         'report-overdue' => ['contracts' => 'ref', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@last' => 1],
+        // Təhsilat hesabatının sətirləri report-api.php-dən gəlir (müqavilə №, müştəri adı — yığcam); burada yalnız təhsilatçı siyahısı
+        'report-collections' => ['collectors' => 'ref'],
     ];
 }
 
@@ -261,6 +264,31 @@ function authz_contract_visible($pdo, $ctx, $contractId) {
     return (bool) $st->fetchColumn();
 }
 
+// Ödənişlər üçün "kim topladı" əhatəsi (HƏLƏLİK YALNIZ Təhsilat hesabatında): ödəniş görünür, əgər
+//   müqavilə istifadəçinin əhatəsindədirsə  VƏ YA  ödənişin öz təhsilatçısı (payments.collectorId) onun əhatəsindədirsə.
+// Beləliklə müqavilə sonradan başqa təhsilatçıya keçsə də, təhsilatçının əvvəl topladığı ödənişlər onun əhatəsində qalır.
+// $pAlias — payments cədvəlinin ləqəbi. Qaytarır [sql, params]; məhdudiyyətsiz istifadəçi üçün ['1=1', []].
+function authz_payment_collector_scope($ctx, $pAlias, $prefix) {
+    if (!authz_scoped($ctx)) return ['1=1', []];
+    [$cSql, $params] = authz_contract_scope($ctx, 'c', $prefix . 'c');
+    $parts = [];
+    if ($cSql !== '0=1') { $parts[] = "$pAlias.contractId IN (SELECT c.id FROM contracts c WHERE $cSql)"; }
+    $ids = $ctx['scope']['collectors'] ?? [];
+    if ($ids) {
+        $ph = [];
+        $n = 0;
+        foreach ($ids as $id) {
+            $n++;
+            $name = ':' . $prefix . 'p' . $n;
+            $ph[] = $name;
+            $params[$name] = $id;
+        }
+        $parts[] = "$pAlias.collectorId IN (" . implode(',', $ph) . ")";
+    }
+    if (!$parts) return ['0=1', []];
+    return ['(' . implode(' OR ', $parts) . ')', $params];
+}
+
 function authz_customer_visible($pdo, $ctx, $customerId) {
     if (!authz_scoped($ctx)) return true;
     [$sql, $params] = authz_contract_scope($ctx, 'c', 'sv');
@@ -412,6 +440,7 @@ function ensure_scope_columns($pdo) {
     add_index_if_missing($pdo, 'contracts', 'currentCollectorId');
     add_index_if_missing($pdo, 'contracts', 'currentCuratorId');
     add_index_if_missing($pdo, 'customers', 'createdBy');
+    add_index_if_missing($pdo, 'payments', 'odemeTarixi');   // Təhsilat hesabatı: tarix intervalı
     backfill_current_assignees($pdo);
 }
 
@@ -431,3 +460,16 @@ function backfill_current_assignees($pdo) {
         }
     }
 }
+
+/* ---------- ödənişin təhsilatçısı ---------- */
+
+// Yeni ödənişə yazılacaq təhsilatçı: müqavilənin HAZIRKI təhsilatçısı (server özü təyin edir, brauzerin
+// göndərdiyi dəyər nəzərə alınmır). Müqavilə tapılmasa və ya təhsilatçı təyin olunmayıbsa null.
+function payment_collector_for_contract($pdo, $contractId) {
+    $st = $pdo->prepare("SELECT currentCollectorId FROM contracts WHERE id = ?");
+    $st->execute([(string) $contractId]);
+    $v = $st->fetchColumn();
+    return (is_string($v) && $v !== '') ? $v : null;
+}
+
+const PAYMENT_NO_COLLECTOR_MSG = 'Bu müqaviləyə təhsilatçı təyin olunmayıb. Ödəniş qəbul etmək üçün əvvəlcə «Təhsilatçı dəyişikliyi» ekranında müqaviləyə təhsilatçı təyin edin.';

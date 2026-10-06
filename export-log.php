@@ -28,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail(405, 'Yalnız POST'); }
 // hesabat açarı => [ad, ona baxış üçün lazım olan ekran açarı (permissions.php)]
 $REPORTS = [
     'overdue' => ['Gecikmiş müqavilələr', 'report-overdue'],
+    'collections' => ['Təhsilat hesabatı', 'report-collections'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

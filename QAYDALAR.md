@@ -45,3 +45,9 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
 5. Yeni istifadəçinin hüququ boşdur (heç nəyə giriş yoxdur) — admin "Səlahiyyətlər" ekranında təyin edir. Boş/pozuq hüquq = giriş yoxdur (qapalı davranış).
 6. Deploy-dan sonra `/authz-selftest.php` işlədilməlidir (hamısı ✅). Hüquq/əhatə dəyişiklikləri və icazə verilməyən cəhdlər loga düşür.
 7. `users` cədvəlinin və əhatə sütunlarının strukturunu dəyişəndə `USERS_SCHEMA_VERSION` / `SCOPE_SCHEMA_VERSION` (permissions.php) artırılmalıdır.
+8. Server tərəfli hesabat məlumatı `report-api.php`-dədir (hesabat açarı → ekran hüququ `$REPORT_SCREENS`). Yeni hesabat üçün orada
+   ayrıca bölmə yazın; sətirlər yalnız `permissions.php`-dəki əhatə funksiyalarından keçsin.
+9. Ödənişin təhsilatçısı (`payments.collectorId`) YALNIZ serverdə, ödəniş yaradılanda yazılır: müqavilənin hazırkı təhsilatçısı
+   (`payment_collector_for_contract`). Təhsilatçısız müqaviləyə ödəniş/geri qaytarma qəbul edilmir; redaktədə təhsilatçı dəyişmir.
+10. Təhsilat hesabatında əhatə: müqavilə əhatədədir VƏ YA ödənişin təhsilatçısı əhatədədir (`authz_payment_collector_scope`).
+   Bu qayda HƏLƏLİK yalnız bu hesabatdadır; digər ekranlar müqavilə əhatəsi (`authz_contract_scope`) ilə işləyir.

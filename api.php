@@ -164,6 +164,14 @@ try {
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'POST', null, $body); }
             if ($why !== '') { api_deny($why); }
 
+            // Ödənişin təhsilatçısı: müqavilənin HAZIRKI təhsilatçısı (server özü yazır, brauzerin göndərdiyi nəzərə alınmır).
+            // Təhsilatçı təyin olunmayıbsa ödəniş də, geri qaytarma da qəbul edilmir.
+            if ($col === 'payments') {
+                $pc = payment_collector_for_contract($pdo, $body['contractId'] ?? '');
+                if ($pc === null) { fail(400, PAYMENT_NO_COLLECTOR_MSG); }
+                $body['collectorId'] = $pc;
+            }
+
             $newId = make_uuid();
             $now = date('Y-m-d H:i:s');
             $cols = ['id', 'createdAt'];
@@ -210,6 +218,8 @@ try {
             $why = authz_write_denied($ctx, $col, 'PUT', $body);
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'PUT', $id, $body); }
             if ($why !== '') { api_deny($why); }
+            // Ödənişin təhsilatçısı yalnız yaradılanda yazılır, sonra dəyişmir
+            if ($col === 'payments') { unset($body['collectorId']); }
 
             $sets = [];
             $params = [':id' => $id];

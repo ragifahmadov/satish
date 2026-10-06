@@ -98,6 +98,15 @@ $onlyCust = mk(['customers' => 1]);
 t('Müştərilər ekranı: tam; müqavilələrə girişi yoxdur', authz_read_tier($onlyCust, 'customers') === 'full' && authz_read_tier($onlyCust, 'contracts') === null);
 $rep = mk(['report-overdue' => 1]);
 t('Hesabat: son ödəniş tarixi yığcam sorğusuna girə bilir', authz_has_flag($rep, '@last'));
+$repCol = mk(['report-collections' => 1]);
+t('Təhsilat hesabatı: yalnız təhsilatçı adları (ref); müqavilə/müştəri/ödəniş siyahılarına girişi yoxdur',
+    authz_can($repCol, 'report-collections', 1) && authz_read_tier($repCol, 'collectors') === 'ref'
+    && authz_read_tier($repCol, 'contracts') === null && authz_read_tier($repCol, 'customers') === null && authz_read_tier($repCol, 'payments') === null);
+t('Təhsilat hesabatına hüququ olmayan (başqa hesabat) baxa bilmir', !authz_can($rep, 'report-collections', 1) && !authz_can($blank, 'report-collections', 1));
+t('Ödənişlər ekranı: təhsilatçı adlarını (ref) oxuya bilir', authz_read_tier(mk(['payments' => 1]), 'collectors') === 'ref');
+t('Ödəniş əhatəsi (təhsilatçı üzrə): admin/əhatəsiz 1=1, hüquqsuz 0=1',
+    authz_payment_collector_scope($adm, 'p', 'x')[0] === '1=1' && authz_payment_collector_scope(mk([], [], 'all'), 'p', 'x')[0] === '1=1'
+    && authz_payment_collector_scope($blank, 'p', 'x')[0] === '0=1');
 
 $custRow = ['id' => '1', 'createdAt' => 'x', 'kod' => 'K', 'soyad' => 'S', 'ad' => 'A', 'ataAdi' => 'T', 'finKod' => 'F', 'elaqeNomre1' => '5', 'elaqeNomre2' => '',
     'vesiqeSeriya' => 'AZE', 'vesiqeNomre' => '123', 'dogumTarixi' => '2000-01-01', 'cinsiyet' => 'K', 'qeydiyyatUnvani' => 'ünvan1', 'faktikiUnvan' => 'ünvan2', 'qeyd' => 'gizli'];
@@ -145,7 +154,7 @@ $scenarios = [
     'yalnız kuratorlar' => ['salespeople' => [], 'collectors' => [], 'curators' => $sample['curators']],
     'satıcı+təhsilatçı+kurator (OR)' => $sample,
 ];
-$payRows = $pdo->query("SELECT contractId, meblag, emeliyyatNovu FROM payments")->fetchAll();
+$payRows = $pdo->query("SELECT contractId, meblag, emeliyyatNovu, collectorId FROM payments")->fetchAll();
 foreach ($scenarios as $label => $sc) {
     $ctx = mk([], [], 'selected', $sc);
     // müstəqil (PHP) hesablama — SQL sütunlarından yox, tarixçədən
@@ -181,7 +190,25 @@ foreach ($scenarios as $label => $sc) {
     $st->execute($params3);
     $sqlSum = (float) $st->fetchColumn();
     t('Əhatə [' . $label . ']: ödənişlər cəmi SQL = müstəqil hesab', abs($sqlSum - $refSum) < 0.01, 'SQL ' . round($sqlSum, 2) . ' / müstəqil ' . round($refSum, 2));
+
+    // Təhsilat hesabatı: ödəniş görünür = müqavilə əhatədədir VƏ YA ödənişin təhsilatçısı əhatədədir
+    $refPay = 0;
+    foreach ($payRows as $p) {
+        if (isset($visible[$p['contractId']]) || ((string) $p['collectorId'] !== '' && in_array($p['collectorId'], $sc['collectors'], true))) { $refPay++; }
+    }
+    [$sql4, $params4] = authz_payment_collector_scope($ctx, 'p', 'rs');
+    $st = $pdo->prepare("SELECT COUNT(*) FROM payments p WHERE $sql4");
+    $st->execute($params4);
+    $sqlPay = (int) $st->fetchColumn();
+    t('Əhatə [' . $label . ']: Təhsilat hesabatında görünən ödəniş sayı SQL = müstəqil hesab (' . $refPay . ')', $sqlPay === $refPay, 'SQL ' . $sqlPay . ' / müstəqil ' . $refPay);
 }
+// Yeni ödənişə yazılacaq təhsilatçı = müqavilənin hazırkı təhsilatçısı (tarixçədən)
+$pcBad = 0;
+foreach (array_slice($contracts, 0, 200) as $c) {
+    if (payment_collector_for_contract($pdo, $c['id']) !== $c['dc']) { $pcBad++; }
+}
+t('Yeni ödənişin təhsilatçısı = müqavilənin hazırkı təhsilatçısı (ilk 200 müqavilə)', $pcBad === 0, $pcBad . ' uyğunsuzluq');
+t('Mövcud olmayan müqavilə üçün təhsilatçı yoxdur (ödəniş rədd edilir)', payment_collector_for_contract($pdo, '00000000-0000-0000-0000-000000000000') === null);
 $allCtx = mk([], [], 'all');
 t('Əhatəsiz ("Bütün müqavilələr") istifadəçi: şərt 1=1', authz_contract_scope($allCtx, 'c', 'sc')[0] === '1=1' && !authz_scoped($allCtx));
 

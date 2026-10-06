@@ -204,6 +204,7 @@
   .assign-row{display:flex;gap:8px;align-items:end;margin-bottom:8px;}
   .assign-row .field{margin-bottom:0;flex:1;}
   .banner{background:var(--red-bg);color:var(--red);padding:11px 16px;border-radius:8px;font-size:13px;margin-bottom:18px;}
+  .notice{background:rgba(184,134,63,.13);color:var(--accent-text);padding:9px 14px;border-radius:8px;font-size:13px;margin:0 0 10px;}
   .placeholder-box{padding:70px 30px;text-align:center;color:var(--text-muted);border:1px dashed var(--border);border-radius:10px;}
   @media (max-width:820px){
     #layout{flex-direction:column;}
@@ -433,7 +434,7 @@ const SCREEN_DEPS={
   'reassign-curator':['contracts','customers','curators','paymentSums'],
   'debt-inquiry':['customers','contracts','collectors','paymentSums'],
   reports:[],
-  'report-overdue':['contracts','customers','salespeople','collectors','curators','paymentSums','paymentLast'],
+  'report-overdue':['salespeople','collectors','curators'],   // filtr siyahıları; müqavilə/ödəniş məlumatı «Axtar»-da yüklənir (OVERDUE_DATA)
   'report-collections':['collectors'],   // sətirlər report-api.php-dən (server əhatəni tətbiq edir)
   'audit-log':[],
   'user-access':[],
@@ -1521,6 +1522,34 @@ function renderReports(){
   `);
 }
 
+/* ---- Hesabatların ORTAQ qaydası (QAYDALAR.md) ----
+   Filtr dəyişəndə nəticə AVTOMATİK yenilənmir — yalnız «Axtar» düyməsi (və ya filtr sahəsində Enter) ilə.
+   Ekran açılanda nəticə yoxdur (ağır məlumat da yüklənmir). Səhifələmə/tab keçidi mövcud nəticə üzərində işləyir.
+   Export yalnız axtarışdan sonra, AXTARIŞ ZAMANI tətbiq olunmuş filtrlərlə (applied). Yeni hesabat REPORT_SEARCH-də elan olunur:
+   {filters:()=>cari filtrlər, applied:()=>axtarışdakı filtrlər|null, search:async()=>…}. */
+const REPORT_PROMPT='Filtrləri seçib «Axtar» düyməsini basın';
+function reportPromptRow(colspan){ return `<tr><td colspan="${colspan}" class="empty" style="padding:40px;">${REPORT_PROMPT}</td></tr>`; }
+function reportFilterButtonsHtml(key, resetAction){
+  return `<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+    <button class="btn btn-ghost btn-sm" data-action="${resetAction}">Filtrləri təmizlə</button>
+    <button class="btn btn-primary btn-sm" id="report-search-${key}" data-action="report-search" data-report="${key}">Axtar</button>
+  </div>`;
+}
+function reportDirtyHtml(key){ return `<div id="report-dirty-${key}" class="notice" style="display:none;">Filtrlər dəyişib — nəticəni yeniləmək üçün «Axtar» basın</div>`; }
+function sameFilters(a,b){ return JSON.stringify(a)===JSON.stringify(b); }
+function updateReportDirty(key){
+  const d=REPORT_SEARCH[key], el=document.getElementById('report-dirty-'+key);
+  if(!d || !el) return;
+  const ap=d.applied();
+  el.style.display=(ap && !sameFilters(ap, d.filters()))?'block':'none';
+}
+async function runReportSearch(key){
+  const d=REPORT_SEARCH[key];
+  if(!d) return;
+  await d.search();
+  updateReportDirty(key);
+}
+
 /* ---- Hesabat 1: Gecikmiş müqavilələr ----
    Gecikmə = ən son (real) ödəniş tarixi ilə bu gün arasında tam ay fərqi.
    Heç ödənişi olmayan müqavilədə müqavilə tarixi əsas götürülür.
@@ -1529,6 +1558,9 @@ const OVERDUE_MIN_MONTHS=2;
 const OVERDUE_PAGE_SIZE=50;
 let overdueBase=[];
 let overdueFilters={};
+let overdueApplied=null;    // «Axtar» basılanda filtrlərin surəti; null = hələ axtarış olmayıb
+let overdueErr='';
+const OVERDUE_DATA=['contracts','customers','salespeople','collectors','curators','paymentSums','paymentLast'];
 function resetOverdueFilters(){
   overdueFilters={nomre:'',musteri:'',tel:'',satici:'',tehsilatci:'',kurator:'',tarixDan:'',tarixDek:'',
     satisMin:'',satisMax:'',borcMin:'',borcMax:'',qrafikMin:'',gecMin:'',gecMax:''};
@@ -1620,8 +1652,9 @@ function overdueRowHtml(r){
   return `<tr>${OVERDUE_COLUMNS.map(c=>c.td(r)).join('')}</tr>`;
 }
 // Tətbiq olunan filtrlərin oxunaqlı siyahısı (Excel "Məlumat" vərəqi və export logu üçün)
-function overdueFilterDescription(){
-  const f=overdueFilters, out=[];
+function overdueFilterDescription(f){
+  f=f||overdueApplied||overdueFilters;
+  const out=[];
   const add=(l,v)=>{ if(v!=='' && v!=null) out.push({l,v:String(v)}); };
   const person=(arr,id)=>{ const o=byId(arr,id); return o?fullName(o):id; };
   add('Müqavilə №',f.nomre); add('Müştəri',f.musteri); add('Əlaqə nömrəsi',f.tel);
@@ -1636,10 +1669,19 @@ function overdueFilterDescription(){
   return out;
 }
 
+function overdueResultRows(){ return overdueApplied?filterOverdue(overdueBase, overdueApplied):[]; }
 function refreshOverdueTable(){
   const tbody=document.getElementById('overdue-tbody');
   if(!tbody) return;
-  const rows=filterOverdue(overdueBase, overdueFilters);
+  const eb0=document.getElementById('export-btn');
+  if(!overdueApplied || overdueErr){
+    document.getElementById('overdue-summary').innerHTML='';
+    tbody.innerHTML=overdueErr?`<tr><td colspan="${OVERDUE_COLUMNS.length}" style="padding:20px;"><div class="banner" style="margin:0;">${esc(overdueErr)}</div></td></tr>`:reportPromptRow(OVERDUE_COLUMNS.length);
+    document.getElementById('pagination-report-overdue').innerHTML='';
+    if(eb0){ eb0.textContent='Excelə yüklə'; eb0.disabled=true; }
+    return;
+  }
+  const rows=overdueResultRows();
   const {pageRows, totalPages, total}=paginateArr(rows,'report-overdue',OVERDUE_PAGE_SIZE);
   const sumDebt=rows.reduce((a,r)=>a+r.debt,0), sumSch=rows.reduce((a,r)=>a+r.scheduleDebt,0);
   document.getElementById('overdue-summary').innerHTML=
@@ -1650,8 +1692,21 @@ function refreshOverdueTable(){
   if(eb){ eb.textContent=total?('Excelə yüklə — '+total+' sətir'):'Excelə yüklə'; eb.disabled=!total; }
 }
 
-function renderReportOverdue(){
+// «Axtar»: lazım olan məlumatı (ilk dəfə) yükləyir, hesablayır və filtrləri tətbiq edir
+async function searchOverdue(){
+  overdueErr='';
+  try{
+    await ensureLoaded(OVERDUE_DATA);
+  }catch(err){
+    overdueErr='Məlumat yüklənmədi: '+err.message; overdueApplied=null; refreshOverdueTable(); return;
+  }
   overdueBase=buildOverdueBase();
+  overdueApplied=JSON.parse(JSON.stringify(overdueFilters));
+  pageNum['report-overdue']=1;
+  refreshOverdueTable();
+}
+function renderReportOverdue(){
+  overdueApplied=null; overdueErr=''; overdueBase=[];   // ekran hər açılanda nəticə yoxdur — «Axtar» ilə
   const f=overdueFilters;
   const sorted=arr=>arr.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az'));
   const opts=(arr,sel,withNone)=>
@@ -1664,7 +1719,7 @@ function renderReportOverdue(){
     <div class="topbar">
       <div><h1>Gecikmiş müqavilələr</h1><div class="sub">Son ödənişindən ${OVERDUE_MIN_MONTHS} ay və daha çox keçən, borcu qalan müqavilələr</div></div>
       <div style="display:flex;gap:8px;">
-        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="overdue">Excelə yüklə</button>`:''}
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="overdue" disabled>Excelə yüklə</button>`:''}
         <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
       </div>
     </div>
@@ -1686,10 +1741,9 @@ function renderReportOverdue(){
         ${inp('gecMin','Gecikmə ay (min)','number')}
         ${inp('gecMax','Gecikmə ay (maks)','number')}
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
-        <button class="btn btn-ghost btn-sm" data-action="overdue-reset">Filtrləri təmizlə</button>
-      </div>
+      ${reportFilterButtonsHtml('overdue','overdue-reset')}
     </div>
+    ${reportDirtyHtml('overdue')}
     <div id="overdue-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
     <div class="card"><div class="table-scroll"><table class="table-compact" style="min-width:1050px;">
       <thead><tr>${OVERDUE_COLUMNS.map(c=>c.th).join('')}</tr></thead>
@@ -1708,32 +1762,31 @@ function renderReportOverdue(){
 const COLL_PAGE_SIZE=50;
 const COLL_NONE='__none__';
 let collFilters={};
-let coll={tab:'summary', rows:[], loadedKey:'', loading:false, err:'', req:0};
+let coll={tab:'summary', rows:[], applied:null, loadedKey:'', loading:false, err:'', req:0};   // applied: «Axtar»-dakı filtrlər
 function resetCollFilters(){
   const today=bakuDateIso();
   collFilters={from:today.slice(0,8)+'01', to:today, collector:''};
 }
 resetCollFilters();
-function collKey(){ return collFilters.from+'|'+collFilters.to+'|'+collFilters.collector; }
+function collKey(f){ f=f||coll.applied; return f?(f.from+'|'+f.to+'|'+f.collector):''; }
 function collCollectorName(id){
   if(!id) return 'Təyin olunmayıb';
   const o=byId(state.collectors,id);
   return o?fullName(o):'(silinmiş təhsilatçı)';
 }
-function collFilterError(){
-  const f=collFilters;
+function collFilterError(f){
+  f=f||collFilters;
   if(!f.from || !f.to) return 'Hər iki tarixi seçin.';
   if(f.from>f.to) return 'Başlanğıc tarixi son tarixdən böyük ola bilməz.';
   return '';
 }
 async function loadCollections(){
-  const e=collFilterError();
-  if(e){ coll.err=e; coll.rows=[]; coll.loadedKey=''; coll.loading=false; return; }
-  const key=collKey();
+  const f=coll.applied;
+  if(!f) return;
+  const key=collKey(f);
   const my=++coll.req;
   coll.loading=true; coll.err='';
   try{
-    const f=collFilters;
     const r=await fetch('report-api.php?report=collections&from='+encodeURIComponent(f.from)+'&to='+encodeURIComponent(f.to)+'&collector='+encodeURIComponent(f.collector));
     if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
     const j=await r.json();
@@ -1779,8 +1832,9 @@ const COLL_DETAIL_COLUMNS=[
   {th:'<th class="num">Geri<br>qaytarma</th>', xl:'Geri qaytarma', type:'money', width:16, td:r=>`<td class="num" style="color:var(--red);">${r.ret?fmtMoney(r.amt):''}</td>`, val:r=>r.ret?r.amt:null},
   {th:'<th>Tarix</th>', xl:'Tarix', type:'date', width:14, td:r=>`<td>${fmtDate(r.date)}</td>`, val:r=>r.date},
 ];
-function collFilterDescription(){
-  const f=collFilters, out=[{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)}];
+function collFilterDescription(f){
+  f=f||coll.applied||collFilters;
+  const out=[{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)}];
   if(f.collector) out.push({l:'Təhsilatçı',v:collCollectorName(f.collector===COLL_NONE?'':f.collector)});
   return out;
 }
@@ -1788,10 +1842,11 @@ function refreshCollections(){
   const box=document.getElementById('coll-body');
   if(!box) return;
   const eb=document.getElementById('export-btn');
-  const ready=!coll.loading && !coll.err && coll.loadedKey===collKey();
+  const ready=!!coll.applied && !coll.loading && !coll.err && coll.loadedKey===collKey();
   if(eb){ eb.disabled=!(ready && coll.rows.length); eb.textContent=(ready && coll.rows.length)?('Excelə yüklə — '+coll.rows.length+' sətir'):'Excelə yüklə'; }
   const sumEl=document.getElementById('coll-summary');
   if(coll.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(coll.err)}</div>`; return; }
+  if(!coll.applied){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
   if(!ready){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Yüklənir…</div>`; return; }
   const sum=collSummaryRows(coll.rows), tot=collTotals(sum);
   sumEl.innerHTML=
@@ -1813,6 +1868,13 @@ function refreshCollections(){
     <thead><tr>${COLL_DETAIL_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${body}</tbody></table></div>
     <div id="pagination-report-collections" style="padding:0 14px 14px;">${paginationHtml('report-collections',totalPages,total)}</div></div>`;
 }
+// «Axtar»: filtrləri yoxlayır, surətini götürür (applied) və serverdən məlumatı gətirir
+async function searchCollections(){
+  const e=collFilterError(collFilters);
+  if(e){ coll.err=e; coll.applied=null; coll.rows=[]; coll.loadedKey=''; refreshCollections(); return; }
+  coll.applied=JSON.parse(JSON.stringify(collFilters));
+  await reloadCollections();
+}
 async function reloadCollections(){
   pageNum['report-collections']=1;
   const p=loadCollections();
@@ -1821,6 +1883,7 @@ async function reloadCollections(){
   if(currentScreen==='report-collections') refreshCollections();
 }
 async function renderReportCollections(){
+  coll.applied=null; coll.rows=[]; coll.loadedKey=''; coll.err=''; coll.req++; coll.loading=false;
   const f=collFilters;
   const sorted=state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az'));
   const opts='<option value="">Hamısı</option>'
@@ -1841,15 +1904,14 @@ async function renderReportCollections(){
         <div class="field"><label>Tarixədək</label><input type="date" data-cfilter="to" value="${esc(f.to)}"></div>
         <div class="field"><label>Təhsilatçı</label><select data-cfilter="collector">${opts}</select></div>
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
-        <button class="btn btn-ghost btn-sm" data-action="coll-reset">Filtrləri təmizlə</button>
-      </div>
+      ${reportFilterButtonsHtml('collections','coll-reset')}
     </div>
+    ${reportDirtyHtml('collections')}
     <div class="tabs">${tab('summary','Ümumiləşdirilmiş')}${tab('detail','Detallı')}</div>
     <div id="coll-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
     <div id="coll-body"></div>
   `);
-  await reloadCollections();   // ekran hər açılanda təzə məlumat (arada ödəniş qeyd oluna bilər)
+  refreshCollections();   // ekran açılanda nəticə yoxdur — «Axtar» ilə (hər axtarış serverdən təzə məlumat gətirir)
 }
 
 
@@ -2015,13 +2077,13 @@ const REPORT_EXPORTS={
   overdue:{
     title:'Gecikmiş müqavilələr', file:'Gecikmis_muqavileler',
     columns:()=>OVERDUE_COLUMNS,
-    rows:()=>filterOverdue(overdueBase, overdueFilters),
+    rows:()=>overdueResultRows(),   // «Axtar»-dakı filtrlərlə (ekrandakı nəticə)
     filters:()=>overdueFilterDescription(),
     totals:(rows)=>[['Cəmi cari borc',rows.reduce((a,r)=>a+r.debt,0)],['Cəmi qrafik borcu',rows.reduce((a,r)=>a+r.scheduleDebt,0)]],
   },
   collections:{
     title:'Təhsilat hesabatı', file:'Tehsilat_hesabati',
-    rows:()=>(coll.loadedKey===collKey() && !coll.loading && !coll.err)?coll.rows:[],   // ekrandakı (serverdən gələn) sətirlər
+    rows:()=>(coll.applied && coll.loadedKey===collKey() && !coll.loading && !coll.err)?coll.rows:[],   // ekrandakı (serverdən gələn) sətirlər
     filters:()=>collFilterDescription(),
     totals:(rows)=>{ const t=collTotals(collSummaryRows(rows)); return [['Toplanmış məbləğ',t.paid],['Geri qaytarma',t.ret],['Xalis',t.net]]; },
     // İki vərəq: hər tab ayrıca (sütunlar ekrandakı ilə eyni elandan)
@@ -2034,6 +2096,12 @@ const REPORT_EXPORTS={
       ];
     },
   },
+};
+
+// «Axtar» mexanizmi (ortaq qayda) — hər hesabat burada elan olunur
+const REPORT_SEARCH={
+  overdue:{filters:()=>overdueFilters, applied:()=>overdueApplied, search:searchOverdue},
+  collections:{filters:()=>collFilters, applied:()=>coll.applied, search:searchCollections},
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -2622,6 +2690,7 @@ document.addEventListener('click', async (e)=>{
   if(action==='delete-court-note'){ await withButtonLoading(btn, ()=>deleteCourtNote(id, btn.dataset.idx)); return; }
   if(action==='overdue-reset'){ resetOverdueFilters(); renderReportOverdue(); return; }
   if(action==='coll-reset'){ resetCollFilters(); renderReportCollections(); return; }
+  if(action==='report-search'){ await withButtonLoading(btn, ()=>runReportSearch(btn.dataset.report)); return; }
   if(action==='coll-tab'){ coll.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-collections']=1;
     document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===coll.tab)); refreshCollections(); return; }
   if(action==='export-report'){
@@ -2674,15 +2743,26 @@ document.addEventListener('change', (e)=>{
   const t=e.target; if(!t) return;
   if(t.id==='qp-return'){ updateReturnToggleUi(t.checked); return; }
   const ds=t.dataset||{};
-  if(ds.cfilter){ collFilters[ds.cfilter]=t.value; reloadCollections(); return; }   // Təhsilat hesabatı filtrləri (tarix/təhsilatçı)
+  if(ds.cfilter){ collFilters[ds.cfilter]=t.value; updateReportDirty('collections'); return; }   // Təhsilat hesabatı filtrləri: yalnız «Axtar» ilə tətbiq olunur
   if(ds.uaScreen && ua.draft){ uaSetLevel(ds.uaScreen, Number(ds.lv), t.checked); return; }
   if(ds.uaExtra && ua.draft){ ua.draft.extras[ds.uaExtra]=t.checked; ua.msg=''; uaRefreshBar(); return; }
   if(ds.uaMode && ua.draft){ ua.draft.scope.mode=ds.uaMode; ua.msg=''; uaRedrawEditor(); return; }
   if(ds.uaPerson && ua.draft){ uaTogglePerson(ds.uaPerson, t.value, t.checked); return; }
 });
+// Hesabat filtr sahəsində Enter = «Axtar»
+document.addEventListener('keydown', (e)=>{
+  if(e.key!=='Enter') return;
+  const ds=(e.target && e.target.dataset)||{};
+  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':null);
+  if(!key) return;
+  e.preventDefault();
+  if(ds.cfilter!==undefined) collFilters[ds.cfilter]=e.target.value;   // tarix sahəsi "change" verməmiş ola bilər
+  const b=document.getElementById('report-search-'+key);
+  if(b && !b.disabled) b.click();
+});
 document.addEventListener('input', (e)=>{
   const of=e.target && e.target.dataset ? e.target.dataset.ofilter : null;
-  if(of){ overdueFilters[of]=e.target.value; pageNum['report-overdue']=1; refreshOverdueTable(); return; }
+  if(of){ overdueFilters[of]=e.target.value; updateReportDirty('overdue'); return; }   // yalnız «Axtar» ilə tətbiq olunur
   const us=e.target && e.target.dataset ? e.target.dataset.uaSearch : null;
   if(us){
     const q=e.target.value.trim().toLowerCase();

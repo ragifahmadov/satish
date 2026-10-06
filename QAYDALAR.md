@@ -22,6 +22,10 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
 1. Hər hesabat səhifəsində **Excelə yüklə** düyməsi olmalıdır. Hesabatı `REPORT_EXPORTS` (app.html) siyahısında elan edin:
    sütunlar (`xl` başlıq, `type`: text/int/money/date, `width`, `val`), sətirlər, filtrlərin təsviri, cəmlər.
    Ekran cədvəlinin başlıq/xanaları də AYNI sütun elanından qurulmalıdır (ayrı-ayrı yazmayın) — ekranla Excel uyğunsuz qalmasın.
+1a. **Axtar qaydası (bütün hesabatlar):** filtr dəyişəndə nəticə avtomatik yenilənmir — yalnız «Axtar» düyməsi (və ya filtr
+   sahəsində Enter) ilə. Ekran açılanda nəticə yoxdur və ağır məlumat yüklənmir (`SCREEN_DEPS`-də yalnız filtr siyahıları).
+   Filtr dəyişib axtarılmayıbsa "Filtrlər dəyişib" xəbərdarlığı görünür. Export yalnız axtarışdan sonra, AXTARIŞDAKI (applied)
+   filtrlərlə. Hesabatı `REPORT_SEARCH`-də elan edin; düymələr `reportFilterButtonsHtml()`, xəbərdarlıq `reportDirtyHtml()`.
 2. Export hadisəsi `export-log.php`-də `$REPORTS` siyahısına da əlavə olunmalıdır (siyahıda olmayan ad rədd edilir).
 3. Fayl YARADILMAZDAN ƏVVƏL `export-log.php` çağırılır; loga yazılmasa fayl yaradılmır.
 4. Fayl real `.xlsx`-dir (CSV yox): məbləğ rəqəm, tarix Excel tarixi, mətn (müqavilə №, telefon) mətn kimi yazılır;

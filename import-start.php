@@ -4,6 +4,7 @@ require_admin(true);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/lib_xlsx.php';
+require_once __DIR__ . '/lib_1c.php';
 
 set_time_limit(0);
 ini_set('memory_limit', '512M');
@@ -15,6 +16,21 @@ function norm_name($s) {
 function month_add($y, $m, $delta) {
     $total = $y * 12 + ($m - 1) + $delta;
     return [intdiv($total, 12), $total % 12 + 1];
+}
+// İdxalın xülasəsində göstərilən izahlar (yalnız 1C formatında)
+function import_notes($format, $st, $lookup, $customersOut) {
+    if ($format !== '1C' || !$st) return [];
+    $n = [];
+    $noMatch = 0;
+    foreach (array_keys($customersOut) as $k) if (!isset($lookup[$k])) $noMatch++;
+    $n[] = 'Format: 1C (Взаиморасчеты). FIN faylda yoxdur — boş qalır.';
+    if ($noMatch) $n[] = "Müştəri siyahısında adı tapılmayan (telefonsuz) müştəri: $noMatch";
+    if ($st['companies']) $n[] = 'Keçilən şirkət (adında dırnaq): ' . $st['companies'];
+    $n[] = 'Mal qaytarılması: ' . $st['returns'] . ($st['returnsUnmatched'] ? ' (satışı tapılmayan: ' . $st['returnsUnmatched'] . ')' : '');
+    if ($st['netted']) $n[] = 'Ödənişdən çıxılan mənfi düzəliş: ' . $st['netted'] . ($st['negLeft'] ? ' (ödənişdən çox olduğu üçün satış məbləğinə əlavə edilən: ' . $st['negLeft'] . ' müqavilə)' : '');
+    if ($st['otherDocsNonZero']) $n[] = 'Sıfırlanmayan avans ("Поступление в кассу") olan müştəri: ' . $st['otherDocsNonZero'] . ' — idxal olunmayıb';
+    if ($st['prepayCols']) $n[] = 'Satış/qaytarma sənədində avans sütunu dolu sətir: ' . $st['prepayCols'] . ' — nəzərə alınmayıb';
+    return $n;
 }
 function fail_json($msg) {
     http_response_code(400);
@@ -30,9 +46,19 @@ try {
     $ledgerFile = $_FILES['contract_payments_file']['tmp_name'];
 
     // ---- 1) Müştəri FIN faylı ----
+    if (onec_is_ledger($finFile)) {
+        fail_json('1-ci xanaya 1C "Взаиморасчеты" hesabatı seçilib — o, 2-ci xanaya (Müqavilə + ödənişlər) aiddir. Faylların yerini dəyişin.');
+    }
     $finRows = xlsx_read_sheet($finFile, null);
-    $finHeaderIdx = xlsx_find_header_row($finRows, ['fin']);
-    $nameLookup = [];
+    $format = 'standart';
+    // 1C müştəri siyahısı (Номер · SAA · Номер телефона) — əvvəlcə bu yoxlanılır, çünki "fin" axtarışı
+    // adında "FIN" olan istənilən sətri başlıq sana bilər
+    $nameLookup = onec_customer_lookup($finRows);
+    $finHeaderIdx = null;
+    if ($nameLookup === null) {
+        $nameLookup = [];
+        $finHeaderIdx = xlsx_find_header_row($finRows, ['fin']);
+    }
     if ($finHeaderIdx !== null) {
         $finMap = xlsx_header_map($finRows, $finHeaderIdx);
         $colFullName = xlsx_match_column($finMap, ['tam ad']);
@@ -66,6 +92,17 @@ try {
     }
 
     // ---- 2) Müqavilə + ödənişlər faylı ----
+    $onecStats = null;
+    if (onec_is_ledger($ledgerFile)) {
+        // 1C "Взаиморасчеты с контрагентами" hesabatı (lib_1c.php) — axınla oxunur, qaytarmalar artıq tətbiq olunub
+        $format = '1C';
+        $contracts = onec_read_ledger($ledgerFile, $onecStats);
+    } else {
+    $hasSheet = false;
+    foreach (array_keys(onec_sheet_paths($ledgerFile)) as $sn) if (strcasecmp($sn, 'Ödənişlər') === 0) $hasSheet = true;
+    if (!$hasSheet) {
+        fail_json('Müqavilə + ödənişlər faylı tanınmadı: nə "Ödənişlər" vərəqi var, nə də 1C "Взаиморасчеты с контрагентами" hesabatıdır (A1 xanası "Контрагент" olmalıdır). Faylların yerini qarışdırmadığınızı yoxlayın.');
+    }
     $ledgerRows = xlsx_read_sheet($ledgerFile, 'Ödənişlər');
     $headerIdx = xlsx_find_header_row($ledgerRows, ['növ', 'sənəd']);
     if ($headerIdx === null) {
@@ -124,36 +161,30 @@ try {
 
     $custContracts = [];
     foreach ($contracts as $sened => $c) { $custContracts[$c['customer']][] = $sened; }
-    // Geri qaytarmalar: 1C onları qaimələrə yox, müştəri səviyyəsində hesablayır.
-    // Ona görə hər qaytarma qaimələrin AÇIQ QALIĞINA (satış − ödənişlər) tarixə görə ən yaxından
-    // başlayaraq bölünür; bir qaiməyə çatmayan hissə növbətiyə keçir (heç nə itmir).
-    $returnRows = array_values(array_filter($allRows, function ($r) {
-        return $r['nov'] === 'Geri qaytarma' && strpos($r['musteri'], '"') === false && $r['tarix'];
-    }));
-    usort($returnRows, fn($a, $b) => strcmp((string) $a['tarix'], (string) $b['tarix']));
-    foreach ($returnRows as $r) {
+    foreach ($allRows as $r) {
+        if ($r['nov'] !== 'Geri qaytarma') continue;
+        if (strpos($r['musteri'], '"') !== false) continue;
         $candidates = $custContracts[$r['musteri']] ?? [];
-        if (!$candidates) continue;
+        if (!$candidates || !$r['tarix']) continue;
         $rDate = strtotime($r['tarix']);
         usort($candidates, function ($a, $b) use ($contracts, $rDate) {
             $da = $contracts[$a]['sale_date'] ? abs($rDate - strtotime($contracts[$a]['sale_date'])) : PHP_INT_MAX;
             $db = $contracts[$b]['sale_date'] ? abs($rDate - strtotime($contracts[$b]['sale_date'])) : PHP_INT_MAX;
             return $da <=> $db;
         });
-        $rem = -$r['meblag'];
+        $chosen = null;
         foreach ($candidates as $sened) {
-            if ($rem <= 0.005) break;
-            $open = $contracts[$sened]['meblag'] - array_sum(array_column($contracts[$sened]['payments'], 'meblag'));
-            if ($open <= 0.005) continue;
-            $take = min($open, $rem);
-            $contracts[$sened]['meblag'] -= $take;
-            $rem -= $take;
+            if ($contracts[$sened]['meblag'] + $r['meblag'] >= -0.01) { $chosen = $sened; break; }
         }
-        if ($rem > 0.005) {
-            // Müştərinin açıq borcu qalmayıb (artıq ödəniş): qalan hissə ən yaxın müqavilədən çıxılır.
-            $contracts[$candidates[0]]['meblag'] = max(0, $contracts[$candidates[0]]['meblag'] - $rem);
+        if ($chosen === null) {
+            $best = null; $bestVal = -INF;
+            foreach ($candidates as $sened) { if ($contracts[$sened]['meblag'] > $bestVal) { $bestVal = $contracts[$sened]['meblag']; $best = $sened; } }
+            $chosen = $best;
         }
+        if ($chosen !== null) { $contracts[$chosen]['meblag'] = max(0, $contracts[$chosen]['meblag'] + $r['meblag']); }
     }
+
+    } // standart format sonu
 
     foreach ($contracts as $sened => &$c) {
         usort($c['payments'], fn($a, $b) => strcmp((string) $a['tarix'], (string) $b['tarix']));
@@ -190,6 +221,10 @@ try {
                 'soyad' => $c['soyad'], 'ad' => $c['ad'], 'ataAdi' => $c['ataadi'],
                 'finKod' => $info['finKod'] ?? '', 'elaqeNomre1' => $info['elaqeNomre1'] ?? '',
             ];
+            // 1C müştəri siyahısından əlavə sahələr (standart FIN faylında yoxdur)
+            foreach (['elaqeNomre2', 'kod', 'cinsiyet'] as $f) {
+                if (($info[$f] ?? '') !== '') $customersOut[$key][$f] = $info[$f];
+            }
         }
         $invno = $c['invno'];
         if (isset($seenInvno[$invno])) { $seenInvno[$invno]++; $nomre = $invno . '-' . $seenInvno[$invno]; }
@@ -199,12 +234,16 @@ try {
             $firstPay = $c['payments'][0]['tarix'];
             [$cy, $cm] = month_add((int) substr($firstPay, 0, 4), (int) substr($firstPay, 5, 2), -1);
         } elseif ($c['sale_date']) {
-            // İlkindən sonra ödəniş yoxdur: ilk taksit satışdan sonrakı ay düşür, ona görə müqavilə ayı = satış ayı.
-            [$cy, $cm] = [(int) substr($c['sale_date'], 0, 4), (int) substr($c['sale_date'], 5, 2)];
+            [$cy, $cm] = month_add((int) substr($c['sale_date'], 0, 4), (int) substr($c['sale_date'], 5, 2), -1);
         } else {
             [$cy, $cm] = [(int) date('Y'), (int) date('n')];
         }
         $tarix = sprintf('%04d-%02d-01', $cy, $cm);
+        // 1C formatında müqavilə tarixi = real satış tarixi (sənəddəki "Продано" günü). Köhnə "ilk ödəniş ayından
+        // bir ay əvvəl" qaydası ödənişsiz müqavilələri bir ay artıq gecikmiş göstərirdi.
+        if ($format === '1C' && !empty($c['sale_date'])) {
+            $tarix = $c['sale_date'];
+        }
 
         $contractsOut[] = [
             'tempId' => $tempId, 'customerKey' => $key, 'nomre' => $nomre, 'tarix' => $tarix,
@@ -232,6 +271,8 @@ try {
         'jobId' => $jobId,
         'totals' => $job['totals'],
         'skippedClosed' => $skippedClosed,
+        'format' => $format,
+        'notes' => import_notes($format, $onecStats, $nameLookup, $customersOut),
     ]);
 
 } catch (Throwable $e) {

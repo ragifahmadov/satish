@@ -199,7 +199,8 @@ try {
             $firstPay = $c['payments'][0]['tarix'];
             [$cy, $cm] = month_add((int) substr($firstPay, 0, 4), (int) substr($firstPay, 5, 2), -1);
         } elseif ($c['sale_date']) {
-            [$cy, $cm] = month_add((int) substr($c['sale_date'], 0, 4), (int) substr($c['sale_date'], 5, 2), -1);
+            // İlkindən sonra ödəniş yoxdur: ilk taksit satışdan sonrakı ay düşür, ona görə müqavilə ayı = satış ayı.
+            [$cy, $cm] = [(int) substr($c['sale_date'], 0, 4), (int) substr($c['sale_date'], 5, 2)];
         } else {
             [$cy, $cm] = [(int) date('Y'), (int) date('n')];
         }

@@ -1,8 +1,8 @@
 <?php
 require_once __DIR__ . '/auth.php';
 require_admin(false);
-// Müştərilər, Müqavilələr və Ödənişləri silən skript (Satıcı/Təhsilatçı
-// toxunulmaz qalır). Təsadüfən açılıb məlumatın itməsinin qarşısını almaq üçün
+// Müştərilər, Müqavilələr, Ödənişləri və dəyişiklik logunu (audit_log) silən skript
+// (Satıcı/Təhsilatçı/Kurator, istifadəçilər və səlahiyyətlər toxunulmaz qalır). Təsadüfən açılıb məlumatın itməsinin qarşısını almaq üçün
 // əvvəlcə xəbərdarlıq göstərir, yalnız təsdiq düyməsinə basandan sonra silir.
 // İstifadə: http://localhost/satis/reset.php
 require_once __DIR__ . '/db.php';
@@ -25,18 +25,26 @@ if ($confirmed) {
             $pdo->exec("DELETE FROM `$table`");
             $counts[$table] = $before;
         }
+        // Dəyişiklik logu da təmizlənir (TRUNCATE: tez və id sayğacını sıfırlayır).
+        ensure_audit_table($pdo);
+        $logBefore = (int) $pdo->query("SELECT COUNT(*) FROM audit_log")->fetchColumn();
+        $pdo->exec("TRUNCATE TABLE audit_log");
         $sumParts = [];
         $chg = [];
         foreach ($counts as $t => $c) {
             $sumParts[] = audit_entity_name($t) . ': ' . $c;
             $chg[] = ['f' => $t, 'l' => audit_entity_name($t), 'o' => (string) $c, 'n' => '0'];
         }
-        audit_event($pdo, 'RESET', 'Baza təmizləndi — silinən qeydlər: ' . implode(', ', $sumParts), ['changes' => $chg]);
+        $sumParts[] = 'Dəyişiklik logu: ' . $logBefore;
+        $chg[] = ['f' => 'audit_log', 'l' => 'Dəyişiklik logu', 'o' => (string) $logBefore, 'n' => '0'];
+        // Log təmizləndikdən sonra təmizləmənin özü log-un ilk sətri kimi yazılır.
+        audit_event($pdo, 'RESET', 'Baza və log təmizləndi — silinən qeydlər: ' . implode(', ', $sumParts), ['changes' => $chg]);
         echo "<h2>Təmizləndi</h2><pre>";
         foreach ($counts as $t => $c) {
             echo "[$t] $c qeyd silindi.\n";
         }
-        echo "\n(Satıcılar, Təhsilatçılar və Kuratorlar toxunulmadı.)\n";
+        echo "[audit_log] $logBefore qeyd silindi.\n";
+        echo "\n(Satıcılar, Təhsilatçılar, Kuratorlar, istifadəçilər və səlahiyyətlər toxunulmadı.)\n";
         echo "\nQalan cədvəllər boşdur. İndi import və ya yeni məlumat daxil etməyə başlaya bilərsiniz.";
         echo "</pre>";
     } catch (Exception $e) {
@@ -56,8 +64,9 @@ if ($confirmed) {
     <li>Müştərilər</li>
     <li>Müqavilələr</li>
     <li>Ödənişlər</li>
+    <li>Dəyişiklik logu (bütün tarixçə)</li>
   </ul>
-  <p class="muted" style="color:#7A7263;font-size:13.5px;">Satıcılar, Təhsilatçılar və Kuratorlar <strong>toxunulmaz qalacaq</strong>, silinməyəcək.</p>
+  <p class="muted" style="color:#7A7263;font-size:13.5px;">Satıcılar, Təhsilatçılar, Kuratorlar, istifadəçilər və səlahiyyətlər <strong>toxunulmaz qalacaq</strong>. Təmizləmənin özü logda tək sətir kimi qalır.</p>
   <p>Davam etməzdən əvvəl, əgər lazım ola biləcək bir məlumat varsa, phpMyAdmin-dən ehtiyat nüsxə (Export) çıxarmağınızı tövsiyə edirəm.</p>
   <form method="post">
     <input type="hidden" name="confirm" value="1">

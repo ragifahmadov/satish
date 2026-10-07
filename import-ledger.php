@@ -39,13 +39,13 @@ require_admin(false);
         <label>1) Müştəri FIN faylı (.xlsx)</label>
         <input type="file" name="customer_fin_file" accept=".xlsx" required>
       </div>
-      <p class="hint">Sadə cədvəl: Tam ad (və ya Soyad/Ad/Ata adı), FIN, Telefon sütunları ilə.</p>
+      <p class="hint">Sadə cədvəl: Tam ad (və ya Soyad/Ad/Ata adı), FIN, Telefon sütunları ilə — <b>və ya</b> 1C müştəri siyahısı (Номер, SAA, Номер телефона).</p>
 
       <div class="field">
         <label>2) Müqavilə + ödənişlər faylı (.xlsx)</label>
         <input type="file" name="contract_payments_file" accept=".xlsx" required>
       </div>
-      <p class="hint">"Ödənişlər" adlı vərəqi olan, Müqavilə/Müştəri/Soyad/Ad/Ata adı/Növ/Tarix/Məbləğ/Sənəd sütunlu fayl.</p>
+      <p class="hint">"Ödənişlər" adlı vərəqi olan, Müqavilə/Müştəri/Soyad/Ad/Ata adı/Növ/Tarix/Məbləğ/Sənəd sütunlu fayl — <b>və ya</b> 1C-nin "Взаиморасчеты с контрагентами" hesabatı (Контрагент → Договор → Документ → Год → День qruplaşması ilə). Format avtomatik tanınır.</p>
 
       <button type="submit" id="submit-btn">İdxal et</button>
     </form>
@@ -92,7 +92,7 @@ function updateProgress(data){
   stageLabel.textContent = 'Mərhələ: ' + stageName + ' (' + stageDone + ' / ' + stageTotal + ')';
 }
 
-async function runSteps(jobId, totals, skippedClosed){
+async function runSteps(jobId, totals, skippedClosed, notes){
   let done = {customers:0, contracts:0, payments:0};
   let stage = 'customers';
   while(true){
@@ -103,7 +103,8 @@ async function runSteps(jobId, totals, skippedClosed){
     if(!r.ok || data.error){ throw new Error(data.error || 'Naməlum xəta'); }
     updateProgress(data);
     if(data.finished){
-      showResult('✅ İDXAL UĞURLA TAMAMLANDI.\n\nMüştəri: '+totals.customers+'\nMüqavilə: '+totals.contracts+'\nÖdəniş: '+totals.payments+'\n\nBağlanmış (qalığı 0 olan) və ona görə keçilən müqavilə: '+skippedClosed);
+      showResult('✅ İDXAL UĞURLA TAMAMLANDI.\n\nMüştəri: '+totals.customers+'\nMüqavilə: '+totals.contracts+'\nÖdəniş: '+totals.payments+'\n\nBağlanmış (qalığı 0 olan) və ona görə keçilən müqavilə: '+skippedClosed
+        +((notes&&notes.length)?'\n\n'+notes.map(n=>'• '+n).join('\n'):''));
       break;
     }
   }
@@ -112,7 +113,7 @@ async function runSteps(jobId, totals, skippedClosed){
 form.addEventListener('submit', async (e)=>{
   e.preventDefault();
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Fayllar oxunur…';
+  submitBtn.textContent = 'Fayllar oxunur… (böyük 1C faylında 1–2 dəqiqə çəkə bilər)';
   resultWrap.style.display='none';
 
   try{
@@ -123,7 +124,7 @@ form.addEventListener('submit', async (e)=>{
 
     submitBtn.textContent = 'İdxal olunur…';
     progressWrap.style.display='block';
-    await runSteps(data.jobId, data.totals, data.skippedClosed||0);
+    await runSteps(data.jobId, data.totals, data.skippedClosed||0, data.notes||[]);
   }catch(err){
     showResult('❌ XƏTA: ' + err.message);
   }finally{

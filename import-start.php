@@ -239,9 +239,10 @@ try {
             [$cy, $cm] = [(int) date('Y'), (int) date('n')];
         }
         $tarix = sprintf('%04d-%02d-01', $cy, $cm);
-        // 1C formatında müqavilə tarixi = real satış tarixi (sənəddəki "Продано" günü). Köhnə "ilk ödəniş ayından
-        // bir ay əvvəl" qaydası ödənişsiz müqavilələri bir ay artıq gecikmiş göstərirdi.
-        if ($format === '1C' && !empty($c['sale_date'])) {
+        // Müqavilə tarixi = real satış tarixi (1C: "Продано" günü; standart format: "Satış" sətrinin tarixi).
+        // Köhnə "ilk ödəniş ayından bir ay əvvəl" qaydası tarixi səhv göstərir və ödənişsiz müqavilələri
+        // bir ay artıq gecikmiş edirdi. Satış tarixi yoxdursa köhnə qayda qalır.
+        if (!empty($c['sale_date'])) {
             $tarix = $c['sale_date'];
         }
 

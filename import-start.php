@@ -124,27 +124,35 @@ try {
 
     $custContracts = [];
     foreach ($contracts as $sened => $c) { $custContracts[$c['customer']][] = $sened; }
-    foreach ($allRows as $r) {
-        if ($r['nov'] !== 'Geri qaytarma') continue;
-        if (strpos($r['musteri'], '"') !== false) continue;
+    // Geri qaytarmalar: 1C onları qaimələrə yox, müştəri səviyyəsində hesablayır.
+    // Ona görə hər qaytarma qaimələrin AÇIQ QALIĞINA (satış − ödənişlər) tarixə görə ən yaxından
+    // başlayaraq bölünür; bir qaiməyə çatmayan hissə növbətiyə keçir (heç nə itmir).
+    $returnRows = array_values(array_filter($allRows, function ($r) {
+        return $r['nov'] === 'Geri qaytarma' && strpos($r['musteri'], '"') === false && $r['tarix'];
+    }));
+    usort($returnRows, fn($a, $b) => strcmp((string) $a['tarix'], (string) $b['tarix']));
+    foreach ($returnRows as $r) {
         $candidates = $custContracts[$r['musteri']] ?? [];
-        if (!$candidates || !$r['tarix']) continue;
+        if (!$candidates) continue;
         $rDate = strtotime($r['tarix']);
         usort($candidates, function ($a, $b) use ($contracts, $rDate) {
             $da = $contracts[$a]['sale_date'] ? abs($rDate - strtotime($contracts[$a]['sale_date'])) : PHP_INT_MAX;
             $db = $contracts[$b]['sale_date'] ? abs($rDate - strtotime($contracts[$b]['sale_date'])) : PHP_INT_MAX;
             return $da <=> $db;
         });
-        $chosen = null;
+        $rem = -$r['meblag'];
         foreach ($candidates as $sened) {
-            if ($contracts[$sened]['meblag'] + $r['meblag'] >= -0.01) { $chosen = $sened; break; }
+            if ($rem <= 0.005) break;
+            $open = $contracts[$sened]['meblag'] - array_sum(array_column($contracts[$sened]['payments'], 'meblag'));
+            if ($open <= 0.005) continue;
+            $take = min($open, $rem);
+            $contracts[$sened]['meblag'] -= $take;
+            $rem -= $take;
         }
-        if ($chosen === null) {
-            $best = null; $bestVal = -INF;
-            foreach ($candidates as $sened) { if ($contracts[$sened]['meblag'] > $bestVal) { $bestVal = $contracts[$sened]['meblag']; $best = $sened; } }
-            $chosen = $best;
+        if ($rem > 0.005) {
+            // Müştərinin açıq borcu qalmayıb (artıq ödəniş): qalan hissə ən yaxın müqavilədən çıxılır.
+            $contracts[$candidates[0]]['meblag'] = max(0, $contracts[$candidates[0]]['meblag'] - $rem);
         }
-        if ($chosen !== null) { $contracts[$chosen]['meblag'] = max(0, $contracts[$chosen]['meblag'] + $r['meblag']); }
     }
 
     foreach ($contracts as $sened => &$c) {

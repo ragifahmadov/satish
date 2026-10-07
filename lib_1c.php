@@ -255,7 +255,7 @@ function onec_read_ledger($path, &$stats) {
     }
     usort($rets, fn($x, $y) => strcmp($x['date'], $y['date']));
     // Qaytarma bir neçə satışı birlikdə bağlaya bilər (məs. 920 = 380 + 540): təsir sənədlər arasında
-    // hər birinin qalıq borcu (satış − ödənişlər) qədər bölünür. Sıra: məbləği qaytarma ilə tam eyni olan satış,
+    // hər birinin qalıq borcu (satış − ödənişlər) qədər bölünür. Sıra: məbləğlərinin cəmi qaytarma ilə tam eyni olan satış(lar),
     // eyni gün mənfi ödənişi olan satış sənədi,
     // sonra tarixcə ən yaxın əvvəlki, sonra sonrakı satışlar. Borcdan artıq qalan hissə (müştəri artıq ödəyib)
     // satış məbləği sıfıra enənədək ilk sənədə yazılır.
@@ -265,9 +265,11 @@ function onec_read_ledger($path, &$stats) {
         if (!$cands) { $stats['returnsUnmatched']++; continue; }
         $rd = strtotime($rt['date']);
         $hint = array_flip($negDays[$rt['cust'] . '|' . $rt['date']] ?? []);
-        // Məbləği qaytarma ilə tam eyni olan satış (bütün malın qaytarılması) ən güclü işarədir
+        // Məbləğləri cəmi qaytarma ilə tam eyni olan satış(lar) — bütün malın qaytarılması — ən güclü işarədir
+        // (məs. 490 = 170 + 320). Belə dəst varsa, onun sənədləri birinci gəlir.
         $amt = -$rt['effect'];
-        $exact = fn($k) => abs($contracts[$k]['meblag'] - $amt) < 0.01 ? 0 : 1;
+        $subset = array_flip(onec_exact_subset($cands, $contracts, $amt, $rd));
+        $exact = fn($k) => isset($subset[$k]) ? 0 : 1;
         usort($cands, function ($a, $b) use ($contracts, $rd, $hint, $exact) {
             $ta = strtotime((string) $contracts[$a]['sale_date']); $tb = strtotime((string) $contracts[$b]['sale_date']);
             return [$exact($a), isset($hint[$a]) ? 0 : 1, $ta > $rd ? 1 : 0, abs($rd - $ta)]
@@ -291,6 +293,38 @@ function onec_read_ledger($path, &$stats) {
         if ($left > 0.005) $stats['returnsUnmatched']++;
     }
     return $contracts;
+}
+
+// Satış məbləğlərinin cəmi $amt-a tam bərabər olan ən yaxşı dəst (açarlar). Üstünlük: az sənəd, qaytarmadan
+// sonrakı satış az, tarixcə yaxın. Yoxdursa [] . Ən çox 14 (tarixcə ən yaxın) sənəd yoxlanılır.
+function onec_exact_subset(array $cands, array $contracts, $amt, $rd) {
+    $target = (int) round($amt * 100);
+    $items = [];
+    foreach ($cands as $k) {
+        $m = (int) round($contracts[$k]['meblag'] * 100);
+        if ($m <= 0 || $m > $target) continue;
+        $t = strtotime((string) $contracts[$k]['sale_date']);
+        $items[] = [$k, $m, $t > $rd ? 1 : 0, abs($rd - $t)];
+    }
+    usort($items, fn($x, $y) => [$x[2], $x[3]] <=> [$y[2], $y[3]]);
+    $items = array_slice($items, 0, 14);
+    $n = count($items);
+    $best = null; $bestScore = null;
+    for ($mask = 1; $mask < (1 << $n); $mask++) {
+        $sum = 0; $cnt = 0; $after = 0; $dist = 0;
+        for ($i = 0; $i < $n; $i++) {
+            if (!($mask & (1 << $i))) continue;
+            $sum += $items[$i][1]; $cnt++; $after += $items[$i][2]; $dist += $items[$i][3];
+            if ($sum > $target) break;
+        }
+        if ($sum !== $target) continue;
+        $score = [$cnt, $after, $dist];
+        if ($bestScore === null || $score < $bestScore) { $bestScore = $score; $best = $mask; }
+    }
+    if ($best === null) return [];
+    $out = [];
+    for ($i = 0; $i < $n; $i++) if ($best & (1 << $i)) $out[] = $items[$i][0];
+    return $out;
 }
 
 // 1C müştəri siyahısı (Номер · SAA · Номер телефона) — xlsx_read_sheet ilə oxunmuş sətirlərdən.

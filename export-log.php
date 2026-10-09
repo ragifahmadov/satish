@@ -30,6 +30,7 @@ $REPORTS = [
     'overdue' => ['Gecikmiş müqavilələr', 'report-overdue'],
     'collections' => ['Təhsilat hesabatı', 'report-collections'],
     'contracts' => ['Müqavilə axtarışı', 'report-contracts'],
+    'collector-reports' => ['Təhsilatçı hesabatları', 'collector-reports'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

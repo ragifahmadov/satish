@@ -69,4 +69,8 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    rejimi tarixçəyə baxır (SQL-də id mətni ilə ön-süzgəc + PHP-də JSON üzrə dəqiq yoxlama). Qrafik borcu serverdə `schedule_due_count()`
    ilə hesablanır — brauzerdəki `scheduleDueCount()` ilə EYNİ qayda (dəyişəndə ikisini də dəyişin). Təhsilatçıya bağlı istifadəçinin
    `report-api.php`-də yalnız "collections" (öz ödənişləri) hesabatına girişi var.
+14. **Təhsilatçı hesabatları** (`collector_reports`, $SCHEMA-da, ekran açarı `collector-reports`): adi CRUD ekranı kimi `api.php` vasitəsilə
+   (log avtomatik). Server `collector_report_prepare()`-də yoxlayır: tarix məcburi və gələcək deyil (Bakı), təhsilatçı mövcud, təhsilat məbləği
+   məcburi, məbləğlər ≥0, sənəd sayı tam ədəd, bir təhsilatçı + bir gün = bir qeyd; **Göndərilən = Təhsilat − Benzin − Digər** server hesablayır,
+   mənfi ola bilməz. Müqaviləyə bağlı deyil — əhatə tətbiq olunmur (yalnız ekran hüququ).
 

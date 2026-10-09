@@ -150,6 +150,13 @@ t('Bağlı olmayan istifadəçiyə bu məhdudiyyət tətbiq olunmur', authz_coll
 t('Müqavilə axtarışı: hüquq açarı və filtr siyahıları (adlar)', authz_can(mk(['report-contracts' => 1]), 'report-contracts', 1) && authz_read_tier(mk(['report-contracts' => 1]), 'curators') === 'ref' && authz_read_tier(mk(['report-contracts' => 1]), 'contracts') === null);
 t('Qrafik üzrə keçmiş aylar (brauzerlə eyni qayda)', schedule_due_count('2026-01-15', 10, '2026-03-01') === 2 && schedule_due_count('2026-01-15', 10, '2026-01-31') === 0 && schedule_due_count('2026-01-15', 10, '2026-02-28') === 1 && schedule_due_count('2025-12-31', 3, '2027-01-01') === 3 && schedule_due_count('', 10, '2026-01-01') === 0);
 
+$crV = mk(['collector-reports' => 1]); $crE = mk(['collector-reports' => 2]); $crD = mk(['collector-reports' => 3]);
+t('Təhsilatçı hesabatları: Baxış oxuyur (tam), yaza bilmir; Dəyişiklik yazır, silə bilmir; Silmə silir',
+    authz_read_tier($crV, 'collector_reports') === 'full' && authz_write_denied($crV, 'collector_reports', 'POST', []) !== ''
+    && authz_write_denied($crE, 'collector_reports', 'POST', []) === '' && authz_write_denied($crE, 'collector_reports', 'DELETE', []) !== ''
+    && authz_write_denied($crD, 'collector_reports', 'DELETE', []) === '' && authz_read_tier(mk(['collectors' => 3]), 'collector_reports') === null);
+t('Təhsilatçı hesabatlarına əhatə tətbiq olunmur (əhatəli istifadəçi də yaza bilir)', authz_scope_write_denied(null, mk(['collector-reports' => 2], [], 'selected', []), 'collector_reports', 'POST', null, []) === '');
+
 /* ---------- 6) hazırkı təhsilatçı/kurator qaydası ---------- */
 t('Boş tarixçə → null', derive_current_assignee([], 'collectorId') === null && derive_current_assignee(null, 'collectorId') === null);
 t('Açıq (son boş) təyinat seçilir', derive_current_assignee([['collectorId' => 'A', 'baslama' => '1', 'son' => '2'], ['collectorId' => 'B', 'baslama' => '2', 'son' => '']], 'collectorId') === 'B');

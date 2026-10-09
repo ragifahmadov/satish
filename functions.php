@@ -30,6 +30,12 @@ $SCHEMA = [
         ['meblag', 'number'], ['ilkinOdenis', 'number'], ['muddet', 'int'], ['qeyd', 'text'], ['tehsilatciTeyinatlari', 'json'],
         ['kuratorTeyinatlari', 'json'], ['mehkemeQeydleri', 'json'],
     ],
+    // Təhsilatçının gündəlik hesabatı (əl ilə daxil edilir): bir təhsilatçı + bir gün = bir qeyd;
+    // gonderilenMebleg = tehsilatMeblegi − benzinXerci − digerXerc (server hesablayır, mənfi ola bilməz)
+    'collector_reports' => [
+        ['tarix', 'date'], ['collectorId', 'string'], ['tehsilatMeblegi', 'number'], ['benzinXerci', 'number'],
+        ['digerXerc', 'number'], ['senedSayi', 'int'], ['gonderilenMebleg', 'number'], ['qeyd', 'text'],
+    ],
     'payments' => [
         ['contractId', 'string'], ['meblag', 'number'], ['odemeTarixi', 'date'], ['collectorId', 'string'],
         ['qeyd', 'text'], ['qrafikAyIndex', 'int'], ['qrafikAyLabel', 'string'], ['emeliyyatNovu', 'string'],

@@ -94,6 +94,7 @@ function audit_entity_name($col) {
     static $m = [
         'salespeople' => 'Satıcı', 'collectors' => 'Təhsilatçı', 'curators' => 'Kurator',
         'customers' => 'Müştəri', 'contracts' => 'Müqavilə', 'payments' => 'Ödəniş', 'users' => 'İstifadəçi', 'reports' => 'Hesabat',
+        'collector_reports' => 'Təhsilatçı hesabatı',
     ];
     return $m[$col] ?? $col;
 }
@@ -110,6 +111,8 @@ function audit_field_label($col, $field) {
         'tehsilatciTeyinatlari' => 'Təhsilatçı təyinatları', 'kuratorTeyinatlari' => 'Kurator təyinatları',
         'mehkemeQeydleri' => 'Məhkəmə qeydləri',
         'contractId' => 'Müqavilə', 'odemeTarixi' => 'Ödəniş tarixi', 'collectorId' => 'Təhsilatçı',
+        'tehsilatMeblegi' => 'Təhsilat məbləği', 'benzinXerci' => 'Benzin xərci', 'digerXerc' => 'Digər xərc',
+        'senedSayi' => 'Sənəd sayı', 'gonderilenMebleg' => 'Göndərilən məbləğ',
         'qrafikAyIndex' => 'Qrafik ayı (№)', 'qrafikAyLabel' => 'Qrafik ayı', 'emeliyyatNovu' => 'Əməliyyat növü',
     ];
     if ($col === 'payments' && $field === 'meblag') return 'Məbləğ';
@@ -170,6 +173,9 @@ function audit_entity_label($pdo, $col, $rowOut) {
     }
     if ($col === 'payments') {
         return audit_cut('Müqavilə ' . audit_contract_label($pdo, $rowOut['contractId'] ?? ''), 250);
+    }
+    if ($col === 'collector_reports') {
+        return audit_cut(audit_ref_label($pdo, 'collectors', $rowOut['collectorId'] ?? '') . ' — ' . audit_date($rowOut['tarix'] ?? ''), 250);
     }
     $n = audit_full_name($rowOut);
     return audit_cut($n !== '' ? $n : '(adsız)', 250);

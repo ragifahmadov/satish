@@ -210,6 +210,11 @@ try {
                 $body['collectorId'] = $pc;
             }
 
+            if ($col === 'collector_reports') {
+                [$err, $body] = collector_report_prepare($pdo, $body, null, null);
+                if ($err !== '') { fail(400, $err); }
+            }
+
             $newId = ($clientId !== '') ? strtolower($clientId) : make_uuid();
             $now = date('Y-m-d H:i:s');
             $cols = ['id', 'createdAt'];
@@ -296,6 +301,15 @@ try {
                         fail(400, 'Məbləğ düzgün deyil' . ($isRet ? ' (geri qaytarma mənfi yazılır).' : ' (müsbət olmalıdır).'));
                     }
                 }
+            }
+
+            if ($col === 'collector_reports') {
+                $o = $pdo->prepare("SELECT * FROM collector_reports WHERE id = ?");
+                $o->execute([$id]);
+                $oRow = $o->fetch();
+                if (!$oRow) { fail(404, 'Qeyd tapılmadı'); }
+                [$err, $body] = collector_report_prepare($pdo, $body, row_out($oRow, $schema), $id);
+                if ($err !== '') { fail(400, $err); }
             }
 
             $sets = [];

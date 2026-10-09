@@ -276,7 +276,7 @@ const ICONS = {
 const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust','Sentyabr','Oktyabr','Noyabr','Dekabr'];
 
 /* ============ STATE ============ */
-const state={salespeople:[],collectors:[],curators:[],customers:[],contracts:[],payments:[]};
+const state={salespeople:[],collectors:[],curators:[],customers:[],contracts:[],payments:[],collector_reports:[]};
 let paymentSums={};   // müqavilə id -> ödənişlərin cəmi (geri qaytarma xaric; yüngül, tam sətirlər olmadan)
 let returnSums={};    // müqavilə id -> geri qaytarılan (mal qaytarılması) məbləğ, müsbət ədəd
 let paymentLast={};   // müqavilə id -> ən son real ödəniş tarixi (YYYY-MM-DD)
@@ -297,6 +297,7 @@ const SCREENS=[
   {id:'salespeople',label:'Satıcılar',icon:'sales'},
   {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
   {id:'curators',label:'Kuratorlar',icon:'curator'},
+  {id:'collector-reports',label:'Təhsilatçı hesabatları',icon:'collector'},
   {id:'customers',label:'Müştərilər',icon:'customers'},
   {id:'contracts',label:'Müqavilələr',icon:'contract'},
   {id:'payments',label:'Ödənişlər',icon:'payment'},
@@ -321,7 +322,7 @@ function screenAllowed(id){
   return can(id,1);
 }
 function pickInitialScreen(){
-  const order=['contracts','dashboard','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','reassign','reassign-curator'];
+  const order=['contracts','dashboard','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','collector-reports','reassign','reassign-curator'];
   return order.find(screenAllowed)||null;
 }
 
@@ -429,6 +430,7 @@ const SCREEN_DEPS={
   salespeople:['salespeople'],
   collectors:['collectors'],
   curators:['curators'],
+  'collector-reports':['collector_reports','collectors'],
   customers:['customers'],
   contracts:['contracts','customers','salespeople','collectors','curators','paymentSums'],
   payments:['contracts','customers','collectors','paymentSums'],
@@ -497,6 +499,7 @@ async function renderScreen(){
     case 'salespeople': return renderSimpleList('salespeople');
     case 'collectors': return renderSimpleList('collectors');
     case 'curators': return renderSimpleList('curators');
+    case 'collector-reports': return renderCollectorReports();
     case 'customers': return renderCustomers();
     case 'contracts': return renderContracts();
     case 'payments': return renderPayments();
@@ -579,7 +582,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'audit-log':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -1515,6 +1518,239 @@ async function applyReassign(role){
   }
 }
 
+/* ============ TƏHSİLATÇI HESABATLARI (gündəlik, əl ilə) ============
+   Bir təhsilatçı + bir gün = bir qeyd; Göndərilən = Təhsilat − Benzin − Digər (mənfi olmaz) — server də yoxlayır və hesablayır.
+   Tab 1: ümumi siyahı (digər siyahı ekranları kimi). Tab 2: bütün sahələr üzrə filtr + cəm + Excel («Axtar» qaydası). */
+const CR_PAGE_SIZE=50;
+let crTab='list';
+let crFilters={};
+let crApplied=null;
+function resetCrFilters(){
+  crFilters={tarixDan:'',tarixDek:'',collector:'',tehsilatMin:'',tehsilatMax:'',benzinMin:'',benzinMax:'',digerMin:'',digerMax:'',
+    senedMin:'',senedMax:'',gonderilenMin:'',gonderilenMax:'',qeyd:''};
+}
+resetCrFilters();
+function crRows(){
+  return state.collector_reports.slice().sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'') || collectorName(a.collectorId).localeCompare(collectorName(b.collectorId),'az'));
+}
+// Sütunların tək elanı (ekran + Excel)
+const CR_COLUMNS=[
+  {th:'<th>Tarix</th>', xl:'Tarix', type:'date', width:13, td:r=>`<td>${fmtDate(r.tarix)}</td>`, val:r=>r.tarix},
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:28, td:r=>`<td>${esc(collectorName(r.collectorId))}</td>`, val:r=>collectorName(r.collectorId)},
+  {th:'<th class="num">Təhsilat<br>məbləği</th>', xl:'Təhsilat məbləği', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.tehsilatMeblegi)}</td>`, val:r=>Number(r.tehsilatMeblegi)||0},
+  {th:'<th class="num">Benzin<br>xərci</th>', xl:'Benzin xərci', type:'money', width:14, td:r=>`<td class="num">${fmtMoney(r.benzinXerci)}</td>`, val:r=>Number(r.benzinXerci)||0},
+  {th:'<th class="num">Digər<br>xərc</th>', xl:'Digər xərc', type:'money', width:14, td:r=>`<td class="num">${fmtMoney(r.digerXerc)}</td>`, val:r=>Number(r.digerXerc)||0},
+  {th:'<th class="num">Sənəd<br>sayı</th>', xl:'Sənəd sayı', type:'int', width:11, td:r=>`<td class="num">${Number(r.senedSayi)||0}</td>`, val:r=>Number(r.senedSayi)||0},
+  {th:'<th class="num">Göndərilən<br>məbləğ</th>', xl:'Göndərilən məbləğ', type:'money', width:17, td:r=>`<td class="num"><strong>${fmtMoney(r.gonderilenMebleg)}</strong></td>`, val:r=>Number(r.gonderilenMebleg)||0},
+  {th:'<th>Qeyd</th>', xl:'Qeyd', type:'text', width:40, td:r=>`<td class="muted" style="max-width:260px;">${esc(r.qeyd||'—')}</td>`, val:r=>r.qeyd||''},
+];
+function crActionsCell(r){
+  return `<td><div class="rowactions">
+    ${can('collector-reports',2)?`<button class="iconbtn" data-action="edit-creport" data-id="${r.id}" title="Redaktə et">${ICONS.edit}</button>`:''}
+    ${can('collector-reports',3)?`<button class="iconbtn" data-action="delete-creport" data-id="${r.id}" title="Sil">${ICONS.trash}</button>`:''}
+  </div></td>`;
+}
+function crRowsHtml(rows){
+  if(!rows.length) return `<tr><td colspan="${CR_COLUMNS.length+1}" class="empty">Nəticə tapılmadı</td></tr>`;
+  return rows.map(r=>`<tr>${CR_COLUMNS.map(c=>c.td(r)).join('')}${crActionsCell(r)}</tr>`).join('');
+}
+function crListFiltered(q){
+  q=(q||'').toLowerCase();
+  return crRows().filter(r=>!q || (collectorName(r.collectorId)+' '+(r.qeyd||'')+' '+fmtDate(r.tarix)).toLowerCase().includes(q));
+}
+function crTabsHtml(){
+  return `<div class="tabs"><button type="button" class="tab${crTab==='list'?' active':''}" data-action="cr-tab" data-tab="list">Ümumi siyahı</button>
+    <button type="button" class="tab${crTab==='filter'?' active':''}" data-action="cr-tab" data-tab="filter">Filtr və hesabat</button></div>`;
+}
+function renderCollectorReports(filter){
+  if(crTab==='filter') return renderCrFilterTab();
+  const q=(filter||'').length>=3?filter:'';
+  const rows=crListFiltered(q);
+  const {pageRows, totalPages, total}=paginateArr(rows, 'collector-reports');
+  setContent(`
+    <div class="topbar"><div><h1>Təhsilatçı hesabatları</h1><div class="sub">${state.collector_reports.length} qeyd · təhsilatçıların gündəlik təhsilat və xərc hesabatları</div></div>
+      ${can('collector-reports',2)?`<button class="btn btn-primary" data-action="add-creport">${ICONS.plus}&nbsp; Yeni hesabat</button>`:''}</div>
+    ${crTabsHtml()}
+    <div class="toolbar"><input class="searchbox" type="search" id="search-collector-reports" placeholder="Təhsilatçı, tarix və ya qeyd…" value="${esc(filter||'')}"></div>
+    <div class="card"><div class="table-scroll"><table>
+      <thead><tr>${CR_COLUMNS.map(c=>c.th).join('')}<th></th></tr></thead>
+      <tbody id="tbody-collector-reports">${crRowsHtml(pageRows)}</tbody>
+    </table></div>
+    <div id="pagination-collector-reports">${paginationHtml('collector-reports', totalPages, total)}</div></div>`);
+}
+function crFilterRows(f){
+  const num=v=>(v===''||v==null||isNaN(Number(v)))?null:Number(v);
+  const eps=0.0001, q=(f.qeyd||'').toLowerCase();
+  const rng=(val,mn,mx)=>{ const a=num(mn), b=num(mx); return (a==null||val>=a-eps) && (b==null||val<=b+eps); };
+  return crRows().filter(r=>{
+    if(f.tarixDan && (r.tarix||'')<f.tarixDan) return false;
+    if(f.tarixDek && (r.tarix||'')>f.tarixDek) return false;
+    if(f.collector && r.collectorId!==f.collector) return false;
+    if(!rng(Number(r.tehsilatMeblegi)||0,f.tehsilatMin,f.tehsilatMax)) return false;
+    if(!rng(Number(r.benzinXerci)||0,f.benzinMin,f.benzinMax)) return false;
+    if(!rng(Number(r.digerXerc)||0,f.digerMin,f.digerMax)) return false;
+    if(!rng(Number(r.senedSayi)||0,f.senedMin,f.senedMax)) return false;
+    if(!rng(Number(r.gonderilenMebleg)||0,f.gonderilenMin,f.gonderilenMax)) return false;
+    if(q && !(r.qeyd||'').toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+function crResultRows(){ return crApplied?crFilterRows(crApplied):[]; }
+function crTotals(rows){ return rows.reduce((t,r)=>({n:t.n+1,t:t.t+(Number(r.tehsilatMeblegi)||0),b:t.b+(Number(r.benzinXerci)||0),d:t.d+(Number(r.digerXerc)||0),s:t.s+(Number(r.senedSayi)||0),g:t.g+(Number(r.gonderilenMebleg)||0)}),{n:0,t:0,b:0,d:0,s:0,g:0}); }
+function crFilterDescription(f){
+  f=f||crApplied||crFilters;
+  const out=[], add=(l,v)=>{ if(v!=='' && v!=null) out.push({l,v:String(v)}); };
+  if(f.tarixDan) add('Tarix (dan)',fmtDate(f.tarixDan));
+  if(f.tarixDek) add('Tarix (dək)',fmtDate(f.tarixDek));
+  if(f.collector) add('Təhsilatçı',collectorName(f.collector));
+  add('Təhsilat məbləği (min)',f.tehsilatMin); add('Təhsilat məbləği (maks)',f.tehsilatMax);
+  add('Benzin xərci (min)',f.benzinMin); add('Benzin xərci (maks)',f.benzinMax);
+  add('Digər xərc (min)',f.digerMin); add('Digər xərc (maks)',f.digerMax);
+  add('Sənəd sayı (min)',f.senedMin); add('Sənəd sayı (maks)',f.senedMax);
+  add('Göndərilən (min)',f.gonderilenMin); add('Göndərilən (maks)',f.gonderilenMax);
+  add('Qeyd',f.qeyd);
+  return out;
+}
+async function searchCollectorReports(){
+  if(crFilters.tarixDan && crFilters.tarixDek && crFilters.tarixDan>crFilters.tarixDek){ alert('Başlanğıc tarixi son tarixdən böyük ola bilməz.'); return; }
+  crApplied=JSON.parse(JSON.stringify(crFilters));
+  pageNum['collector-reports-f']=1;
+  refreshCrFilter();
+}
+function refreshCrFilter(){
+  const tbody=document.getElementById('cr-tbody');
+  if(!tbody) return;
+  const eb=document.getElementById('export-btn'), sumEl=document.getElementById('cr-summary'), pg=document.getElementById('pagination-collector-reports-f');
+  if(!crApplied){
+    tbody.innerHTML=reportPromptRow(CR_COLUMNS.length+1); sumEl.innerHTML=''; pg.innerHTML='';
+    if(eb){ eb.textContent='Excelə yüklə'; eb.disabled=true; }
+    return;
+  }
+  const rows=crResultRows(), t=crTotals(rows);
+  const {pageRows, totalPages, total}=paginateArr(rows,'collector-reports-f',CR_PAGE_SIZE);
+  sumEl.innerHTML=`<strong>${t.n}</strong> hesabat &nbsp;·&nbsp; Təhsilat: <strong>${fmtMoney(t.t)}</strong> &nbsp;·&nbsp; Xərclər: <strong>${fmtMoney(t.b+t.d)}</strong> &nbsp;·&nbsp; Göndərilən: <strong>${fmtMoney(t.g)}</strong>`;
+  tbody.innerHTML=crRowsHtml(pageRows)+(rows.length?`<tr class="total-row"><td colspan="2">Cəmi (${t.n} hesabat)</td><td class="num">${fmtMoney(t.t)}</td><td class="num">${fmtMoney(t.b)}</td><td class="num">${fmtMoney(t.d)}</td><td class="num">${t.s}</td><td class="num">${fmtMoney(t.g)}</td><td></td><td></td></tr>`:'');
+  pg.innerHTML=paginationHtml('collector-reports-f',totalPages,total);
+  if(eb){ eb.textContent=total?('Excelə yüklə — '+total+' sətir'):'Excelə yüklə'; eb.disabled=!total; }
+}
+function renderCrFilterTab(){
+  const f=crFilters;
+  const inp=(key,label,type)=>`<div class="field"><label>${label}</label><input type="${type}" data-crfilter="${key}" value="${esc(f[key])}"${type==='number'?' step="any"':''}></div>`;
+  const opts='<option value="">Hamısı</option>'+state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az')).map(x=>`<option value="${x.id}"${f.collector===x.id?' selected':''}>${esc(fullName(x))}</option>`).join('');
+  setContent(`
+    <div class="topbar"><div><h1>Təhsilatçı hesabatları</h1><div class="sub">${state.collector_reports.length} qeyd · təhsilatçıların gündəlik təhsilat və xərc hesabatları</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="collector-reports" disabled>Excelə yüklə</button>`:''}
+        ${can('collector-reports',2)?`<button class="btn btn-ghost" data-action="add-creport">${ICONS.plus}&nbsp; Yeni hesabat</button>`:''}
+      </div></div>
+    ${crTabsHtml()}
+    <div class="card" style="padding:16px 18px;margin-bottom:14px;">
+      <div class="filters">
+        ${inp('tarixDan','Tarix (dan)','date')}${inp('tarixDek','Tarix (dək)','date')}
+        <div class="field"><label>Təhsilatçı</label><select data-crfilter="collector">${opts}</select></div>
+        ${inp('tehsilatMin','Təhsilat məbləği (min)','number')}${inp('tehsilatMax','Təhsilat məbləği (maks)','number')}
+        ${inp('benzinMin','Benzin xərci (min)','number')}${inp('benzinMax','Benzin xərci (maks)','number')}
+        ${inp('digerMin','Digər xərc (min)','number')}${inp('digerMax','Digər xərc (maks)','number')}
+        ${inp('senedMin','Sənəd sayı (min)','number')}${inp('senedMax','Sənəd sayı (maks)','number')}
+        ${inp('gonderilenMin','Göndərilən (min)','number')}${inp('gonderilenMax','Göndərilən (maks)','number')}
+        ${inp('qeyd','Qeyd','text')}
+      </div>
+      ${reportFilterButtonsHtml('collector-reports','cr-reset')}
+    </div>
+    ${reportDirtyHtml('collector-reports')}
+    <div id="cr-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div class="card"><div class="table-scroll"><table>
+      <thead><tr>${CR_COLUMNS.map(c=>c.th).join('')}<th></th></tr></thead>
+      <tbody id="cr-tbody"></tbody>
+    </table></div>
+    <div id="pagination-collector-reports-f" style="padding:0 14px 14px;"></div></div>`);
+  refreshCrFilter();
+  updateReportDirty('collector-reports');
+}
+function crRefreshView(){ if(crTab==='filter') refreshCrFilter(); else renderCollectorReports(document.getElementById('search-collector-reports')?.value||''); }
+function crTodayIso(){ return bakuDateIso(); }
+function openCollectorReportForm(id){
+  const rec=id?byId(state.collector_reports,id):null;
+  const today=crTodayIso();
+  const opts='<option value="">— seçin —</option>'+state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az')).map(x=>`<option value="${x.id}"${rec&&rec.collectorId===x.id?' selected':''}>${esc(fullName(x))}</option>`).join('');
+  const v=k=>rec?String(rec[k]??''):'';
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>${rec?'Təhsilatçı hesabatını redaktə et':'Yeni təhsilatçı hesabatı'}</h2>
+    <form id="creport-form" data-id="${id||''}">
+      <div class="grid2">
+        <div class="field"><label>Tarix *</label><input type="date" name="tarix" max="${today}" value="${esc(rec?rec.tarix:today)}"><div class="field-err" data-err-for="tarix"></div></div>
+        <div class="field"><label>Təhsilatçı *</label><select name="collectorId">${opts}</select><div class="field-err" data-err-for="collectorId"></div></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Təhsilat məbləği (₼) *</label><input type="number" step="0.01" min="0" name="tehsilatMeblegi" data-cr-calc="1" value="${esc(v('tehsilatMeblegi'))}"><div class="field-err" data-err-for="tehsilatMeblegi"></div></div>
+        <div class="field"><label>Topladığı sənəd sayı</label><input type="number" step="1" min="0" name="senedSayi" value="${esc(v('senedSayi'))}"><div class="field-err" data-err-for="senedSayi"></div></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Benzin xərci (₼)</label><input type="number" step="0.01" min="0" name="benzinXerci" data-cr-calc="1" value="${esc(v('benzinXerci'))}"></div>
+        <div class="field"><label>Digər xərc (₼)</label><input type="number" step="0.01" min="0" name="digerXerc" data-cr-calc="1" value="${esc(v('digerXerc'))}"></div>
+      </div>
+      <div class="field"><label>Göndərilən məbləğ (avtomatik)</label><input type="text" id="cr-gonderilen" readonly tabindex="-1" style="background:var(--bg-page);font-weight:700;font-size:16px;">
+        <div class="muted" style="font-size:12px;margin-top:4px;">= Təhsilat məbləği − Benzin xərci − Digər xərc</div><div class="field-err" id="cr-calc-err"></div></div>
+      <div class="field"><label>Qeyd</label><textarea name="qeyd" rows="2">${esc(v('qeyd'))}</textarea></div>
+      <div class="field-err" id="cr-form-err"></div>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <div>${rec?`<button type="button" class="btn btn-ghost admin-only" data-action="show-history" data-kind="collector_reports" data-id="${rec.id}" data-title="${esc(collectorName(rec.collectorId))} — ${fmtDate(rec.tarix)}">Tarixçə</button>`:''}</div>
+        <div style="display:flex;gap:10px;"><button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+        <button type="submit" class="btn btn-primary">Yadda saxla</button></div>
+      </div>
+    </form>`;
+  openModal();
+  crUpdateCalc();
+}
+function crNum(v){ v=String(v??'').trim().replace(',','.'); return v===''?0:Number(v); }
+function crCalcValues(form){
+  form=form||document.getElementById('creport-form');
+  const g=n=>form.querySelector(`[name="${n}"]`).value;
+  const t=crNum(g('tehsilatMeblegi')), b=crNum(g('benzinXerci')), d=crNum(g('digerXerc'));
+  return {t,b,d,g:Math.round((t-b-d)*100)/100};
+}
+function crUpdateCalc(){
+  const form=document.getElementById('creport-form'); if(!form) return;
+  const c=crCalcValues(form);
+  const out=document.getElementById('cr-gonderilen'), err=document.getElementById('cr-calc-err');
+  out.value=isNaN(c.g)?'':fmtMoney(c.g);
+  out.style.color=c.g<0?'var(--red)':'';
+  err.textContent=c.g<0?'Xərclər təhsilat məbləğindən çox ola bilməz.':''; err.style.display=c.g<0?'block':'none';
+}
+async function submitCollectorReportForm(form){
+  clearFieldErrors(form);
+  const errEl=document.getElementById('cr-form-err'); errEl.style.display='none';
+  const id=form.dataset.id;
+  const fd=new FormData(form);
+  const data={tarix:fd.get('tarix')||'', collectorId:fd.get('collectorId')||'', tehsilatMeblegi:fd.get('tehsilatMeblegi')||'',
+    benzinXerci:fd.get('benzinXerci')||'', digerXerc:fd.get('digerXerc')||'', senedSayi:fd.get('senedSayi')||'', qeyd:fd.get('qeyd')||''};
+  let bad=false;
+  if(!data.tarix){ setFieldError(form,'tarix','Tarixi seçin.'); bad=true; }
+  else if(data.tarix>crTodayIso()){ setFieldError(form,'tarix','Gələcək tarix seçmək olmaz.'); bad=true; }
+  if(!data.collectorId){ setFieldError(form,'collectorId','Təhsilatçını seçin.'); bad=true; }
+  if(String(data.tehsilatMeblegi).trim()===''){ setFieldError(form,'tehsilatMeblegi','Təhsilat məbləğini daxil edin.'); bad=true; }
+  const c=crCalcValues(form);
+  if([c.t,c.b,c.d].some(x=>isNaN(x)||x<0)){ setFieldError(form,'tehsilatMeblegi','Məbləğlər mənfi ola bilməz.'); bad=true; }
+  if(c.g<0) bad=true;
+  if(data.senedSayi!=='' && !/^\d+$/.test(String(data.senedSayi))){ setFieldError(form,'senedSayi','Müsbət tam ədəd olmalıdır.'); bad=true; }
+  const dup=state.collector_reports.find(r=>r.id!==id && r.collectorId===data.collectorId && r.tarix===data.tarix);
+  if(dup){ errEl.textContent='Bu təhsilatçının '+fmtDate(data.tarix)+' tarixli hesabatı artıq var — onu redaktə edin.'; errEl.style.display='block'; bad=true; }
+  if(bad) return;
+  try{
+    const saved=id?await apiUpdate('collector_reports',id,data):await apiAdd('collector_reports',data);
+    upsertInState('collector_reports',saved);
+    closeModal();
+    crRefreshView();
+  }catch(err){ errEl.textContent='Yadda saxlanmadı: '+err.message; errEl.style.display='block'; }
+}
+async function deleteCollectorReport(id){
+  const r=byId(state.collector_reports,id); if(!r) return;
+  if(!confirm('Hesabat silinsin? '+collectorName(r.collectorId)+' — '+fmtDate(r.tarix))) return;
+  try{ await apiDelete('collector_reports',id); }catch(err){ alert('Silinmədi: '+err.message); return; }
+  removeFromState('collector_reports',id);
+  crRefreshView();
+}
+
 /* ============ CUSTOMER DEBT INQUIRY (Müştəri borc sorğusu) ============ */
 let debtInquiryQuery='';
 let debtInquirySelectedId=null;
@@ -2357,6 +2593,13 @@ const REPORT_EXPORTS={
     filters:()=>overdueFilterDescription(),
     totals:(rows)=>[['Cəmi cari borc',rows.reduce((a,r)=>a+r.debt,0)],['Cəmi qrafik borcu',rows.reduce((a,r)=>a+r.scheduleDebt,0)]],
   },
+  'collector-reports':{
+    title:'Təhsilatçı hesabatları', file:'Tehsilatci_hesabatlari',
+    columns:()=>CR_COLUMNS,
+    rows:()=>crResultRows(),
+    filters:()=>crFilterDescription(),
+    totals:(rows)=>{ const t=crTotals(rows); return [['Cəmi təhsilat',t.t],['Cəmi benzin xərci',t.b],['Cəmi digər xərc',t.d],['Cəmi göndərilən',t.g]]; },
+  },
   contracts:{
     title:'Müqavilə axtarışı', file:'Muqavile_axtarisi',
     columns:()=>CS_COLUMNS,
@@ -2386,6 +2629,7 @@ const REPORT_SEARCH={
   overdue:{filters:()=>overdueFilters, applied:()=>overdueApplied, search:searchOverdue},
   collections:{filters:()=>collFilters, applied:()=>coll.applied, search:searchCollections},
   contracts:{filters:()=>csFilters, applied:()=>cs.applied, search:searchContractsReport},
+  'collector-reports':{filters:()=>crFilters, applied:()=>crApplied, search:searchCollectorReports},
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -2957,6 +3201,9 @@ document.addEventListener('click', async (e)=>{
     if(key==='report-overdue'){ refreshOverdueTable(); return; }
     if(key==='report-collections'){ refreshCollections(); return; }
     if(key==='report-contracts'){ refreshCs(); return; }
+    if(key==='collector-reports-f'){ refreshCrFilter(); return; }
+    if(key==='collector-reports'){ const sv=document.getElementById('search-collector-reports'); const q=sv&&sv.value.length>=3?sv.value:''; const {pageRows,totalPages,total}=paginateArr(crListFiltered(q),key);
+      document.getElementById('tbody-collector-reports').innerHTML=crRowsHtml(pageRows); document.getElementById('pagination-collector-reports').innerHTML=paginationHtml(key,totalPages,total); return; }
     if(key==='audit-log'){ loadAuditPage(); return; }
     const searchInput=document.getElementById('search-'+key);
     const rawVal=searchInput?searchInput.value:'';
@@ -2985,6 +3232,11 @@ document.addEventListener('click', async (e)=>{
   if(action==='overdue-reset'){ resetOverdueFilters(); renderReportOverdue(); return; }
   if(action==='coll-reset'){ resetCollFilters(); renderReportCollections(); return; }
   if(action==='cs-reset'){ resetCsFilters(); renderReportContracts(); return; }
+  if(action==='cr-tab'){ crTab=btn.dataset.tab==='filter'?'filter':'list'; renderCollectorReports(); return; }
+  if(action==='cr-reset'){ resetCrFilters(); crApplied=null; renderCrFilterTab(); return; }
+  if(action==='add-creport'){ openCollectorReportForm(); return; }
+  if(action==='edit-creport'){ openCollectorReportForm(id); return; }
+  if(action==='delete-creport'){ await withButtonLoading(btn, ()=>deleteCollectorReport(id)); return; }
   if(action==='cs-open-contract'){ await csOpenContract(id, btn.dataset.nomre||''); return; }
   if(action==='cs-open-payments'){ await csOpenPayments(id); return; }
   if(action==='report-search'){ await withButtonLoading(btn, ()=>runReportSearch(btn.dataset.report)); return; }
@@ -3034,6 +3286,7 @@ document.addEventListener('submit', async (e)=>{
   if(e.target.id==='customer-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCustomerForm(e.target)); }
   if(e.target.id==='contract-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitContractForm(e.target)); }
   if(e.target.id==='court-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCourtForm(e.target)); }
+  if(e.target.id==='creport-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCollectorReportForm(e.target)); }
   if(e.target.id==='payment-edit-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPaymentEdit(e.target)); }
 });
 // "Mal qaytarılması" işarəsi dəyişəndə ödəniş blokunun görünüşünü yenilə
@@ -3042,6 +3295,7 @@ document.addEventListener('change', (e)=>{
   if(t.id==='qp-return'){ updateReturnToggleUi(t.checked); return; }
   const ds=t.dataset||{};
   if(ds.cfilter){ collFilters[ds.cfilter]=t.value; updateReportDirty('collections'); return; }
+  if(ds.crfilter){ crFilters[ds.crfilter]=t.value; updateReportDirty('collector-reports'); return; }
   if(ds.csfilter){ csFilters[ds.csfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; updateReportDirty('contracts'); return; }   // Müqavilə axtarışı: yalnız «Axtar» ilə   // Təhsilat hesabatı filtrləri: yalnız «Axtar» ilə tətbiq olunur
   if(ds.uaScreen && ua.draft){ uaSetLevel(ds.uaScreen, Number(ds.lv), t.checked); return; }
   if(ds.uaExtra && ua.draft){ ua.draft.extras[ds.uaExtra]=t.checked; ua.msg=''; uaRefreshBar(); return; }
@@ -3053,7 +3307,7 @@ document.addEventListener('change', (e)=>{
 document.addEventListener('keydown', (e)=>{
   if(e.key!=='Enter') return;
   const ds=(e.target && e.target.dataset)||{};
-  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':null));
+  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':null)));
   if(!key) return;
   e.preventDefault();
   if(ds.cfilter!==undefined) collFilters[ds.cfilter]=e.target.value;   // tarix sahəsi "change" verməmiş ola bilər
@@ -3062,6 +3316,9 @@ document.addEventListener('keydown', (e)=>{
   if(b && !b.disabled) b.click();
 });
 document.addEventListener('input', (e)=>{
+  if(e.target && e.target.dataset && e.target.dataset.crCalc){ crUpdateCalc(); return; }
+  const crf=e.target && e.target.dataset ? e.target.dataset.crfilter : null;
+  if(crf){ crFilters[crf]=e.target.value; updateReportDirty('collector-reports'); return; }
   const csf=e.target && e.target.dataset ? e.target.dataset.csfilter : null;
   if(csf && e.target.type!=='checkbox' && e.target.type!=='radio'){ csFilters[csf]=e.target.value; updateReportDirty('contracts'); return; }
   const of=e.target && e.target.dataset ? e.target.dataset.ofilter : null;
@@ -3076,6 +3333,14 @@ document.addEventListener('input', (e)=>{
   if(af){
     auditFilters[af]=e.target.value; pageNum['audit-log']=1;
     if(af==='q'){ clearTimeout(auditQTimer); auditQTimer=setTimeout(loadAuditPage,350); } else { loadAuditPage(); }
+    return;
+  }
+  if(e.target.id==='search-collector-reports'){
+    const v=e.target.value, q=v.length>=3?v:'';
+    pageNum['collector-reports']=1;
+    const {pageRows,totalPages,total}=paginateArr(crListFiltered(q),'collector-reports');
+    document.getElementById('tbody-collector-reports').innerHTML=crRowsHtml(pageRows);
+    document.getElementById('pagination-collector-reports').innerHTML=paginationHtml('collector-reports',totalPages,total);
     return;
   }
   const map={'search-salespeople':'salespeople','search-collectors':'collectors','search-curators':'curators','search-customers':'customers','search-contracts':'contracts'};

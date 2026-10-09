@@ -9,7 +9,7 @@
 //  * Yeni ekran/hesabat əlavə edəndə perm_screens() və perm_screen_needs()-də elan edin.
 
 // Struktur dəyişəndə artırın — db.php strukturu yenidən yoxlasın
-const SCOPE_SCHEMA_VERSION = 'scope-v2';   // v2: payments.odemeTarixi indeksi (Təhsilat hesabatı)
+const SCOPE_SCHEMA_VERSION = 'scope-v3';   // v2: payments.odemeTarixi indeksi (Təhsilat hesabatı)
 const USERS_SCHEMA_VERSION = 'users-v3';   // v3: users.collectorId (istifadəçi ↔ təhsilatçı bağlantısı)
 
 /* ---------- reyestr ---------- */
@@ -20,6 +20,7 @@ function perm_screens() {
         'salespeople' => 'Satıcılar',
         'collectors' => 'Təhsilatçılar',
         'curators' => 'Kuratorlar',
+        'collector-reports' => 'Təhsilatçı hesabatları',
         'customers' => 'Müştərilər',
         'contracts' => 'Müqavilələr',
         'payments' => 'Ödənişlər',
@@ -57,6 +58,8 @@ function perm_screen_needs() {
         'salespeople' => ['salespeople' => 'full'],
         'collectors' => ['collectors' => 'full'],
         'curators' => ['curators' => 'full'],
+        // Təhsilatçı hesabatları müqaviləyə bağlı deyil — əhatə tətbiq olunmur (bütün təhsilatçıların hesabatları), yalnız ekran hüququ
+        'collector-reports' => ['collector_reports' => 'full', 'collectors' => 'ref'],
         'customers' => ['customers' => 'full'],
         'contracts' => ['contracts' => 'full', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@cpay' => 1],
         'payments' => ['contracts' => 'ref', 'customers' => 'ref', 'collectors' => 'ref', 'payments' => 'full', '@sums' => 1, '@cpay' => 1],
@@ -356,6 +359,7 @@ function authz_write_needs($col, $method, $body) {
         }
         return $needs;
     }
+    if ($col === 'collector_reports') { $needs[] = ['screen' => 'collector-reports', 'level' => $lvl]; return $needs; }
     $needs[] = ['screen' => $col, 'level' => $lvl];   // customers, salespeople, collectors, curators
     return $needs;
 }
@@ -427,6 +431,7 @@ function authz_scope_write_denied($pdo, $ctx, $col, $method, $id, $body) {
         }
         return '';
     }
+    if ($col === 'collector_reports') return '';   // müqaviləyə bağlı deyil — əhatə yoxdur (Satıcılar/Müştərilər kimi yalnız ekran hüququ)
     // salespeople, collectors, curators: əhatəli istifadəçi yenisini yarada bilməz, yalnız öz əhatəsindəkini dəyişə bilər
     if ($method === 'POST') return 'Əhatəli istifadəçi yeni ' . mb_strtolower(audit_entity_name($col)) . ' yarada bilməz.';
     $allowed = $ctx['scope'][$col] ?? [];
@@ -475,6 +480,7 @@ function ensure_scope_columns($pdo) {
     add_index_if_missing($pdo, 'contracts', 'currentCuratorId');
     add_index_if_missing($pdo, 'customers', 'createdBy');
     add_index_if_missing($pdo, 'payments', 'odemeTarixi');   // Təhsilat hesabatı: tarix intervalı
+    add_index_if_missing($pdo, 'collector_reports', 'collectorId');   // təhsilatçı + gün yoxlaması
     backfill_current_assignees($pdo);
 }
 
@@ -562,3 +568,40 @@ function schedule_due_count($tarix, $muddet, $today) {
     }
     return $due;
 }
+
+/* ---------- Təhsilatçı hesabatları ---------- */
+
+// Əlavə/dəyişiklikdən əvvəl: sahələri yoxlayır, boşları 0 edir, "Göndərilən"i server hesablayır.
+// $old — redaktədə mövcud sətir (row_out), əlavədə null. Qaytarır [xəta mətni | '', tam body].
+function collector_report_prepare($pdo, $body, $old, $id) {
+    $v = is_array($old) ? $old : [];
+    foreach (['tarix', 'collectorId', 'tehsilatMeblegi', 'benzinXerci', 'digerXerc', 'senedSayi', 'qeyd'] as $k) {
+        if (array_key_exists($k, $body)) { $v[$k] = $body[$k]; }
+    }
+    $tarix = (string) ($v['tarix'] ?? '');
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $tarix, $m) || !checkdate((int) $m[2], (int) $m[3], (int) $m[1])) return ['Tarixi seçin.', $body];
+    if ($tarix > baku_today()) return ['Gələcək tarix seçmək olmaz.', $body];
+    $col = (string) ($v['collectorId'] ?? '');
+    $st = $pdo->prepare("SELECT 1 FROM collectors WHERE id = ?");
+    $st->execute([$col]);
+    if ($col === '' || !$st->fetchColumn()) return ['Təhsilatçını seçin.', $body];
+    $num = function ($x) { $x = str_replace(',', '.', trim((string) ($x ?? ''))); return $x === '' ? 0.0 : (is_numeric($x) ? round((float) $x, 2) : null); };
+    $raw = trim((string) ($v['tehsilatMeblegi'] ?? ''));
+    $t = $num($raw); $b = $num($v['benzinXerci'] ?? ''); $d = $num($v['digerXerc'] ?? '');
+    if ($raw === '' || $t === null) return ['Təhsilat məbləğini daxil edin.', $body];
+    if ($b === null || $d === null) return ['Xərc məbləği düzgün deyil.', $body];
+    if ($t < 0 || $b < 0 || $d < 0) return ['Məbləğlər mənfi ola bilməz.', $body];
+    $sRaw = trim((string) ($v['senedSayi'] ?? ''));
+    if ($sRaw !== '' && !preg_match('/^\d+$/', $sRaw)) return ['Sənəd sayı müsbət tam ədəd olmalıdır.', $body];
+    $g = round($t - $b - $d, 2);
+    if ($g < 0) return ['Xərclər təhsilat məbləğindən çox ola bilməz (göndərilən məbləğ mənfi alınır).', $body];
+    $q = $pdo->prepare("SELECT id FROM collector_reports WHERE collectorId = ? AND tarix = ?" . ($id !== null ? " AND id <> ?" : ""));
+    $q->execute($id !== null ? [$col, $tarix, (string) $id] : [$col, $tarix]);
+    if ($q->fetchColumn()) {
+        return ['Bu təhsilatçının ' . substr($tarix, 8, 2) . '.' . substr($tarix, 5, 2) . '.' . substr($tarix, 0, 4) . ' tarixli hesabatı artıq var — onu redaktə edin.', $body];
+    }
+    $out = ['tarix' => $tarix, 'collectorId' => $col, 'tehsilatMeblegi' => $t, 'benzinXerci' => $b, 'digerXerc' => $d,
+        'senedSayi' => $sRaw === '' ? 0 : (int) $sRaw, 'gonderilenMebleg' => $g, 'qeyd' => (string) ($v['qeyd'] ?? '')];
+    return ['', $out];
+}
+

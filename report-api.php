@@ -31,6 +31,7 @@ $pdo = get_pdo();
 $REPORT_SCREENS = [
     'collections' => 'report-collections',
     'contracts' => 'report-contracts',
+    'debtor-sales' => 'report-debtor-sales',
 ];
 
 $report = (string) ($_GET['report'] ?? '');
@@ -221,6 +222,110 @@ if ($report === 'contracts') {
     }
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
     echo json_encode(['rows' => $rows, 'today' => $today], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+/* ---------- Borclu müştərilərə satışlar ----------
+   Sətir = yeni satış (müqavilə N). Satış anında əvvəlki borc = müştərinin N-dən ƏVVƏLKİ tarixli, BU GÜN HƏLƏ AÇIQ olan
+   (qalığı > 0) müqavilələri üzrə: satış − (N tarixindən əvvəl) geri qaytarma − ilkin − (N tarixindən əvvəl) ödənişlər; hər müqavilə ≥ 0.
+   Bağlanmış müqavilələr (həm köhnə, həm yeni satış kimi) nəzərə alınmır (istifadəçi qərarı). Hamısı əhatə daxilində (authz_contract_scope).
+   Meyar: əvvəlki borc ≥ minBorc (defolt 60). "Satışdan sonra ümumi borc" = əvvəlki borc + (yeni satış − onun ilkin ödənişi).
+   "Bu gün ümumi borc" = müştərinin (əhatədəki) bütün müqavilələri üzrə bugünkü qalıq. */
+if ($report === 'debtor-sales') {
+    $g = function ($k) { return trim((string) ($_GET[$k] ?? '')); };
+    $num = function ($k, $def = null) use ($g) {
+        $v = str_replace(',', '.', $g($k));
+        if ($v === '') return $def;
+        if (!is_numeric($v)) { fail(400, 'Rəqəm düzgün deyil (' . $k . ')'); }
+        return (float) $v;
+    };
+    $dan = $g('tarixDan'); if ($dan !== '') { report_date_param('tarixDan'); }
+    $dek = $g('tarixDek'); if ($dek !== '') { report_date_param('tarixDek'); }
+    foreach (['satici', 'tehsilatci'] as $k) {
+        $v = $g($k);
+        if ($v !== '' && $v !== '__none__' && !preg_match('/^[0-9a-fA-F-]{36}$/', $v)) { fail(400, 'Seçim düzgün deyil (' . $k . ')'); }
+    }
+    $minBorc = $num('minBorc', 60.0);
+    $ayMin = $num('ayMin');
+    $musteri = mb_strtolower(preg_replace('/\s+/u', ' ', $g('musteri')));
+    $sat = $g('satici');
+    $teh = $g('tehsilatci');
+
+    [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
+    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.createdAt, c.customerId, c.salespersonId, c.currentCollectorId, c.meblag, c.ilkinOdenis,
+            cu.soyad, cu.ad, cu.ataAdi, cu.elaqeNomre1, cu.elaqeNomre2
+        FROM contracts c LEFT JOIN customers cu ON cu.id = c.customerId
+        WHERE $cSql AND c.customerId IS NOT NULL AND c.customerId <> ''
+        ORDER BY c.customerId, c.tarix, c.createdAt");
+    $st->execute($params);
+    $contracts = $st->fetchAll();
+    $pay = [];
+    $ps = $pdo->prepare("SELECT p.contractId, p.meblag, p.odemeTarixi, p.emeliyyatNovu FROM payments p
+        WHERE p.contractId IN (SELECT c.id FROM contracts c WHERE $cSql)");
+    $ps->execute($params);
+    foreach ($ps->fetchAll() as $p) { $pay[$p['contractId']][] = $p; }
+    // müqavilə üzrə ödəniş/qaytarma cəmi: $date verilibsə yalnız həmin tarixdən ƏVVƏL olanlar
+    $upTo = function ($cid, $date) use ($pay) {
+        $paid = 0.0; $ret = 0.0; $last = '';
+        foreach ($pay[$cid] ?? [] as $p) {
+            $d = (string) $p['odemeTarixi'];
+            if ($date !== null && $d >= $date) continue;
+            if ($p['emeliyyatNovu'] === 'Geri qaytarma') { $ret += -(float) $p['meblag']; }
+            else { $paid += (float) $p['meblag']; if ((float) $p['meblag'] > 0 && $d > $last) { $last = $d; } }
+        }
+        return [$paid, $ret, $last];
+    };
+    $monthsBetween = function ($from, $to) {   // brauzerdəki monthsSince() ilə eyni
+        if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})/', (string) $from, $a) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})/', (string) $to, $b)) return 0;
+        $m = ((int) $b[1] - (int) $a[1]) * 12 + ((int) $b[2] - (int) $a[2]);
+        if ((int) $b[3] < (int) $a[3]) { $m--; }
+        return max(0, $m);
+    };
+    $byCust = [];
+    foreach ($contracts as $c) {
+        [$paid, $ret] = $upTo($c['id'], null);
+        $c['debtNow'] = (float) $c['meblag'] - $ret - (float) $c['ilkinOdenis'] - $paid;
+        $byCust[$c['customerId']][] = $c;
+    }
+    $rows = [];
+    foreach ($byCust as $list) {
+        $custDebtNow = 0.0;
+        foreach ($list as $c) { if ($c['debtNow'] > 0) { $custDebtNow += $c['debtNow']; } }
+        foreach ($list as $n) {
+            $nd = (string) $n['tarix'];
+            if ($nd === '' || $n['debtNow'] <= 0.009) continue;   // bağlanmış yeni satış da nəzərə alınmır
+            if ($dan !== '' && $nd < $dan) continue;
+            if ($dek !== '' && $nd > $dek) continue;
+            if ($sat !== '' && (string) $n['salespersonId'] !== $sat) continue;
+            if ($teh === '__none__' ? (string) $n['currentCollectorId'] !== '' : ($teh !== '' && (string) $n['currentCollectorId'] !== $teh)) continue;
+            if ($musteri !== '' && mb_strpos(mb_strtolower(audit_full_name($n)), $musteri) === false) continue;
+            $prior = 0.0; $cnt = 0; $last = ''; $oldest = '';
+            foreach ($list as $o) {
+                if ($o['id'] === $n['id'] || (string) $o['tarix'] === '' || (string) $o['tarix'] >= $nd) continue;   // yalnız ƏVVƏLKİ tarixli
+                if ($o['debtNow'] <= 0.009) continue;                                                              // bağlanmış — nəzərə alınmır
+                [$paid, $ret, $l] = $upTo($o['id'], $nd);
+                $d = (float) $o['meblag'] - $ret - (float) $o['ilkinOdenis'] - $paid;
+                if ($d <= 0.009) continue;
+                $prior += $d; $cnt++;
+                if ($l > $last) { $last = $l; }
+                if ($oldest === '' || (string) $o['tarix'] < $oldest) { $oldest = (string) $o['tarix']; }
+            }
+            if ($cnt === 0 || $prior < $minBorc - 0.0001) continue;
+            $months = $monthsBetween($last !== '' ? $last : $oldest, $nd);
+            if ($ayMin !== null && $months < $ayMin) continue;
+            $after = $prior + (float) $n['meblag'] - (float) $n['ilkinOdenis'];
+            $rows[] = [
+                'id' => $n['id'], 'nomre' => (string) $n['nomre'], 'tarix' => $nd, 'customerId' => (string) $n['customerId'],
+                'cust' => audit_full_name($n), 'phones' => array_values(array_filter([(string) $n['elaqeNomre1'], (string) $n['elaqeNomre2']], 'strlen')),
+                'sp' => (string) $n['salespersonId'], 'col' => (string) ($n['currentCollectorId'] ?? ''),
+                'sale' => (float) $n['meblag'], 'oldCount' => $cnt, 'prior' => round($prior, 2), 'lastPay' => $last, 'months' => $months,
+                'after' => round($after, 2), 'now' => round($custDebtNow, 2),
+            ];
+        }
+    }
+    usort($rows, function ($a, $b) { return strcmp($b['tarix'], $a['tarix']) ?: strcmp($a['nomre'], $b['nomre']); });
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['rows' => $rows, 'minBorc' => $minBorc], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 

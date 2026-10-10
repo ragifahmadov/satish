@@ -157,6 +157,8 @@ t('Təhsilatçı hesabatları: Baxış oxuyur (tam), yaza bilmir; Dəyişiklik y
     && authz_write_denied($crD, 'collector_reports', 'DELETE', []) === '' && authz_read_tier(mk(['collectors' => 3]), 'collector_reports') === null);
 t('Təhsilatçı hesabatlarına əhatə tətbiq olunmur (əhatəli istifadəçi də yaza bilir)', authz_scope_write_denied(null, mk(['collector-reports' => 2], [], 'selected', []), 'collector_reports', 'POST', null, []) === '');
 
+t('Borclu müştərilərə satışlar: hüquq açarı; yalnız satıcı/təhsilatçı adları (müqavilə/ödəniş siyahısı yox)', authz_can(mk(['report-debtor-sales' => 1]), 'report-debtor-sales', 1) && authz_read_tier(mk(['report-debtor-sales' => 1]), 'salespeople') === 'ref' && authz_read_tier(mk(['report-debtor-sales' => 1]), 'contracts') === null && authz_read_tier(mk(['report-debtor-sales' => 1]), 'payments') === null);
+
 /* ---------- 6) hazırkı təhsilatçı/kurator qaydası ---------- */
 t('Boş tarixçə → null', derive_current_assignee([], 'collectorId') === null && derive_current_assignee(null, 'collectorId') === null);
 t('Açıq (son boş) təyinat seçilir', derive_current_assignee([['collectorId' => 'A', 'baslama' => '1', 'son' => '2'], ['collectorId' => 'B', 'baslama' => '2', 'son' => '']], 'collectorId') === 'B');

@@ -73,4 +73,7 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    (log avtomatik). Server `collector_report_prepare()`-də yoxlayır: tarix məcburi və gələcək deyil (Bakı), təhsilatçı mövcud, təhsilat məbləği
    məcburi, məbləğlər ≥0, sənəd sayı tam ədəd, bir təhsilatçı + bir gün = bir qeyd; **Göndərilən = Təhsilat − Benzin − Digər** server hesablayır,
    mənfi ola bilməz. Müqaviləyə bağlı deyil — əhatə tətbiq olunmur (yalnız ekran hüququ).
+15. **Borclu müştərilərə satışlar** (`report-api.php?report=debtor-sales`, ekran `report-debtor-sales`): yeni satış anında müştərinin
+   əvvəlki tarixli, BU GÜN HƏLƏ AÇIQ müqavilələri üzrə borcu (satış tarixindən əvvəlki ödəniş/qaytarmalarla) ≥ minimum hədd (defolt 60 ₼).
+   Bağlanmış müqavilələr (köhnə də, yeni də) nəzərə alınmır. Hamısı əhatə daxilində. "Son ödənişdən keçən ay" brauzerdəki `monthsSince()` qaydası ilə.
 

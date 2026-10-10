@@ -31,6 +31,7 @@ function perm_screens() {
         'report-overdue' => 'Hesabat: Gecikmiş müqavilələr',
         'report-collections' => 'Hesabat: Təhsilat hesabatı',
         'report-contracts' => 'Hesabat: Müqavilə axtarışı',
+        'report-debtor-sales' => 'Hesabat: Borclu müştərilərə satışlar',
     ];
 }
 
@@ -73,6 +74,8 @@ function perm_screen_needs() {
         'report-collections' => ['collectors' => 'ref'],
         // Müqavilə axtarışının sətirləri report-api.php-dən gəlir; burada yalnız filtr siyahıları (adlar)
         'report-contracts' => ['salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref'],
+        // Borclu müştərilərə satışlar: sətirlər report-api.php-dən; burada yalnız filtr siyahıları
+        'report-debtor-sales' => ['salespeople' => 'ref', 'collectors' => 'ref'],
     ];
 }
 

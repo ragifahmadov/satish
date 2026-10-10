@@ -31,6 +31,7 @@ $REPORTS = [
     'collections' => ['Təhsilat hesabatı', 'report-collections'],
     'contracts' => ['Müqavilə axtarışı', 'report-contracts'],
     'collector-reports' => ['Təhsilatçı hesabatları', 'collector-reports'],
+    'debtor-sales' => ['Borclu müştərilərə satışlar', 'report-debtor-sales'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

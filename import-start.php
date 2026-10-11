@@ -25,6 +25,9 @@ function import_notes($format, $st, $lookup, $customersOut) {
     foreach (array_keys($customersOut) as $k) if (!isset($lookup[$k])) $noMatch++;
     $n[] = 'Format: 1C (Взаиморасчеты). FIN faylda yoxdur — boş qalır.';
     if ($noMatch) $n[] = "Müştəri siyahısında adı tapılmayan (telefonsuz) müştəri: $noMatch";
+    $withAddr = 0; $withNote = 0;
+    foreach ($customersOut as $c) { $withAddr += ($c['faktikiUnvan'] ?? '') !== ''; $withNote += ($c['qeyd'] ?? '') !== ''; }
+    $n[] = "Faktiki ünvanı olan müştəri: $withAddr; qeydə əlavə məlumat (3-cü+ telefon, telefon izahı, digər ünvan) yazılan: $withNote";
     if ($st['companies']) $n[] = 'Keçilən şirkət (adında dırnaq): ' . $st['companies'];
     $n[] = 'Mal qaytarılması: ' . $st['returns'] . ($st['returnsUnmatched'] ? ' (satışı tapılmayan: ' . $st['returnsUnmatched'] . ')' : '');
     if ($st['netted']) $n[] = 'Ödənişdən çıxılan mənfi düzəliş: ' . $st['netted'] . ($st['negLeft'] ? ' (ödənişdən çox olduğu üçün satış məbləğinə əlavə edilən: ' . $st['negLeft'] . ' müqavilə)' : '');
@@ -222,7 +225,7 @@ try {
                 'finKod' => $info['finKod'] ?? '', 'elaqeNomre1' => $info['elaqeNomre1'] ?? '',
             ];
             // 1C müştəri siyahısından əlavə sahələr (standart FIN faylında yoxdur)
-            foreach (['elaqeNomre2', 'kod', 'cinsiyet'] as $f) {
+            foreach (['elaqeNomre2', 'kod', 'cinsiyet', 'faktikiUnvan', 'qeyd'] as $f) {
                 if (($info[$f] ?? '') !== '') $customersOut[$key][$f] = $info[$f];
             }
         }

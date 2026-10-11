@@ -39,7 +39,7 @@ require_admin(false);
         <label>1) Müştəri FIN faylı (.xlsx)</label>
         <input type="file" name="customer_fin_file" accept=".xlsx" required>
       </div>
-      <p class="hint">Sadə cədvəl: Tam ad (və ya Soyad/Ad/Ata adı), FIN, Telefon sütunları ilə — <b>və ya</b> 1C müştəri siyahısı (Номер, SAA, Номер телефона).</p>
+      <p class="hint">Sadə cədvəl: Tam ad (və ya Soyad/Ad/Ata adı), FIN, Telefon sütunları ilə — <b>və ya</b> 1C müştəri siyahısı (SAA, Telefon, istəyə görə Ünvan, Дата, Номер). Ünvan → «Faktiki ünvan» (ən son sənədin), fərqli ünvanlar və 3-cü+ telefon → «Qeyd».</p>
 
       <div class="field">
         <label>2) Müqavilə + ödənişlər faylı (.xlsx)</label>

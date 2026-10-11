@@ -330,22 +330,25 @@ function onec_exact_subset(array $cands, array $contracts, $amt, $rd) {
 // 1C müştəri siyahısı (Номер · SAA · Номер телефона) — xlsx_read_sheet ilə oxunmuş sətirlərdən.
 // Qaytarır: [normallaşdırılmış ad => ['finKod'=>'', 'elaqeNomre1', 'elaqeNomre2', 'kod', 'cinsiyet']] və ya null (format deyil).
 function onec_customer_lookup(array $rows) {
-    $hdr = null; $cName = $cTel = $cNo = null;
+    $hdr = null; $cName = $cTel = $cNo = $cAddr = $cDate = null;
     foreach ($rows as $idx => $cells) {
         foreach ($cells as $ci => $v) {
             $v = mb_strtolower(trim((string) $v));
             if ($v === 'saa') $cName = $ci;
             elseif (mb_strpos($v, 'телефон') !== false || mb_strpos($v, 'telefon') !== false) $cTel = $ci;
             elseif ($v === 'номер' || $v === 'kod' || $v === 'код') $cNo = $ci;
+            elseif (mb_strpos($v, 'ünvan') !== false || mb_strpos($v, 'unvan') !== false || mb_strpos($v, 'адрес') !== false) $cAddr = $ci;
+            elseif ($v === 'дата' || $v === 'tarix') $cDate = $ci;
         }
         if ($cName !== null) { $hdr = $idx; break; }
-        $cName = $cTel = $cNo = null;
+        $cName = $cTel = $cNo = $cAddr = $cDate = null;
         if ($idx > 20) break;
     }
     if ($hdr === null) return null;
 
     $out = [];
     $usedKod = [];
+    $seq = 0;
     foreach ($rows as $idx => $cells) {
         if ($idx <= $hdr) continue;
         $name = trim((string) ($cells[$cName] ?? ''));
@@ -354,27 +357,70 @@ function onec_customer_lookup(array $rows) {
         if (!isset($out[$key])) {
             $words = preg_split('/\s+/u', $key);
             $last = (string) end($words);
-            $out[$key] = ['finKod' => '', 'phones' => [], 'kod' => '',
+            $out[$key] = ['finKod' => '', 'phones' => [], 'phoneNotes' => [], 'addrs' => [], 'kod' => '',
                           'cinsiyet' => $last === 'OGLU' ? 'Kişi' : ($last === 'QIZI' ? 'Qadın' : '')];
         }
+        $o = &$out[$key];
         if ($cTel !== null) {
-            foreach (preg_split('/[,;\/]+/', (string) ($cells[$cTel] ?? '')) as $p) {
-                $p = preg_replace('/\D/', '', $p);
-                if ($p !== '' && !in_array($p, $out[$key]['phones'], true)) $out[$key]['phones'][] = $p;
+            // Xanada bir neçə nömrə: vergül/nöqtəli vergül/«/»/yeni sətir ilə ayrılır; nömrə daxilindəki boşluq,
+            // tire, nöqtə silinir; «+» saxlanılır; izah (məs. «(QARDASI)») qeydə yazılır; rəqəmsiz mətn (YOXDUR) atılır
+            foreach (preg_split('/[,;\/\n]+/u', (string) ($cells[$cTel] ?? '')) as $part) {
+                $part = trim($part);
+                $digits = preg_replace('/\D/', '', $part);
+                if (strlen($digits) < 5) continue;
+                $num = (strpos(ltrim($part, '. '), '+') === 0 ? '+' : '') . $digits;
+                if (!in_array($num, $o['phones'], true)) $o['phones'][] = $num;
+                $label = trim(preg_replace('/[\d\s\-\.\+\(\)]+/u', ' ', $part));
+                if ($label !== '') {
+                    $note = $num . ' (' . preg_replace('/\s+/u', ' ', $label) . ')';
+                    if (!in_array($note, $o['phoneNotes'], true)) $o['phoneNotes'][] = $note;
+                }
+            }
+        }
+        if ($cAddr !== null) {
+            $addr = trim(preg_replace('/\s+/u', ' ', (string) ($cells[$cAddr] ?? '')));
+            if ($addr !== '') {
+                $nk = mb_strtoupper(str_replace(['İ', 'i̇'], ['I', 'i'], $addr));
+                $d = $cDate !== null ? onec_any_date($cells[$cDate] ?? null) : null;
+                $seq++;
+                // eyni ünvan (böyük/kiçik hərf fərqi olmadan) bir dəfə; ən son tarix saxlanılır
+                if (!isset($o['addrs'][$nk]) || [$d ?? '', $seq] >= $o['addrs'][$nk]['ord']) {
+                    $o['addrs'][$nk] = ['text' => $addr, 'ord' => [$d ?? '', $seq]];
+                }
             }
         }
         // 1C kodu "НФНФ-002176" → "002176" (proqramda müştəri kodu 6 simvoldur, təkrarlanmamalıdır)
-        if ($cNo !== null && $out[$key]['kod'] === '' && preg_match('/-(\d{1,6})$/u', trim((string) ($cells[$cNo] ?? '')), $m)
+        if ($cNo !== null && $o['kod'] === '' && preg_match('/-(\d{1,6})$/u', trim((string) ($cells[$cNo] ?? '')), $m)
             && !isset($usedKod[$m[1]])) {
-            $out[$key]['kod'] = $m[1];
+            $o['kod'] = $m[1];
             $usedKod[$m[1]] = true;
         }
+        unset($o);
     }
     foreach ($out as &$o) {
         $o['elaqeNomre1'] = $o['phones'][0] ?? '';
         $o['elaqeNomre2'] = $o['phones'][1] ?? '';
-        unset($o['phones']);
+        $qeyd = [];
+        if (count($o['phones']) > 2) $qeyd[] = 'Digər telefonlar: ' . implode(', ', array_slice($o['phones'], 2));
+        if ($o['phoneNotes']) $qeyd[] = 'Telefon qeydləri: ' . implode('; ', $o['phoneNotes']);
+        // Faktiki ünvan = ən son tarixli sənədin ünvanı; fərqli digər ünvanlar qeydə
+        $addrs = array_values($o['addrs']);
+        usort($addrs, fn($a, $b) => $b['ord'] <=> $a['ord']);
+        $o['faktikiUnvan'] = $addrs[0]['text'] ?? '';
+        if (count($addrs) > 1) $qeyd[] = 'Digər ünvanlar: ' . implode('; ', array_column(array_slice($addrs, 1), 'text'));
+        $o['qeyd'] = implode("\n", $qeyd);
+        unset($o['phones'], $o['phoneNotes'], $o['addrs']);
     }
     unset($o);
     return $out;
+}
+
+// "19.11.2024" və ya Excel tarix nömrəsi → "2024-11-19"
+function onec_any_date($v) {
+    if ($v === null || $v === '') return null;
+    $v = trim((string) $v);
+    if (preg_match('/^(\d{1,2})\.(\d{1,2})\.(\d{4})/', $v, $m)) return sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+    if (is_numeric($v)) return gmdate('Y-m-d', (int) (((float) $v - 25569) * 86400));
+    if (preg_match('/^\d{4}-\d{2}-\d{2}/', $v)) return substr($v, 0, 10);
+    return null;
 }

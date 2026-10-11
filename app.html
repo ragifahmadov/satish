@@ -304,14 +304,14 @@ const SCREENS=[
   {id:'reassign',label:'Təhsilatçı dəyişikliyi',icon:'reassign'},
   {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'},
   {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
-  {id:'reports',label:'Hesabatlar',icon:'reports',children:[{id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},{id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'}]},
+  {id:'reports',label:'Hesabatlar',icon:'reports',children:[{id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},{id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'}]},
 ];
 
 /* ============ SƏLAHİYYƏTLƏR (brauzer yalnız rahatlıq üçün gizlədir; əsl nəzarət SERVERDƏDİR) ============ */
 let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
 const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
 const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
-const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
+const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
 function isAdmin(){ return me.role==='admin'; }
 function permKey(id){ return SCREEN_PERM[id]||id; }
 function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(id)]||0)>=level; }   // 1 baxış, 2 dəyişiklik, 3 silmə
@@ -442,6 +442,7 @@ const SCREEN_DEPS={
   'report-collections':['collectors'],   // sətirlər report-api.php-dən (server əhatəni tətbiq edir)
   'report-contracts':['salespeople','collectors','curators'],   // filtr siyahıları; sətirlər report-api.php-dən
   'report-debtor-sales':['salespeople','collectors'],   // filtr siyahıları; sətirlər report-api.php-dən
+  'report-monthly-plan':['collectors'],   // təhsilatçı siyahısı; sətirlər report-api.php-dən
   'audit-log':[],
   'user-access':[],
 };
@@ -512,6 +513,7 @@ async function renderScreen(){
     case 'report-collections': return renderReportCollections();
     case 'report-contracts': return renderReportContracts();
     case 'report-debtor-sales': return renderReportDebtorSales();
+    case 'report-monthly-plan': return renderReportMonthlyPlan();
     case 'audit-log': return renderAuditLog();
     case 'user-access': return renderUserAccess();
   }
@@ -584,7 +586,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -1859,6 +1861,10 @@ function renderReports(){
         <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Borclu müştərilərə satışlar</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">Köhnə borcu bağlanmamış müştərilərə edilmiş yeni satışlar və satıcılar</div>
       </div>`:''}
+      ${can('report-monthly-plan',1)?`<div class="card" data-action="nav" data-screen="report-monthly-plan" style="padding:18px 20px;cursor:pointer;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Cari ay təhsilat planı</div>
+        <div class="muted" style="font-size:13px;line-height:1.5;">Bu ay təhsil edilməli məbləğ (gecikmə daxil), yığılan, qalıq və icra faizi — təhsilatçılar üzrə</div>
+      </div>`:''}
     </div>
   `);
 }
@@ -2556,6 +2562,149 @@ function renderReportDebtorSales(){
   refreshDs();
 }
 
+/* ---- Hesabat 5: Cari ay təhsilat planı ----
+   Sətirlər serverdən (report-api.php?report=monthly-plan): yalnız CARİ ay, əhatə serverdə. Plan = keçmiş gecikmə + bu ayın taksiti
+   (ayın 1-dəki vəziyyətlə); Yığılıb = bu ayın ödənişləri; təhsilatçı = müqavilənin hazırkı təhsilatçısı. «Axtar» qaydası. */
+const MP_PAGE_SIZE=50;
+let mpFilters={};
+let mpR={tab:'summary', applied:null, rows:[], month:'', loading:false, err:'', req:0};
+function resetMpFilters(){ mpFilters={tehsilatci:'', mehkeme:'', planOnly:''}; }
+resetMpFilters();
+const MP_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust','Sentyabr','Oktyabr','Noyabr','Dekabr'];
+function mpMonthLabel(ym){ ym=ym||bakuDateIso().slice(0,7); return MP_MONTHS[Number(ym.slice(5,7))-1]+' '+ym.slice(0,4); }
+function mpPct(covered,plan){ return plan>0.009?Math.round(covered/plan*1000)/10:null; }
+function mpDecorate(r){ return Object.assign(r,{colName:collCollectorName(r.col), phone:(r.phones||[]).join(', '), pct:mpPct(r.covered,r.plan)}); }
+// Ümumiləşdirilmiş: təhsilatçı üzrə cəmlər ("Təyin olunmayıb" sonda)
+function mpSummaryRows(rows){
+  const m=new Map();
+  for(const r of rows){
+    let g=m.get(r.col);
+    if(!g){ g={col:r.col, name:r.colName, cnt:0, arrears:0, cur:0, plan:0, coll:0, covered:0, rest:0}; m.set(r.col,g); }
+    g.cnt++; for(const k of ['arrears','cur','plan','coll','covered','rest']) g[k]+=r[k];
+  }
+  const out=[...m.values()].map(g=>Object.assign(g,{pct:mpPct(g.covered,g.plan)}));
+  out.sort((a,b)=>(a.col?0:1)-(b.col?0:1) || a.name.localeCompare(b.name,'az'));
+  return out;
+}
+function mpTotals(rows){
+  const t=rows.reduce((a,r)=>{ a.cnt++; for(const k of ['arrears','cur','plan','coll','covered','rest']) a[k]+=r[k]; return a; },{cnt:0,arrears:0,cur:0,plan:0,coll:0,covered:0,rest:0});
+  t.pct=mpPct(t.covered,t.plan); return t;
+}
+const mpPctTd=p=>`<td class="num">${p==null?'—':`<span class="tag ${p>=100?'tag-green':(p>=50?'':'tag-red')}">${String(p).replace('.',',')}%</span>`}</td>`;
+// Sütunların tək elanı (ekran + Excel)
+const MP_SUMMARY_COLUMNS=[
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:34, td:r=>`<td>${esc(r.name)}</td>`, val:r=>r.name},
+  {th:'<th class="num">Müqavilə</th>', xl:'Müqavilə sayı', type:'int', width:12, td:r=>`<td class="num">${r.cnt}</td>`, val:r=>r.cnt},
+  {th:'<th class="num">Keçmiş<br>gecikmə</th>', xl:'Keçmiş gecikmə', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.arrears)}</td>`, val:r=>r.arrears},
+  {th:'<th class="num">Bu ayın<br>taksiti</th>', xl:'Bu ayın taksiti', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.cur)}</td>`, val:r=>r.cur},
+  {th:'<th class="num">Plan</th>', xl:'Plan', type:'money', width:16, td:r=>`<td class="num"><strong>${fmtMoney(r.plan)}</strong></td>`, val:r=>r.plan},
+  {th:'<th class="num">Yığılıb</th>', xl:'Yığılıb', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.coll)}</td>`, val:r=>r.coll},
+  {th:'<th class="num">Qalıq</th>', xl:'Qalıq', type:'money', width:16, td:r=>`<td class="num"${r.rest>0.009?' style="color:var(--red);"':''}>${fmtMoney(r.rest)}</td>`, val:r=>r.rest},
+  {th:'<th class="num">İcra %</th>', xl:'İcra %', type:'money', width:10, td:r=>mpPctTd(r.pct), val:r=>r.pct},
+];
+const MP_DETAIL_COLUMNS=[
+  {th:'<th>Müqavilə №</th>', xl:'Müqavilə №', type:'text', width:14, td:r=>`<td>${esc(r.nomre||'—')}</td>`, val:r=>r.nomre},
+  {th:'<th>Müştəri</th>', xl:'Müştəri (SAA)', type:'text', width:32, td:r=>`<td>${esc(r.cust||'—')}<div class="muted" style="font-size:12px;white-space:nowrap;">${esc(r.phone||'')}</div></td>`, val:r=>r.cust},
+  {th:'<th>Əlaqə</th>', xl:'Əlaqə nömrəsi', type:'text', width:22, td:null, val:r=>r.phone},
+  {th:'<th>Ünvan</th>', xl:'Ünvan', type:'text', width:34, td:r=>`<td style="font-size:12px;max-width:220px;">${esc(r.addr||'—')}</td>`, val:r=>r.addr},
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:26, td:r=>`<td class="muted">${esc(r.colName)}</td>`, val:r=>r.colName},
+  {th:'<th class="num">Aylıq<br>taksit</th>', xl:'Aylıq taksit', type:'money', width:14, td:r=>`<td class="num">${fmtMoney(r.monthly)}</td>`, val:r=>r.monthly},
+  {th:'<th class="num">Gecikən<br>ay</th>', xl:'Gecikən ay', type:'int', width:10, td:r=>`<td class="num">${r.months||''}</td>`, val:r=>r.months},
+  {th:'<th class="num">Keçmiş<br>gecikmə</th>', xl:'Keçmiş gecikmə', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.arrears)}</td>`, val:r=>r.arrears},
+  {th:'<th class="num">Bu ayın<br>taksiti</th>', xl:'Bu ayın taksiti', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.cur)}</td>`, val:r=>r.cur},
+  {th:'<th class="num">Plan</th>', xl:'Plan', type:'money', width:15, td:r=>`<td class="num"><strong>${fmtMoney(r.plan)}</strong></td>`, val:r=>r.plan},
+  {th:'<th class="num">Yığılıb</th>', xl:'Yığılıb', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.coll)}</td>`, val:r=>r.coll},
+  {th:'<th class="num">Qalıq</th>', xl:'Qalıq', type:'money', width:15, td:r=>`<td class="num"${r.rest>0.009?' style="color:var(--red);"':''}>${fmtMoney(r.rest)}</td>`, val:r=>r.rest},
+  {th:'<th>Son<br>ödəniş</th>', xl:'Son ödəniş', type:'date', width:13, td:r=>`<td>${r.lastPay?fmtDate(r.lastPay):'—'}</td>`, val:r=>r.lastPay||null},
+  {th:'<th>Məhkəmə</th>', xl:'Məhkəməlik', type:'text', width:11, td:r=>`<td>${r.court?'<span class="tag tag-red">Bəli</span>':''}</td>`, val:r=>r.court?'Bəli':''},
+];
+const MP_DETAIL_SCREEN_COLUMNS=MP_DETAIL_COLUMNS.filter(c=>c.td);   // ekranda telefon müştəri xanasının içindədir
+function mpFilterDescription(f){
+  f=f||mpR.applied||mpFilters;
+  const out=[{l:'Ay',v:mpMonthLabel(mpR.month||undefined)}];
+  out.push({l:'Təhsilatçı',v:f.tehsilatci?collCollectorName(f.tehsilatci==='__none__'?'':f.tehsilatci):'Bütün təhsilatçılar'});
+  out.push({l:'Məhkəməlik',v:f.mehkeme==='1'?'Yalnız məhkəməlik':(f.mehkeme==='0'?'Məhkəməlik xaric':'Daxildir')});
+  out.push({l:'Sətirlər',v:f.planOnly==='1'?'Yalnız planı olanlar':'Planı və ya bu ay ödənişi olanlar'});
+  return out;
+}
+async function searchMonthlyPlan(){
+  mpR.applied=JSON.parse(JSON.stringify(mpFilters));
+  const qs=Object.entries(mpR.applied).filter(([k,v])=>v!=='').map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  const my=++mpR.req; mpR.loading=true; mpR.err=''; pageNum['report-monthly-plan']=1; refreshMp();
+  try{
+    const r=await fetch('report-api.php?report=monthly-plan'+(qs?'&'+qs:''));
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json();
+    if(my!==mpR.req) return;
+    mpR.month=j.month||''; 
+    mpR.rows=(j.rows||[]).map(mpDecorate).sort((a,b)=>(a.col?0:1)-(b.col?0:1) || a.colName.localeCompare(b.colName,'az') || b.rest-a.rest || String(a.nomre).localeCompare(String(b.nomre),'az'));
+  }catch(err){ if(my!==mpR.req) return; mpR.rows=[]; mpR.err='Məlumat yüklənmədi: '+err.message; mpR.applied=null; }
+  finally{ if(my===mpR.req) mpR.loading=false; }
+  if(currentScreen==='report-monthly-plan') refreshMp();
+}
+function mpResultRows(){ return (mpR.applied && !mpR.loading && !mpR.err)?mpR.rows:[]; }
+function refreshMp(){
+  const box=document.getElementById('mp-body');
+  if(!box) return;
+  const eb=document.getElementById('export-btn'), sumEl=document.getElementById('mp-summary');
+  const rows=mpResultRows();
+  if(eb){ eb.disabled=!rows.length; eb.textContent=rows.length?('Excelə yüklə — '+rows.length+' sətir'):'Excelə yüklə'; }
+  if(mpR.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(mpR.err)}</div>`; return; }
+  if(!mpR.applied){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
+  if(mpR.loading){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Hesablanır…</div>`; return; }
+  const t=mpTotals(rows);
+  sumEl.innerHTML=`${esc(mpMonthLabel(mpR.month))} &nbsp;·&nbsp; <strong>${t.cnt}</strong> müqavilə &nbsp;·&nbsp; Plan: <strong>${fmtMoney(t.plan)}</strong> (keçmiş gecikmə ${fmtMoney(t.arrears)} + bu ayın taksiti ${fmtMoney(t.cur)}) &nbsp;·&nbsp; Yığılıb: <strong>${fmtMoney(t.coll)}</strong> &nbsp;·&nbsp; Qalıq: <strong>${fmtMoney(t.rest)}</strong> &nbsp;·&nbsp; İcra: <strong>${t.pct==null?'—':String(t.pct).replace('.',',')+'%'}</strong>`;
+  if(mpR.tab==='summary'){
+    const sum=mpSummaryRows(rows);
+    const body=sum.length
+      ? sum.map(g=>`<tr>${MP_SUMMARY_COLUMNS.map(c=>c.td(g)).join('')}</tr>`).join('')
+        +`<tr class="total-row"><td>Cəmi</td><td class="num">${t.cnt}</td><td class="num">${fmtMoney(t.arrears)}</td><td class="num">${fmtMoney(t.cur)}</td><td class="num">${fmtMoney(t.plan)}</td><td class="num">${fmtMoney(t.coll)}</td><td class="num">${fmtMoney(t.rest)}</td>${mpPctTd(t.pct)}</tr>`
+      : `<tr><td colspan="${MP_SUMMARY_COLUMNS.length}" class="empty" style="padding:40px;">Bu ay üçün plan yoxdur</td></tr>`;
+    box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="mp-table">
+      <thead><tr>${MP_SUMMARY_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${body}</tbody></table></div></div>`;
+    return;
+  }
+  const acts=csHasActions(), ncol=MP_DETAIL_SCREEN_COLUMNS.length+(acts?1:0);
+  const {pageRows, totalPages, total}=paginateArr(rows,'report-monthly-plan',MP_PAGE_SIZE);
+  const body=pageRows.length
+    ? pageRows.map(r=>`<tr>${MP_DETAIL_SCREEN_COLUMNS.map(c=>c.td(r)).join('')}${acts?`<td style="white-space:nowrap;">${dsActionsHtml(r)}</td>`:''}</tr>`).join('')
+    : `<tr><td colspan="${ncol}" class="empty" style="padding:40px;">Bu ay üçün plan yoxdur</td></tr>`;
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="mp-table" style="min-width:1500px;">
+    <thead><tr>${MP_DETAIL_SCREEN_COLUMNS.map(c=>c.th).join('')}${acts?'<th></th>':''}</tr></thead><tbody>${body}</tbody></table></div>
+    <div id="pagination-report-monthly-plan" style="padding:0 14px 14px;">${paginationHtml('report-monthly-plan',totalPages,total)}</div></div>`;
+}
+function renderReportMonthlyPlan(){
+  mpR.applied=null; mpR.rows=[]; mpR.err=''; mpR.loading=false; mpR.req++; mpR.month='';
+  const f=mpFilters;
+  const sorted=state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az'));
+  const o=(v,label,sel)=>`<option value="${v}"${sel===v?' selected':''}>${esc(label)}</option>`;
+  const colOpts=o('','Bütün təhsilatçılar',f.tehsilatci)+sorted.map(x=>o(x.id,fullName(x),f.tehsilatci)).join('')+o('__none__','Təyin olunmayıb',f.tehsilatci);
+  const tab=(id,label)=>`<button type="button" class="tab${mpR.tab===id?' active':''}" data-action="mp-tab" data-tab="${id}">${label}</button>`;
+  setContent(`
+    <div class="topbar">
+      <div><h1>Cari ay təhsilat planı</h1><div class="sub">Bu ay təhsil edilməli məbləğ (keçmiş gecikmə + bu ayın taksiti), yığılan və qalıq — təhsilatçılar üzrə</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="monthly-plan" disabled>Excelə yüklə</button>`:''}
+        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      </div>
+    </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:14px;">
+      <div class="filters">
+        <div class="field"><label>Ay</label><input type="text" value="${esc(mpMonthLabel())}" disabled></div>
+        <div class="field"><label>Təhsilatçı</label><select data-mpfilter="tehsilatci">${colOpts}</select></div>
+        <div class="field"><label>Məhkəməlik</label><select data-mpfilter="mehkeme">${o('','Daxildir',f.mehkeme)}${o('1','Yalnız məhkəməlik',f.mehkeme)}${o('0','Məhkəməlik xaric',f.mehkeme)}</select></div>
+        <div class="field"><label>Sətirlər</label><select data-mpfilter="planOnly">${o('','Plan və ya ödəniş',f.planOnly)}${o('1','Yalnız planı olanlar',f.planOnly)}</select></div>
+      </div>
+      ${reportFilterButtonsHtml('monthly-plan','mp-reset')}
+    </div>
+    ${reportDirtyHtml('monthly-plan')}
+    <div class="tabs">${tab('summary','Ümumiləşdirilmiş')}${tab('detail','Detallı')}</div>
+    <div id="mp-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="mp-body"></div>
+  `);
+  refreshMp();
+}
+
 /* ============ EXCEL (.xlsx) EXPORT — brauzerdə, kənar kitabxanasız ============
    Qaydalar (QAYDALAR.md): hər hesabat REPORT_EXPORTS-da elan olunur və export düyməsini avtomatik alır;
    fayl yaradılmazdan ƏVVƏL export loga yazılır — loga yazılmasa fayl yaradılmır. */
@@ -2743,6 +2892,20 @@ const REPORT_EXPORTS={
     filters:()=>csFilterDescription(),
     totals:(rows)=>{ const t=csTotals(rows); return [['Cəmi satış',t.sale],['Cəmi ödənilib',t.paid],['Cəmi qalıq borc',t.debt]]; },
   },
+  'monthly-plan':{
+    title:'Cari ay təhsilat planı', file:'Cari_ay_tehsilat_plani',
+    rows:()=>mpResultRows(),
+    filters:()=>mpFilterDescription(),
+    totals:(rows)=>{ const t=mpTotals(rows); return [['Keçmiş gecikmə',t.arrears],['Bu ayın taksiti',t.cur],['Plan',t.plan],['Yığılıb',t.coll],['Qalıq',t.rest],['İcra %',t.pct==null?0:t.pct]]; },
+    sheets:(rows)=>{
+      const sum=mpSummaryRows(rows), t=mpTotals(rows);
+      return [
+        {name:'Ümumiləşdirilmiş', columns:MP_SUMMARY_COLUMNS, rows:sum, filter:false,
+          extraRows:[[{v:'Cəmi',s:5},{v:t.cnt,t:'int'},{v:t.arrears,t:'money'},{v:t.cur,t:'money'},{v:t.plan,t:'money'},{v:t.coll,t:'money'},{v:t.rest,t:'money'},{v:t.pct,t:'money'}]]},
+        {name:'Detallı', columns:MP_DETAIL_COLUMNS, rows},
+      ];
+    },
+  },
   collections:{
     title:'Təhsilat hesabatı', file:'Tehsilat_hesabati',
     rows:()=>(coll.applied && coll.loadedKey===collKey() && !coll.loading && !coll.err)?coll.rows:[],   // ekrandakı (serverdən gələn) sətirlər
@@ -2767,6 +2930,7 @@ const REPORT_SEARCH={
   contracts:{filters:()=>csFilters, applied:()=>cs.applied, search:searchContractsReport},
   'collector-reports':{filters:()=>crFilters, applied:()=>crApplied, search:searchCollectorReports},
   'debtor-sales':{filters:()=>dsFilters, applied:()=>dsR.applied, search:searchDebtorSales},
+  'monthly-plan':{filters:()=>mpFilters, applied:()=>mpR.applied, search:searchMonthlyPlan},
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -3067,7 +3231,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
@@ -3339,6 +3503,7 @@ document.addEventListener('click', async (e)=>{
     if(key==='report-collections'){ refreshCollections(); return; }
     if(key==='report-contracts'){ refreshCs(); return; }
     if(key==='report-debtor-sales'){ refreshDs(); return; }
+    if(key==='report-monthly-plan'){ refreshMp(); return; }
     if(key==='collector-reports-f'){ refreshCrFilter(); return; }
     if(key==='collector-reports'){ const sv=document.getElementById('search-collector-reports'); const q=sv&&sv.value.length>=3?sv.value:''; const {pageRows,totalPages,total}=paginateArr(crListFiltered(q),key);
       document.getElementById('tbody-collector-reports').innerHTML=crRowsHtml(pageRows); document.getElementById('pagination-collector-reports').innerHTML=paginationHtml(key,totalPages,total); return; }
@@ -3371,6 +3536,9 @@ document.addEventListener('click', async (e)=>{
   if(action==='coll-reset'){ resetCollFilters(); renderReportCollections(); return; }
   if(action==='cs-reset'){ resetCsFilters(); renderReportContracts(); return; }
   if(action==='ds-reset'){ resetDsFilters(); renderReportDebtorSales(); return; }
+  if(action==='mp-reset'){ resetMpFilters(); renderReportMonthlyPlan(); return; }
+  if(action==='mp-tab'){ mpR.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-monthly-plan']=1;
+    document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===mpR.tab)); refreshMp(); return; }
   if(action==='cr-tab'){ crTab=btn.dataset.tab==='filter'?'filter':'list'; renderCollectorReports(); return; }
   if(action==='cr-reset'){ resetCrFilters(); crApplied=null; renderCrFilterTab(); return; }
   if(action==='add-creport'){ openCollectorReportForm(); return; }
@@ -3435,6 +3603,7 @@ document.addEventListener('change', (e)=>{
   const ds=t.dataset||{};
   if(ds.cfilter){ collFilters[ds.cfilter]=t.value; updateReportDirty('collections'); return; }
   if(ds.dsfilter){ dsFilters[ds.dsfilter]=t.value; updateReportDirty('debtor-sales'); return; }
+  if(ds.mpfilter){ mpFilters[ds.mpfilter]=t.value; updateReportDirty('monthly-plan'); return; }
   if(ds.crfilter){ crFilters[ds.crfilter]=t.value; updateReportDirty('collector-reports'); return; }
   if(ds.csfilter){ csFilters[ds.csfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; updateReportDirty('contracts'); return; }   // Müqavilə axtarışı: yalnız «Axtar» ilə   // Təhsilat hesabatı filtrləri: yalnız «Axtar» ilə tətbiq olunur
   if(ds.uaScreen && ua.draft){ uaSetLevel(ds.uaScreen, Number(ds.lv), t.checked); return; }
@@ -3447,7 +3616,7 @@ document.addEventListener('change', (e)=>{
 document.addEventListener('keydown', (e)=>{
   if(e.key!=='Enter') return;
   const ds=(e.target && e.target.dataset)||{};
-  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':null))));
+  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':null)))));
   if(!key) return;
   e.preventDefault();
   if(ds.cfilter!==undefined) collFilters[ds.cfilter]=e.target.value;   // tarix sahəsi "change" verməmiş ola bilər

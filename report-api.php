@@ -32,6 +32,7 @@ $REPORT_SCREENS = [
     'collections' => 'report-collections',
     'contracts' => 'report-contracts',
     'debtor-sales' => 'report-debtor-sales',
+    'monthly-plan' => 'report-monthly-plan',
 ];
 
 $report = (string) ($_GET['report'] ?? '');
@@ -326,6 +327,84 @@ if ($report === 'debtor-sales') {
     usort($rows, function ($a, $b) { return strcmp($b['tarix'], $a['tarix']) ?: strcmp($a['nomre'], $b['nomre']); });
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
     echo json_encode(['rows' => $rows, 'minBorc' => $minBorc], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+/* ---------- Cari ay üzrə təhsilat planı ----------
+   Yalnız CARİ ay (Bakı vaxtı). Taksit hər ayın 1-də ödənilməli sayılır (schedule_due_count — brauzerdəki scheduleDueCount ilə eyni).
+   Müqavilə üzrə: aylıq = (satış − qaytarma − ilkin) / müddət; ayın 1-dək ödənilib = ayın 1-dən ƏVVƏLKİ ödənişlər.
+     Plan            = max(0, min(aylıq × (bu ay daxil çatmış taksit sayı) − ayın 1-dək ödənilib, ayın 1-dəki qalıq borc))
+     Keçmiş gecikmə  = max(0, min(aylıq × (keçən ayın sonunadək çatmış taksit sayı) − ayın 1-dək ödənilib, Plan))
+     Bu ayın taksiti = Plan − Keçmiş gecikmə
+     Yığılıb         = bu ay (ayın 1-dən) edilmiş ödənişlər (geri qaytarma daxil deyil)
+     Qalıq           = Plan − min(Yığılıb, Plan)
+   Təhsilatçı = müqavilənin HAZIRKI təhsilatçısı (istifadəçi qərarı: yığılan da müqavilənin təhsilatçısına yazılır).
+   Məhkəməlik defolt daxildir. Hamısı əhatə daxilində (authz_contract_scope). */
+if ($report === 'monthly-plan') {
+    $g = function ($k) { return trim((string) ($_GET[$k] ?? '')); };
+    $teh = $g('tehsilatci');
+    if ($teh !== '' && $teh !== '__none__' && !preg_match('/^[0-9a-fA-F-]{36}$/', $teh)) { fail(400, 'Seçim düzgün deyil (tehsilatci)'); }
+    $court = $g('mehkeme');            // '' — hamısı, '1' — yalnız məhkəməlik, '0' — məhkəməlik xaric
+    if (!in_array($court, ['', '0', '1'], true)) { fail(400, 'Seçim düzgün deyil (mehkeme)'); }
+    $planOnly = ($g('planOnly') === '1');
+
+    $today = baku_today();
+    $ms = substr($today, 0, 8) . '01';
+    $prevEnd = (new DateTime($ms))->modify('-1 day')->format('Y-m-d');
+
+    [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
+    $where = [$cSql];
+    if ($teh === '__none__') { $where[] = "(c.currentCollectorId IS NULL OR c.currentCollectorId = '')"; }
+    elseif ($teh !== '') { $where[] = 'c.currentCollectorId = :fcol'; $params[':fcol'] = $teh; }
+    $params[':ms1'] = $ms; $params[':ms2'] = $ms;
+    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, c.muddet, c.currentCollectorId, c.mehkemeQeydleri,
+            cu.soyad, cu.ad, cu.ataAdi, cu.elaqeNomre1, cu.elaqeNomre2, cu.faktikiUnvan, cu.qeydiyyatUnvani,
+            COALESCE(ps.before_, 0) AS paidBefore, COALESCE(ps.month_, 0) AS paidMonth, COALESCE(ps.ret, 0) AS ret, ps.lastPay
+        FROM contracts c
+        LEFT JOIN customers cu ON cu.id = c.customerId
+        LEFT JOIN (SELECT contractId,
+                SUM(CASE WHEN emeliyyatNovu <> 'Geri qaytarma' AND odemeTarixi < :ms1 THEN meblag ELSE 0 END) AS before_,
+                SUM(CASE WHEN emeliyyatNovu <> 'Geri qaytarma' AND odemeTarixi >= :ms2 THEN meblag ELSE 0 END) AS month_,
+                SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN -meblag ELSE 0 END) AS ret,
+                MAX(CASE WHEN emeliyyatNovu <> 'Geri qaytarma' AND meblag > 0 THEN odemeTarixi END) AS lastPay
+            FROM payments GROUP BY contractId) ps ON ps.contractId = c.id
+        WHERE " . implode(' AND ', $where) . "
+        ORDER BY c.nomre ASC");
+    $st->execute($params);
+
+    $rows = [];
+    foreach ($st->fetchAll() as $r) {
+        $mq = json_decode((string) $r['mehkemeQeydleri'], true);
+        $isCourt = is_array($mq) && count($mq) > 0;
+        if ($court === '1' && !$isCourt) continue;
+        if ($court === '0' && $isCourt) continue;
+        $m = (int) $r['muddet'];
+        $net = (float) $r['meblag'] - (float) $r['ret'];
+        $ilkin = (float) $r['ilkinOdenis'];
+        $monthly = $m > 0 ? max(0, ($net - $ilkin) / $m) : 0;
+        $before = (float) $r['paidBefore'];
+        $debtStart = $net - $ilkin - $before;
+        $plan = max(0, min($monthly * schedule_due_count($r['tarix'], $m, $ms) - $before, $debtStart));
+        $arrears = max(0, min($monthly * schedule_due_count($r['tarix'], $m, $prevEnd) - $before, $plan));
+        $coll = max(0, (float) $r['paidMonth']);
+        $plan = round($plan, 2); $arrears = round($arrears, 2); $coll = round($coll, 2);
+        if ($plan < 0.01 && ($planOnly || $coll < 0.01)) continue;
+        $covered = min($coll, $plan);
+        $rows[] = [
+            'id' => $r['id'], 'nomre' => (string) $r['nomre'], 'tarix' => (string) ($r['tarix'] ?? ''),
+            'cust' => audit_full_name($r),
+            'phones' => array_values(array_filter([(string) $r['elaqeNomre1'], (string) $r['elaqeNomre2']], 'strlen')),
+            'addr' => (string) (($r['faktikiUnvan'] ?? '') !== '' ? $r['faktikiUnvan'] : ($r['qeydiyyatUnvani'] ?? '')),
+            'col' => (string) ($r['currentCollectorId'] ?? ''),
+            'monthly' => round($monthly, 2),
+            'months' => $monthly > 0 ? (int) ceil($arrears / $monthly - 0.005) : 0,
+            'arrears' => $arrears, 'cur' => round($plan - $arrears, 2), 'plan' => $plan,
+            'coll' => $coll, 'covered' => round($covered, 2), 'rest' => round($plan - $covered, 2),
+            'lastPay' => (string) ($r['lastPay'] ?? ''), 'court' => $isCourt,
+        ];
+    }
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['rows' => $rows, 'month' => substr($today, 0, 7), 'today' => $today], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 

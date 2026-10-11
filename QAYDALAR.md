@@ -77,3 +77,8 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    əvvəlki tarixli, BU GÜN HƏLƏ AÇIQ müqavilələri üzrə borcu (satış tarixindən əvvəlki ödəniş/qaytarmalarla) ≥ minimum hədd (defolt 60 ₼).
    Bağlanmış müqavilələr (köhnə də, yeni də) nəzərə alınmır. Hamısı əhatə daxilində. "Son ödənişdən keçən ay" brauzerdəki `monthsSince()` qaydası ilə.
 
+16. **Cari ay təhsilat planı** (`report-api.php?report=monthly-plan`, ekran `report-monthly-plan`): yalnız CARİ ay (Bakı), keçmiş ay seçilmir.
+   Taksit hər ayın 1-də ödənilməli sayılır (`schedule_due_count`). Plan = bu ay daxil çatmış taksitlər − ayın 1-dək ödənilib (0 ilə ayın 1-dəki
+   qalıq borc arasında); Keçmiş gecikmə = keçən ayın sonunadək çatmış hissə (plana daxildir); Yığılıb = bu ayın ödənişləri (qaytarma yox);
+   Qalıq = Plan − min(Yığılıb, Plan); İcra % = Σmin(Yığılıb, Plan) / ΣPlan. Təhsilatçı = müqavilənin hazırkı təhsilatçısı (yığılan da ona yazılır).
+   Məhkəməlik defolt daxildir. Hamısı əhatə daxilində. Excel 2 vərəq (Ümumiləşdirilmiş, Detallı).

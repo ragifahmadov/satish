@@ -45,7 +45,7 @@ require_admin(false);
         <label>2) Müqavilə + ödənişlər faylı (.xlsx)</label>
         <input type="file" name="contract_payments_file" accept=".xlsx" required>
       </div>
-      <p class="hint">"Ödənişlər" adlı vərəqi olan, Müqavilə/Müştəri/Soyad/Ad/Ata adı/Növ/Tarix/Məbləğ/Sənəd sütunlu fayl — <b>və ya</b> 1C-nin "Взаиморасчеты с контрагентами" hesabatı (Контрагент → Договор → Документ → Год → День qruplaşması ilə). Format avtomatik tanınır.</p>
+      <p class="hint">"Ödənişlər" adlı vərəqi olan, Müqavilə/Müştəri/Soyad/Ad/Ata adı/Növ/Tarix/Məbləğ/Sənəd sütunlu fayl (istəyə görə «Təhsilatçı» sütunu: tanınan ad → müqavilənin təhsilatçısı, qalan dəyər → müqavilənin qeydi) — <b>və ya</b> 1C-nin "Взаиморасчеты с контрагентами" hesabatı (Контрагент → Договор → Документ → Год → День qruplaşması ilə). Format avtomatik tanınır.</p>
 
       <button type="submit" id="submit-btn">İdxal et</button>
     </form>

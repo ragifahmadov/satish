@@ -11,9 +11,10 @@ header('Content-Type: application/json; charset=utf-8');
 const BATCH_SIZE = 1500;
 
 // Bir sorğuda çoxlu sətir yazır, yaradılmış id-ləri eyni sırada qaytarır.
-function bulk_insert($pdo, $table, $schema, $dataList) {
+// $extraCols: $SCHEMA-da olmayan, serverin yazdığı sütunlar (məs. contracts.currentCollectorId) — dəyər $data-dan, boşsa NULL
+function bulk_insert($pdo, $table, $schema, $dataList, array $extraCols = []) {
     if (!$dataList) return [];
-    $colNames = array_merge(['id', 'createdAt'], array_column($schema, 0));
+    $colNames = array_merge(['id', 'createdAt'], array_column($schema, 0), $extraCols);
     $colsQuoted = implode(',', array_map(fn($c) => "`$c`", $colNames));
     $groups = [];
     $params = [];
@@ -29,6 +30,11 @@ function bulk_insert($pdo, $table, $schema, $dataList) {
             $key = ":{$name}_{$i}";
             $ph[] = $key;
             $params[$key] = cast_in($data[$name] ?? null, $type);
+        }
+        foreach ($extraCols as $j => $name) {
+            $key = ":x{$j}_{$i}";
+            $ph[] = $key;
+            $params[$key] = ($data[$name] ?? '') !== '' ? $data[$name] : null;
         }
         $groups[] = '(' . implode(',', $ph) . ')';
     }
@@ -80,10 +86,14 @@ try {
             $dataList[] = [
                 'nomre' => $c['nomre'], 'tarix' => $c['tarix'], 'customerId' => $job['custIdMap'][$c['customerKey']] ?? '',
                 'salespersonId' => '', 'meblag' => $c['meblag'], 'ilkinOdenis' => $c['ilkinOdenis'],
-                'muddet' => 10, 'qeyd' => '',
+                'muddet' => 10, 'qeyd' => $c['qeyd'] ?? '',
+                // təhsilatçı (idxal faylının "Təhsilatçı" sütunundan): müqavilə tarixindən davam edən təyinat
+                'tehsilatciTeyinatlari' => ($c['collectorId'] ?? '') !== ''
+                    ? [['collectorId' => $c['collectorId'], 'baslama' => $c['tarix'], 'son' => '']] : [],
+                'currentCollectorId' => $c['collectorId'] ?? '',
             ];
         }
-        $ids = bulk_insert($pdo, 'contracts', $SCHEMA['contracts'], $dataList);
+        $ids = bulk_insert($pdo, 'contracts', $SCHEMA['contracts'], $dataList, ['currentCollectorId']);
         foreach ($slice as $i => $c) { $job['contractIdMap'][$c['tempId']] = $ids[$i]; }
         $job['offset'] += count($slice);
         if ($job['offset'] >= count($job['contracts'])) {
@@ -127,7 +137,8 @@ try {
         // 50 min ayrı sətir əvəzinə bir xülasə sətri
         $t = $job['totals'];
         audit_event($pdo, 'IMPORT',
-            'İdxal tamamlandı: ' . $t['customers'] . ' müştəri, ' . $t['contracts'] . ' müqavilə, ' . $t['payments'] . ' ödəniş',
+            'İdxal tamamlandı: ' . $t['customers'] . ' müştəri, ' . $t['contracts'] . ' müqavilə, ' . $t['payments'] . ' ödəniş'
+                . (!empty($job['collectorsAssigned']) ? ', təhsilatçı təyin olunan müqavilə: ' . $job['collectorsAssigned'] : ''),
             ['changes' => [
                 ['f' => 'customers', 'l' => 'Müştəri', 'o' => '', 'n' => (string) $t['customers']],
                 ['f' => 'contracts', 'l' => 'Müqavilə', 'o' => '', 'n' => (string) $t['contracts']],

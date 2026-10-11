@@ -190,8 +190,13 @@ function onec_read_ledger($path, &$stats) {
     });
     if (!$hdrOk) throw new Exception('1C hesabatının başlığı gözlənilən formatda deyil (A1 "Контрагент").');
     $stats['companies'] = count($companies);
+    return onec_build_contracts($docs, $order, $stats);
+}
 
-    // --- satış sənədləri → müqavilələr ---
+// Sənədlərdən (satış / qaytarma / digər) müqavilələr qurur — 1C və standart format üçün ORTAQ qaydalar:
+// mənfi ödənişlərin çıxılması, qaytarmaların satışlar arasında bölgüsü. Sənəd: ['cust','doc','type','no','docdate',
+// 'sold','saleDate','paid'=>[[tarix,məbləğ]],'pre','first'] + istəyə görə 'names'=>[soyad,ad,ataadi], 'tehsilatci'.
+function onec_build_contracts(array $docs, array $order, array &$stats) {
     $contracts = [];
     $byCust = [];
     $negDays = []; // "müştəri|tarix" => [açar, ...] (həmin gün mənfi ödənişi olan satış sənədləri)
@@ -235,9 +240,10 @@ function onec_read_ledger($path, &$stats) {
         foreach ($pos as [$t, $amt]) if (abs($amt) > 0.005) $payments[] = ['tarix' => $t, 'meblag' => round($amt, 2)];
 
         $w = preg_split('/\s+/u', $d['cust']);
+        $nm = $d['names'] ?? [$w[0] ?? '', $w[1] ?? '', implode(' ', array_slice($w, 2))];
         $contracts[$key] = [
-            'customer' => $d['cust'], 'soyad' => $w[0] ?? '', 'ad' => $w[1] ?? '',
-            'ataadi' => implode(' ', array_slice($w, 2)), 'sale_date' => $d['saleDate'] ?: $d['docdate'],
+            'customer' => $d['cust'], 'soyad' => $nm[0], 'ad' => $nm[1], 'ataadi' => $nm[2],
+            'tehsilatci' => $d['tehsilatci'] ?? '', 'sale_date' => $d['saleDate'] ?: $d['docdate'],
             'meblag' => round($d['sold'] + $extra, 2), 'invno' => $d['no'] !== '' ? $d['no'] : $d['doc'], 'payments' => $payments,
         ];
         $byCust[$d['cust']][] = $key;
@@ -293,6 +299,94 @@ function onec_read_ledger($path, &$stats) {
         if ($left > 0.005) $stats['returnsUnmatched']++;
     }
     return $contracts;
+}
+
+// Standart format ("Ödənişlər" vərəqi: Müştəri, Soyad, Ad, Ata adı, Növ, Tarix, Məbləğ, Sənəd, [Təhsilatçı]) →
+// 1C ilə eyni sənəd strukturu → onec_build_contracts (qalıqlar 1C rejimi ilə eyni qaydada hesablanır).
+// $c: sütun indeksləri ['musteri','soyad','ad','ataadi','nov','tarix','meblag','sened','tehsilatci'] (null = yoxdur).
+function std_read_ledger(array $rows, $headerIdx, array $c, &$stats) {
+    $stats = ['companies' => 0, 'netted' => 0, 'negLeft' => 0, 'returns' => 0, 'returnsUnmatched' => 0,
+              'otherDocsNonZero' => 0, 'prepayCols' => 0, 'orphanPayments' => 0];
+    $cell = fn($cells, $k) => $c[$k] === null ? '' : trim(preg_replace('/\s+/u', ' ', (string) ($cells[$c[$k]] ?? '')));
+    $docs = []; $order = []; $companies = [];
+    foreach ($rows as $idx => $cells) {
+        if ($idx <= $headerIdx) continue;
+        $cust = $cell($cells, 'musteri');
+        if ($cust === '') continue;
+        if (strpos($cust, '"') !== false) { $companies[$cust] = true; continue; }
+        $nov = $cell($cells, 'nov');
+        $sened = $cell($cells, 'sened');
+        $date = $c['tarix'] !== null ? xlsx_to_date($cells[$c['tarix']] ?? null) : null;
+        $amt = $c['meblag'] !== null ? (float) str_replace(',', '.', (string) ($cells[$c['meblag']] ?? 0)) : 0.0;
+        if ($sened === '') $sened = '#' . $nov . '#' . $idx; // sənədsiz sətir (məs. köhnə formatda qaytarma) — ayrıca sənəd
+        $key = $cust . '|' . $sened;
+        if (!isset($docs[$key])) {
+            $type = 'other';
+            if (mb_strpos($sened, 'Расходная накладная') === 0) $type = 'sale';
+            elseif (mb_strpos($sened, 'Приходная накладная') === 0) $type = 'return';
+            $no = $sened; $docDate = null;
+            if (preg_match('/накладная\s+(\S+)\s+от\s+(\d{2})\.(\d{2})\.(\d{4})/u', $sened, $m)) { $no = $m[1]; $docDate = "$m[4]-$m[3]-$m[2]"; }
+            $w = preg_split('/\s+/u', $cust);
+            $docs[$key] = ['cust' => $cust, 'doc' => $sened, 'type' => $type, 'no' => $no, 'docdate' => $docDate,
+                           'sold' => 0.0, 'saleDate' => null, 'paid' => [], 'pre' => 0.0, 'first' => $date,
+                           'names' => [$cell($cells, 'soyad') ?: ($w[0] ?? ''), $cell($cells, 'ad'), $cell($cells, 'ataadi')],
+                           'tehsilatci' => ''];
+            $order[] = $key;
+        }
+        $d = &$docs[$key];
+        if ($d['tehsilatci'] === '' && $c['tehsilatci'] !== null) $d['tehsilatci'] = $cell($cells, 'tehsilatci');
+        if ($nov === 'Satış') {
+            if ($d['type'] === 'other') $d['type'] = 'sale';
+            $d['sold'] += $amt; if ($d['saleDate'] === null) $d['saleDate'] = $date;
+        } elseif ($nov === 'Geri qaytarma') {
+            if ($d['type'] === 'other') $d['type'] = 'return';
+            $d['sold'] += -abs($amt); if ($d['saleDate'] === null) $d['saleDate'] = $date;
+        } elseif ($nov === 'Ödəniş' || $nov === 'Geri ödəniş') {
+            if (abs($amt) >= 0.005) $d['paid'][] = [(string) $date, $amt];
+        }
+        unset($d);
+    }
+    foreach ($docs as $d) if ($d['type'] === 'other' && $d['paid']) $stats['orphanPayments'] += count($d['paid']);
+    // satışsız sənəddəki ödəniş (köhnə idxal da nəzərə almırdı) — avans hesabına düşməsin
+    foreach ($order as $k) if ($docs[$k]['type'] === 'other') $docs[$k]['paid'] = [];
+    $stats['companies'] = count($companies);
+    return onec_build_contracts($docs, $order, $stats);
+}
+
+// İdxal faylındakı "Təhsilatçı" dəyəri → sistemdəki təhsilatçı (Soyad, Ad). Siyahıda olmayan dəyər (status, naməlum ad)
+// təhsilatçı vermir — müqavilənin qeydinə "1C: <dəyər>" yazılır. Mapping istifadəçi tərəfindən verilib (2026-10-12).
+const IMPORT_COLLECTOR_MAP = [
+    'ANAR' => ['Həşimov', 'Anar'],
+    'MEFTUN' => ['İmanov', 'Məftun'],
+    'NIGAR' => ['Süleymanzadə', 'Nigar'],
+    'RESAD' => ['Əliyev', 'Rəşad'],
+    'RESAD YENI' => ['Əliyev', 'Rəşad'],
+    'RUHENGIZ' => ['Ruhəngiz', 'Ruhəngiz'],
+    'SEYMUR' => ['Əmiraslanov', 'Seymur'],
+    'TALEH' => ['Qasımov', 'Taleh'],
+    'VALEH' => ['Qasımov', 'Valeh'],
+    'VALEH YENI' => ['Qasımov', 'Valeh'],
+    'VUQAR' => ['İbrahimov', 'Vüqar'],
+];
+
+// Ad müqayisəsi üçün: kiçik hərf, Azərbaycan hərfləri latın ekvivalentinə (ə→e, ş→s, ı/i̇→i …), artıq boşluqsuz
+function import_name_key($s) {
+    $s = mb_strtolower(trim((string) $s));
+    $s = strtr($s, ['ə' => 'e', 'ş' => 's', 'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'i̇' => 'i', 'ö' => 'o', 'ü' => 'u', '-' => ' ']);
+    return preg_replace('/\s+/u', ' ', $s);
+}
+
+// $collectors: [['id','soyad','ad'], …] → [fayl dəyəri => collectorId] (yalnız birmənalı tapılanlar) və tapılmayanlar
+function import_resolve_collectors(array $collectors, array &$unresolved) {
+    $byName = [];
+    foreach ($collectors as $r) $byName[import_name_key($r['soyad']) . '|' . import_name_key($r['ad'])][] = $r['id'];
+    $out = []; $unresolved = [];
+    foreach (IMPORT_COLLECTOR_MAP as $val => [$soyad, $ad]) {
+        $ids = $byName[import_name_key($soyad) . '|' . import_name_key($ad)] ?? [];
+        if (count($ids) === 1) $out[$val] = $ids[0];
+        else $unresolved[] = $val . ' → ' . $soyad . ' ' . $ad . (count($ids) > 1 ? ' (bir neçə eyni adlı təhsilatçı)' : ' (sistemdə tapılmadı)');
+    }
+    return $out;
 }
 
 // Satış məbləğlərinin cəmi $amt-a tam bərabər olan ən yaxşı dəst (açarlar). Üstünlük: az sənəd, qaytarmadan

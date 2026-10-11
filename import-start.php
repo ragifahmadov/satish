@@ -19,11 +19,12 @@ function month_add($y, $m, $delta) {
 }
 // İdxalın xülasəsində göstərilən izahlar (yalnız 1C formatında)
 function import_notes($format, $st, $lookup, $customersOut) {
-    if ($format !== '1C' || !$st) return [];
+    if (!$st) return [];
     $n = [];
     $noMatch = 0;
     foreach (array_keys($customersOut) as $k) if (!isset($lookup[$k])) $noMatch++;
-    $n[] = 'Format: 1C (Взаиморасчеты). FIN faylda yoxdur — boş qalır.';
+    $n[] = $format === '1C' ? 'Format: 1C (Взаиморасчеты). FIN faylda yoxdur — boş qalır.' : 'Format: standart ("Ödənişlər" vərəqi); qalıqlar 1C rejimi ilə eyni qaydada.';
+    if (!empty($st['orphanPayments'])) $n[] = 'Satışı tapılmayan sənədə aid ödəniş sətri (nəzərə alınmadı): ' . $st['orphanPayments'];
     if ($noMatch) $n[] = "Müştəri siyahısında adı tapılmayan (telefonsuz) müştəri: $noMatch";
     $withAddr = 0; $withNote = 0;
     foreach ($customersOut as $c) { $withAddr += ($c['faktikiUnvan'] ?? '') !== ''; $withNote += ($c['qeyd'] ?? '') !== ''; }
@@ -124,69 +125,13 @@ try {
         fail_json('Gözlənilən sütunlar (Müştəri, Növ, Sənəd) tapılmadı. Fayl formatını yoxlayın.');
     }
 
-    $allRows = [];
-    foreach ($ledgerRows as $idx => $cells) {
-        if ($idx <= $headerIdx) continue;
-        $musteri = trim((string) ($cells[$colMusteri] ?? ''));
-        if ($musteri === '') continue;
-        $allRows[] = [
-            'musteri' => $musteri,
-            'soyad' => $colSoyad !== null ? trim((string) ($cells[$colSoyad] ?? '')) : '',
-            'ad' => $colAd !== null ? trim((string) ($cells[$colAd] ?? '')) : '',
-            'ataadi' => $colAtaAdi !== null ? trim((string) ($cells[$colAtaAdi] ?? '')) : '',
-            'nov' => trim((string) ($cells[$colNov] ?? '')),
-            'tarix' => $colTarix !== null ? xlsx_to_date($cells[$colTarix] ?? null) : null,
-            'meblag' => $colMeblag !== null ? (float) str_replace(',', '.', (string) ($cells[$colMeblag] ?? 0)) : 0.0,
-            'sened' => $colSened !== null ? trim((string) ($cells[$colSened] ?? '')) : '',
-        ];
-    }
-
-    $contracts = [];
-    foreach ($allRows as $r) {
-        if ($r['nov'] !== 'Satış') continue;
-        if (strpos($r['musteri'], '"') !== false) continue;
-        if ($r['sened'] === '') continue;
-        $invno = $r['sened'];
-        if (preg_match('/накладная\s+(\S+)\s+от/u', $r['sened'], $m)) { $invno = $m[1]; }
-        $contracts[$r['sened']] = [
-            'customer' => $r['musteri'], 'soyad' => $r['soyad'] ?: explode(' ', $r['musteri'])[0],
-            'ad' => $r['ad'], 'ataadi' => $r['ataadi'], 'sale_date' => $r['tarix'],
-            'meblag' => $r['meblag'], 'invno' => $invno, 'payments' => [],
-        ];
-    }
-
-    foreach ($allRows as $r) {
-        if (!in_array($r['nov'], ['Ödəniş', 'Geri ödəniş'], true)) continue;
-        if (isset($contracts[$r['sened']])) {
-            $contracts[$r['sened']]['payments'][] = ['tarix' => $r['tarix'], 'meblag' => $r['meblag']];
-        }
-    }
-
-    $custContracts = [];
-    foreach ($contracts as $sened => $c) { $custContracts[$c['customer']][] = $sened; }
-    foreach ($allRows as $r) {
-        if ($r['nov'] !== 'Geri qaytarma') continue;
-        if (strpos($r['musteri'], '"') !== false) continue;
-        $candidates = $custContracts[$r['musteri']] ?? [];
-        if (!$candidates || !$r['tarix']) continue;
-        $rDate = strtotime($r['tarix']);
-        usort($candidates, function ($a, $b) use ($contracts, $rDate) {
-            $da = $contracts[$a]['sale_date'] ? abs($rDate - strtotime($contracts[$a]['sale_date'])) : PHP_INT_MAX;
-            $db = $contracts[$b]['sale_date'] ? abs($rDate - strtotime($contracts[$b]['sale_date'])) : PHP_INT_MAX;
-            return $da <=> $db;
-        });
-        $chosen = null;
-        foreach ($candidates as $sened) {
-            if ($contracts[$sened]['meblag'] + $r['meblag'] >= -0.01) { $chosen = $sened; break; }
-        }
-        if ($chosen === null) {
-            $best = null; $bestVal = -INF;
-            foreach ($candidates as $sened) { if ($contracts[$sened]['meblag'] > $bestVal) { $bestVal = $contracts[$sened]['meblag']; $best = $sened; } }
-            $chosen = $best;
-        }
-        if ($chosen !== null) { $contracts[$chosen]['meblag'] = max(0, $contracts[$chosen]['meblag'] + $r['meblag']); }
-    }
-
+    // Standart format da 1C ilə eyni qaydalarla (lib_1c.php: onec_build_contracts) hesablanır
+    $colTehsil = xlsx_match_column($map, ['təhsilatçı', 'tehsilatci']);
+    $contracts = std_read_ledger($ledgerRows, $headerIdx, [
+        'musteri' => $colMusteri, 'soyad' => $colSoyad, 'ad' => $colAd, 'ataadi' => $colAtaAdi, 'nov' => $colNov,
+        'tarix' => $colTarix, 'meblag' => $colMeblag, 'sened' => $colSened, 'tehsilatci' => $colTehsil,
+    ], $onecStats);
+    unset($ledgerRows);
     } // standart format sonu
 
     foreach ($contracts as $sened => &$c) {
@@ -209,6 +154,14 @@ try {
             unset($contracts[$sened]);
             $skippedClosed++;
         }
+    }
+
+    // Təhsilatçı sütunu (standart formatda, istəyə görə): mapping → sistemdəki təhsilatçı; qalan dəyər → qeyd
+    $collectorIds = []; $collectorUnresolved = []; $collectorStats = ['assigned' => 0, 'noted' => 0];
+    $hasTehsil = false;
+    foreach ($contracts as $c) if (($c['tehsilatci'] ?? '') !== '') { $hasTehsil = true; break; }
+    if ($hasTehsil) {
+        $collectorIds = import_resolve_collectors(get_pdo()->query('SELECT id, soyad, ad FROM collectors')->fetchAll(), $collectorUnresolved);
     }
 
     $customersOut = [];
@@ -249,9 +202,15 @@ try {
             $tarix = $c['sale_date'];
         }
 
+        $tv = mb_strtoupper(preg_replace('/\s+/u', ' ', trim((string) ($c['tehsilatci'] ?? ''))));
+        $colId = ($tv !== '' && isset($collectorIds[$tv])) ? $collectorIds[$tv] : '';
+        $qeyd = ($tv !== '' && $colId === '') ? '1C: ' . trim((string) $c['tehsilatci']) : '';
+        if ($colId !== '') $collectorStats['assigned']++;
+        if ($qeyd !== '') $collectorStats['noted']++;
         $contractsOut[] = [
             'tempId' => $tempId, 'customerKey' => $key, 'nomre' => $nomre, 'tarix' => $tarix,
             'meblag' => round($c['meblag'], 2), 'ilkinOdenis' => round($c['ilkinOdenis'], 2),
+            'collectorId' => $colId, 'qeyd' => $qeyd,
         ];
         foreach ($c['payments'] as $p) {
             $paymentsOut[] = ['contractTempId' => $tempId, 'tarix' => $p['tarix'], 'meblag' => round($p['meblag'], 2)];
@@ -268,6 +227,7 @@ try {
         'custIdMap' => [], 'contractIdMap' => [],
         'stage' => 'customers', 'offset' => 0,
         'totals' => ['customers' => count($customersOut), 'contracts' => count($contractsOut), 'payments' => count($paymentsOut)],
+        'collectorsAssigned' => $collectorStats['assigned'],
     ];
     file_put_contents("$jobDir/$jobId.json", json_encode($job));
 
@@ -276,7 +236,11 @@ try {
         'totals' => $job['totals'],
         'skippedClosed' => $skippedClosed,
         'format' => $format,
-        'notes' => import_notes($format, $onecStats, $nameLookup, $customersOut),
+        'notes' => array_merge(import_notes($format, $onecStats, $nameLookup, $customersOut),
+            $hasTehsil ? array_merge(
+                ['Təhsilatçı təyin olunan müqavilə: ' . $collectorStats['assigned'] . '; təhsilatçı dəyəri qeydə yazılan: ' . $collectorStats['noted']],
+                $collectorUnresolved ? ['Mapping-də olub sistemdə birmənalı tapılmayan (boş qalır, qeydə yazılır): ' . implode('; ', $collectorUnresolved)] : []
+            ) : []),
     ]);
 
 } catch (Throwable $e) {

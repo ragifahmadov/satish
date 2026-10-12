@@ -23,7 +23,9 @@ try {
         $r = import_prepare($_FILES['customer_fin_file']['tmp_name'], $_FILES['contract_payments_file']['tmp_name'], [
             'collectors' => fn() => get_pdo()->query('SELECT id, soyad, ad FROM collectors')->fetchAll(),
             'lastPayOrder' => true,
+            'returnLinks' => parse_return_links($_POST['links'] ?? '', $linkErrors),
         ]);
+        foreach ($linkErrors as $e) $r['notes'][] = 'Bağlama sətri oxunmadı — ' . $e;
     } catch (ImportUserError $e) {
         fail_json($e->getMessage());
     }

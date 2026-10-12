@@ -29,6 +29,8 @@ function import_notes($format, $st, $lookup, $customersOut) {
     if ($st['companies']) $n[] = 'Keçilən şirkət (adında dırnaq): ' . $st['companies'];
     $n[] = 'Mal qaytarılması: ' . $st['returns'] . ($st['returnsUnmatched'] ? ' (satışı tapılmayan: ' . $st['returnsUnmatched'] . ')' : '');
     if ($st['netted']) $n[] = 'Ödənişdən çıxılan mənfi düzəliş: ' . $st['netted'] . ($st['negLeft'] ? ' (ödənişdən çox olduğu üçün satış məbləğinə əlavə edilən: ' . $st['negLeft'] . ' müqavilə)' : '');
+    if (!empty($st['linksApplied'])) $n[] = 'İstifadəçi bağlaması tətbiq olunan qaytarma: ' . $st['linksApplied'];
+    foreach ($st['linkErrors'] ?? [] as $e) $n[] = 'Bağlama tətbiq olunmadı — ' . $e;
     if ($st['otherDocsNonZero']) $n[] = 'Sıfırlanmayan avans ("Поступление в кассу") olan müştəri: ' . $st['otherDocsNonZero'] . ' — idxal olunmayıb';
     if ($st['prepayCols']) $n[] = 'Satış/qaytarma sənədində avans sütunu dolu sətir: ' . $st['prepayCols'] . ' — nəzərə alınmayıb';
     return $n;
@@ -215,6 +217,24 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
                 $collectorUnresolved ? ['Mapping-də olub sistemdə birmənalı tapılmayan (boş qalır, qeydə yazılır): ' . implode('; ', $collectorUnresolved)] : []
             ) : []),
     ];
+}
+
+// "767 = 7112" / "767 = 7112; 6478" sətirlərini oxuyur → [[qaytarma №, [satış №…], sətir], …]; səhv sətirlər $errors-a
+function parse_return_links($text, array &$errors) {
+    $out = []; $errors = [];
+    foreach (preg_split('/\r?\n/', (string) $text) as $line) {
+        $line = trim(preg_replace('/#.*$/', '', $line));
+        if ($line === '') continue;
+        if (!preg_match('/^(?:НФНФ-)?0*(\d+)\s*(?:=|->|→)\s*(.+)$/u', $line, $m)) { $errors[] = "«{$line}»: format «qaytarma № = satış №» olmalıdır"; continue; }
+        $sales = [];
+        foreach (preg_split('/[;,\s]+/', trim($m[2])) as $sn) {
+            $sn = preg_replace('/^(?:НФНФ-)?0*/u', '', trim($sn));
+            if ($sn !== '') $sales[] = $sn;
+        }
+        if (!$sales) { $errors[] = "«{$line}»: satış nömrəsi yoxdur"; continue; }
+        $out[] = [$m[1], $sales, $line];
+    }
+    return $out;
 }
 
 // Müqavilə tarixindən ödəniş tarixinə ay fərqi (qrafik ayı) — import-step.php ilə eyni qayda (1…10)

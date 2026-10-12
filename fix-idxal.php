@@ -109,12 +109,21 @@ function fix_check(PDO $pdo, array $item, $lock) {
 }
 
 // Müştərinin vəziyyəti: 'todo' (köhnə idxalla eyni — düzələcək), 'done' (artıq yeni nəticə ilə eynidir), 'manual'
+// $item['bases']: bazanın ola biləcəyi vəziyyətlər (köhnə qayda ilə idxal; yeni qayda ilə idxal/düzəliş).
+// Uyğun gələn baza $item['old'] olur. Qaytarır: [vəziyyət, yoxlama nəticəsi, $item]
 function fix_state(PDO $pdo, array $item, $lock) {
-    $chk = fix_check($pdo, $item, $lock);
-    if ($chk['ok']) return ['todo', $chk];
-    $done = fix_check($pdo, ['old' => $item['new'], 'new' => $item['new']] + $item, $lock);
-    if ($done['ok'] && $item['new']) return ['done', $done];
-    return ['manual', $chk];
+    if ($item['new']) {
+        $done = fix_check($pdo, ['old' => $item['new'], 'new' => $item['new']] + $item, $lock);
+        if ($done['ok']) return ['done', $done, $item];
+    }
+    $first = null;
+    foreach ($item['bases'] as $base) {
+        $try = ['old' => $base] + $item;
+        $chk = fix_check($pdo, $try, $lock);
+        if ($chk['ok']) return ['todo', $chk, $try];
+        if ($first === null) $first = [$chk, $try];
+    }
+    return ['manual', $first[0], $first[1]];
 }
 
 function fix_insert($pdo, $table, array $data) {
@@ -212,21 +221,27 @@ try {
         }
         $collectors = fn() => $pdo->query('SELECT id, soyad, ad FROM collectors')->fetchAll();
         $fin = $_FILES['customer_fin_file']['tmp_name']; $led = $_FILES['contract_payments_file']['tmp_name'];
+        $linkErrors = [];
+        $links = parse_return_links($_POST['links'] ?? '', $linkErrors);
         $rOld = import_prepare($fin, $led, ['collectors' => $collectors, 'lastPayOrder' => false]);
         $rNew = import_prepare($fin, $led, ['collectors' => $collectors, 'lastPayOrder' => true]);
-        $old = fix_expected($rOld); $new = fix_expected($rNew);
+        $rTgt = $links ? import_prepare($fin, $led, ['collectors' => $collectors, 'lastPayOrder' => true, 'returnLinks' => $links]) : $rNew;
+        foreach ($rTgt['notes'] as $n) if (strpos($n, 'Bağlama') === 0 || strpos($n, 'İstifadəçi bağlaması') === 0) $linkErrors[] = $n;
+        $old = fix_expected($rOld); $new = fix_expected($rNew); $tgt = fix_expected($rTgt);
         $items = [];
-        foreach (array_unique(array_merge(array_keys($old), array_keys($new))) as $k) {
-            $o = $old[$k] ?? []; $n = $new[$k] ?? [];
-            if ($o == $n) continue;
-            $nc = $rNew['customers'][$k] ?? $rOld['customers'][$k] ?? [];
-            $items[] = ['key' => $k, 'label' => $k, 'old' => $o, 'new' => $n, 'newCustomer' => $nc];
+        foreach (array_unique(array_merge(array_keys($old), array_keys($new), array_keys($tgt))) as $k) {
+            $o = $old[$k] ?? []; $n = $new[$k] ?? []; $t = $tgt[$k] ?? [];
+            if ($o == $t && $n == $t) continue;
+            $bases = [];
+            foreach ([$o, $n] as $b) if ($b != $t && !in_array($b, $bases)) $bases[] = $b;
+            $nc = $rTgt['customers'][$k] ?? $rNew['customers'][$k] ?? $rOld['customers'][$k] ?? [];
+            $items[] = ['key' => $k, 'label' => $k, 'bases' => $bases, 'old' => $bases[0] ?? $o, 'new' => $t, 'newCustomer' => $nc];
         }
         usort($items, fn($a, $b) => strcmp($a['key'], $b['key']));
         $lock = '';
         $okN = 0; $doneN = 0; $rowsHtml = '';
         foreach ($items as &$it) {
-            [$state, $chk] = fix_state($pdo, $it, $lock);
+            [$state, $chk, $it] = fix_state($pdo, $it, $lock);
             $it['ok'] = $state === 'todo'; $it['reason'] = $state === 'manual' ? $chk['reason'] : '';
             $okN += $state === 'todo' ? 1 : 0;
             if ($state === 'done') { $doneN++; continue; }
@@ -243,6 +258,8 @@ try {
         $planId = make_uuid();
         file_put_contents(fix_plan_dir() . '/' . $planId . '.json', json_encode(['created' => time(), 'items' => $items], JSON_UNESCAPED_UNICODE));
         $out = '<h3>Önizləmə — heç nə dəyişməyib</h3>'
+            . ($links || $linkErrors ? '<p><b>Qaytarma bağlamaları:</b> ' . count($links) . ' sətir.</p>'
+                . ($linkErrors ? '<ul><li>' . implode('</li><li>', array_map('h', $linkErrors)) . '</li></ul>' : '') : '')
             . '<p>Qaydanın təsir etdiyi müştəri: <b>' . count($items) . '</b> · artıq düzəldilib: <b>' . $doneN . '</b> · avtomatik düzələcək: <b>'
             . $okN . '</b> · əl ilə baxılmalı: <b>' . (count($items) - $okN - $doneN) . '</b>. Qalan müştərilərdə köhnə və yeni qayda eyni nəticə verir.</p>'
             . '<p class="muted">«Qalıq» müştərinin bu müqavilələri üzrə cəmidir; köhnə və yeni qayda eyni olmalıdır — dəyişən yalnız borcun hansı müqavilədə durmasıdır.</p>'
@@ -263,8 +280,9 @@ try {
             if (empty($it['ok'])) continue;
             $pdo->beginTransaction();
             try {
-                $chk = fix_check($pdo, $it, $lock);   // önizləmədən sonra dəyişibsə — toxunma
-                if (!$chk['ok']) { $pdo->rollBack(); $res['skipped'][] = $it['label'] . ': ' . $chk['reason']; continue; }
+                [$state, $chk, $it] = fix_state($pdo, $it, $lock);   // önizləmədən sonra dəyişibsə — toxunma
+                if ($state === 'done') { $pdo->rollBack(); continue; }
+                if ($state !== 'todo') { $pdo->rollBack(); $res['skipped'][] = $it['label'] . ': ' . $chk['reason']; continue; }
                 [$d, $a, $u] = fix_apply_one($pdo, $it, $chk, $opId);
                 $pdo->commit();
                 $res['fixed']++; $res['del'] += $d; $res['add'] += $a; $res['upd'] += $u;
@@ -312,6 +330,10 @@ a{color:#8a6420;}
     <input type="hidden" name="action" value="preview">
     <label>1) Müştəri faylı (.xlsx)</label><input type="file" name="customer_fin_file" accept=".xlsx" required>
     <label>2) Müqavilə + ödənişlər faylı (.xlsx)</label><input type="file" name="contract_payments_file" accept=".xlsx" required>
+    <label>3) Qaytarma bağlamaları (istəyə görə)</label>
+    <textarea name="links" rows="5" style="width:100%;font-family:monospace;" placeholder="767 = 7112&#10;341 = 6477; 6478"><?= h($_POST['links'] ?? '') ?></textarea>
+    <p class="muted">Hər sətirdə: <b>qaytarma № = satış №</b> (1C-də qaytarılan mal hansı satışdandırsa). Bir neçə satış: «;» ilə, sıra ilə doldurulur.
+    Bağlamalar yadda saxlanmır, amma əvvəl düzəldilmiş müştərilərə bağlamasız işə salanda da toxunulmur. Yalnız yeni bağlamaları yazmağınız kifayətdir.</p>
     <button type="submit">Önizləmə</button>
   </form>
 </div>

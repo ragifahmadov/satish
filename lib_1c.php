@@ -258,18 +258,63 @@ function onec_build_contracts(array $docs, array $order, array &$stats, array $o
         if ($d['type'] !== 'return') continue;
         $effect = round($d['sold'] - array_sum(array_column($d['paid'], 1)), 2); // mənfi
         if ($effect > -0.005) continue;
-        $rets[] = ['cust' => $d['cust'], 'date' => $d['saleDate'] ?: ($d['docdate'] ?: $d['first']), 'effect' => $effect];
+        $rets[] = ['cust' => $d['cust'], 'date' => $d['saleDate'] ?: ($d['docdate'] ?: $d['first']), 'effect' => $effect, 'no' => (string) $d['no']];
     }
     usort($rets, fn($x, $y) => strcmp($x['date'], $y['date']));
+
+    // İstifadəçinin bağlamaları ("767 = 7112"): qaytarma göstərilən satış(lar)a yazılır (1C bu əlaqəni saxlamır).
+    // Müştəri satış nömrəsinə görə tapılır (qaytarma nömrələri illər üzrə təkrarlanır, satış nömrələri unikaldır).
+    $linked = [];   // rets indeksi => [satış açarları]
+    $stats['linkErrors'] = []; $stats['linksApplied'] = 0;
+    if (!empty($opts['returnLinks'])) {
+        $saleOwner = [];
+        foreach ($contracts as $k => $c) $saleOwner[(string) $c['invno']][] = $k;
+        foreach ($opts['returnLinks'] as [$retNo, $saleNos, $line]) {
+            $keys = []; $err = '';
+            foreach ($saleNos as $sn) {
+                $own = $saleOwner[$sn] ?? [];
+                if (count($own) !== 1) { $err = count($own) ? "satış №$sn bir neçə müştəridədir" : "satış №$sn tapılmadı"; break; }
+                $keys[] = $own[0];
+            }
+            if ($err === '') {
+                $cust = $contracts[$keys[0]]['customer'];
+                foreach ($keys as $k) if ($contracts[$k]['customer'] !== $cust) $err = 'satışlar fərqli müştərilərdədir';
+            }
+            if ($err === '') {
+                $hits = [];
+                foreach ($rets as $i => $rt) if ($rt['cust'] === $cust && $rt['no'] === $retNo) $hits[] = $i;
+                if (count($hits) !== 1) $err = count($hits) ? "bu müştərinin bir neçə №$retNo qaytarması var" : "bu müştəridə №$retNo qaytarması tapılmadı";
+                else $linked[$hits[0]] = $keys;
+            }
+            if ($err !== '') $stats['linkErrors'][] = "«{$line}»: $err";
+        }
+    }
     // Qaytarma bir neçə satışı birlikdə bağlaya bilər (məs. 920 = 380 + 540): təsir sənədlər arasında
     // hər birinin qalıq borcu (satış − ödənişlər) qədər bölünür. Sıra: məbləğlərinin cəmi qaytarma ilə tam eyni olan satış(lar),
     // eyni gün mənfi ödənişi olan satış sənədi,
     // sonra tarixcə ən yaxın əvvəlki, sonra sonrakı satışlar. Borcdan artıq qalan hissə (müştəri artıq ödəyib)
     // satış məbləği sıfıra enənədək ilk sənədə yazılır.
-    foreach ($rets as $rt) {
+    foreach ($rets as $ri => $rt) {
         $stats['returns']++;
         $cands = $byCust[$rt['cust']] ?? [];
         if (!$cands) { $stats['returnsUnmatched']++; continue; }
+        if (isset($linked[$ri])) {   // istifadəçinin bağlaması: əvvəl göstərilən satışlar (verilən sırada), artığı digərlərinə
+            $stats['linksApplied']++;
+            $cands = array_values(array_unique(array_merge($linked[$ri], array_diff($cands, $linked[$ri]))));
+            $left = -$rt['effect'];
+            foreach ([true, false] as $byDebt) {
+                foreach ($cands as $k) {
+                    if ($left <= 0.005) break;
+                    $cap = $byDebt ? $contracts[$k]['meblag'] - array_sum(array_column($contracts[$k]['payments'], 'meblag')) : $contracts[$k]['meblag'];
+                    $take = round(min(max(0, $cap), $left), 2);
+                    if ($take <= 0) continue;
+                    $contracts[$k]['meblag'] = round($contracts[$k]['meblag'] - $take, 2);
+                    $left = round($left - $take, 2);
+                }
+            }
+            if ($left > 0.005) $stats['returnsUnmatched']++;
+            continue;
+        }
         $rd = strtotime($rt['date']);
         $hint = array_flip($negDays[$rt['cust'] . '|' . $rt['date']] ?? []);
         // Məbləğləri cəmi qaytarma ilə tam eyni olan satış(lar) — bütün malın qaytarılması — ən güclü işarədir

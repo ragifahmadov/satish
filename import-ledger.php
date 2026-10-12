@@ -47,6 +47,12 @@ require_admin(false);
       </div>
       <p class="hint">"Ödənişlər" adlı vərəqi olan, Müqavilə/Müştəri/Soyad/Ad/Ata adı/Növ/Tarix/Məbləğ/Sənəd sütunlu fayl (istəyə görə «Təhsilatçı» sütunu: tanınan ad → müqavilənin təhsilatçısı, qalan dəyər → müqavilənin qeydi) — <b>və ya</b> 1C-nin "Взаиморасчеты с контрагентами" hesabatı (Контрагент → Договор → Документ → Год → День qruplaşması ilə). Format avtomatik tanınır.</p>
 
+      <div class="field">
+        <label>3) Qaytarma bağlamaları (istəyə görə)</label>
+        <textarea name="links" rows="4" style="width:100%;font-family:monospace;box-sizing:border-box;" placeholder="767 = 7112"></textarea>
+      </div>
+      <p class="hint">Hər sətirdə «qaytarma № = satış №» — 1C qaytarmanı satışa bağlamadığı üçün bunu siz göstərirsiniz. «İdxal düzəlişi»ndə tətbiq etdiyiniz bağlamaları yenidən idxalda da buraya yazın.</p>
+
       <button type="submit" id="submit-btn">İdxal et</button>
     </form>
 

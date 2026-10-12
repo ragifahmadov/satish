@@ -49,11 +49,21 @@ function fix_name_key($soyad, $ad, $ata) {
 }
 
 // Bazadakı müqavilə gözlənilən (köhnə idxal) vəziyyətlə tam eynidirmi? '' = eyni, əks halda səbəb
-function fix_db_matches(PDO $pdo, array $row, array $exp, $lock) {
+// $loose = true ("artıq düzəldilib" yoxlaması): yalnız məbləğ, ilkin, tarix və idxaldan gələn ödənişlər müqayisə olunur;
+// idxaldan sonra əlavə olunan ödəniş/qaytarma, təhsilatçı/qeyd və s. dəyişiklikləri nəzərə alınmır.
+function fix_db_matches(PDO $pdo, array $row, array $exp, $lock, $loose = false) {
     $why = [];
     if (abs((float) $row['meblag'] - $exp['meblag']) > 0.005) $why[] = 'satış məbləği dəyişib';
     if (abs((float) $row['ilkinOdenis'] - $exp['ilkin']) > 0.005) $why[] = 'ilkin ödəniş dəyişib';
     if (substr((string) $row['tarix'], 0, 10) !== $exp['tarix']) $why[] = 'tarix dəyişib';
+    if ($loose) {
+        $st = $pdo->prepare('SELECT odemeTarixi, meblag FROM payments WHERE contractId = ? AND COALESCE(collectorId, \'\') = \'\' AND COALESCE(emeliyyatNovu, \'\') = \'\'' . $lock);
+        $st->execute([$row['id']]);
+        $pp = array_map(fn($p) => [substr((string) $p['odemeTarixi'], 0, 10), fix_amt($p['meblag'])], $st->fetchAll());
+        usort($pp, fn($a, $b) => [$a[0], $a[1]] <=> [$b[0], $b[1]]);
+        if ($pp !== $exp['payments']) $why[] = 'ödənişlər fərqlidir';
+        return $why ? 'Müqavilə №' . $exp['nomre'] . ': ' . implode(', ', $why) : '';
+    }
     if ((string) $row['qeyd'] !== $exp['qeyd']) $why[] = 'qeyd dəyişib';
     if ((string) ($row['currentCollectorId'] ?? '') !== $exp['collectorId']) $why[] = 'təhsilatçı dəyişib';
     $tt = json_decode((string) $row['tehsilatciTeyinatlari'], true) ?: [];
@@ -76,7 +86,10 @@ function fix_db_matches(PDO $pdo, array $row, array $exp, $lock) {
 }
 
 // Bir müştərinin vəziyyətini yoxlayır. Qaytarır: ['ok'=>bool, 'reason', 'customerId', 'rows'=>[nomre=>dbRow]]
-function fix_check(PDO $pdo, array $item, $lock) {
+// $mode 'todo': dəyişəcək müqavilələr (silinən / fərqli) köhnə idxalla TAM eyni olmalıdır; dəyişməyən müqavilələrdə
+// yalnız mövcudluq yoxlanılır (onlara toxunulmur — idxaldan sonra ödəniş qəbul olunsa da düzəlişə mane deyil).
+// $mode 'done': hədəf müqavilələr yumşaq müqayisə ilə ($loose) eyni, bazalardakı silinməli müqavilələr isə yoxdur.
+function fix_check(PDO $pdo, array $item, $lock, $mode = 'todo') {
     $rows = []; $custId = null;
     $sel = $pdo->prepare('SELECT * FROM contracts WHERE nomre = ?' . $lock);
     foreach ($item['old'] as $nomre => $exp) {
@@ -86,9 +99,21 @@ function fix_check(PDO $pdo, array $item, $lock) {
         $row = $found[0];
         if ($custId !== null && $row['customerId'] !== $custId) return ['ok' => false, 'reason' => 'Müqavilələr fərqli müştərilərdədir'];
         $custId = $row['customerId'];
-        $why = fix_db_matches($pdo, $row, $exp, $lock);
-        if ($why !== '') return ['ok' => false, 'reason' => $why];
+        $unchanged = $mode === 'todo' && isset($item['new'][$nomre]) && $item['new'][$nomre] == $exp;
+        if (!$unchanged) {
+            $why = fix_db_matches($pdo, $row, $exp, $lock, $mode === 'done');
+            if ($why !== '') return ['ok' => false, 'reason' => $why];
+        }
         $rows[$nomre] = $row;
+    }
+    if ($mode === 'done') {
+        $cnt = $pdo->prepare('SELECT COUNT(*) FROM contracts WHERE nomre = ?' . ($custId !== null ? ' AND customerId = ?' : ''));
+        foreach ($item['bases'] ?? [] as $base) {
+            foreach (array_diff_key($base, $item['new']) as $nomre => $_) {
+                $cnt->execute($custId !== null ? [$nomre, $custId] : [$nomre]);
+                if ((int) $cnt->fetchColumn() > 0) return ['ok' => false, 'reason' => 'Müqavilə №' . $nomre . ' hələ bazadadır'];
+            }
+        }
     }
     if ($custId === null) { // köhnə idxalda bu müştərinin açıq müqaviləsi yox idi — adla axtarılır
         $nc = $item['newCustomer'];
@@ -113,7 +138,7 @@ function fix_check(PDO $pdo, array $item, $lock) {
 // Uyğun gələn baza $item['old'] olur. Qaytarır: [vəziyyət, yoxlama nəticəsi, $item]
 function fix_state(PDO $pdo, array $item, $lock) {
     if ($item['new']) {
-        $done = fix_check($pdo, ['old' => $item['new'], 'new' => $item['new']] + $item, $lock);
+        $done = fix_check($pdo, ['old' => $item['new'], 'new' => $item['new']] + $item, $lock, 'done');
         if ($done['ok']) return ['done', $done, $item];
     }
     $first = null;

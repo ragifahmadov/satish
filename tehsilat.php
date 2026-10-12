@@ -47,6 +47,9 @@ header('Content-Type: text/html; charset=utf-8');
   .addr{margin-top:10px;font-size:14px;line-height:1.4;}
   table{width:100%;border-collapse:collapse;font-size:14px;} td{padding:9px 4px;border-bottom:1px solid var(--border);} td.r{text-align:right;white-space:nowrap;}
   .tag{display:inline-block;padding:3px 8px;border-radius:10px;font-size:12px;font-weight:600;}
+  .st{display:inline-block;padding:3px 9px;border-radius:10px;font-size:12px;font-weight:600;margin-left:6px;vertical-align:middle;background:rgba(120,110,95,.14);color:var(--muted);}
+  .st-green{background:var(--green-bg);color:var(--green);} .st-amber{background:#F6EBD3;color:#8A6530;} .st-red{background:var(--red-bg);color:var(--red);}
+  .st-blue{background:#E0EAF5;color:#2F5D8A;} .st-purple{background:#ECE3F3;color:#6A4A86;}
   .t-ok{background:var(--green-bg);color:var(--green);} .t-no{background:var(--red-bg);color:var(--red);} .t-cur{background:var(--accent);color:#2A1D08;} .t-fut{color:var(--muted);}
   .err{background:var(--red-bg);color:var(--red);padding:12px 14px;border-radius:12px;margin:10px 0;font-size:15px;}
   .warn{background:#FBEFD5;color:#7A5410;padding:12px 14px;border-radius:12px;margin:10px 0;font-size:15px;}
@@ -95,6 +98,7 @@ function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','
 function fmtMoney(n){ n=Number(n)||0; return n.toLocaleString('az-AZ',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₼'; }
 function fmtDate(iso){ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(iso||''); return m?(m[3]+'.'+m[2]+'.'+m[1]):'—'; }
 function isRet(p){ return p.emeliyyatNovu==='Geri qaytarma'; }
+function stTag(name,color){ return name?`<span class="st st-${esc(color||'gray')}">${esc(name)}</span>`:''; }   // müqavilə statusu
 function uuid(){
   if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
   const b=new Uint8Array(16); (window.crypto||{}).getRandomValues ? crypto.getRandomValues(b) : b.forEach((_,i)=>b[i]=Math.random()*256|0);
@@ -146,7 +150,7 @@ function renderSearch(){
   if(S.q.trim().length<3){ box.innerHTML=`<div class="hint">Ən azı 3 simvol yazın — müqavilə nömrəsi və ya müştərinin soyadı/adı</div>`; return; }
   if(S.searching && !S.results.length){ box.innerHTML=`<div class="hint">Axtarılır…</div>`; return; }
   if(!S.results.length){ box.innerHTML=`<div class="hint">Nəticə tapılmadı</div>`; return; }
-  box.innerHTML=S.results.map(r=>`<button class="res" data-open="${esc(r.id)}"><div class="n">№ ${esc(r.nomre)}</div><div class="c">${esc(r.cust||'—')}</div>
+  box.innerHTML=S.results.map(r=>`<button class="res" data-open="${esc(r.id)}"><div class="n">№ ${esc(r.nomre)}${stTag(r.status,r.statusColor)}</div><div class="c">${esc(r.cust||'—')}</div>
     <div class="d">Qalıq borc: <b class="${r.debt>0.009?'red':'green'}">${fmtMoney(r.debt)}</b></div></button>`).join('');
 }
 async function doSearch(){
@@ -187,7 +191,7 @@ function renderContract(){
       <div class="gap"></div><button class="btn btn-primary" id="pay-btn" data-act="to-confirm">Qəbul et</button>
       <div id="pay-err">${S.sendErr?`<div class="err">${esc(S.sendErr)}</div>`:''}</div></div>`);
   app.innerHTML=`<button class="back" data-go="search">‹ Axtarışa qayıt</button>
-    <div class="card"><h2>№ ${esc(c.nomre)}</h2><div style="font-size:17px;font-weight:600;">${esc(cu.name)}</div>
+    <div class="card"><h2>№ ${esc(c.nomre)}${stTag(c.status,c.statusColor)}</h2><div style="font-size:17px;font-weight:600;">${esc(cu.name)}</div>
       <div>${(cu.phones||[]).map(t=>`<a class="tel" href="tel:${esc(t.replace(/[^\d+]/g,''))}">📞 ${esc(t)}</a>`).join('')}</div>
       ${cu.address?`<div class="addr">📍 ${esc(cu.address)}</div>`:''}
       <div class="kv"><div><span>Qalıq borc</span><b class="${k.debt>0.009?'red':'green'}">${fmtMoney(k.debt)}</b></div>

@@ -29,6 +29,16 @@ $SCHEMA = [
         ['nomre', 'string'], ['tarix', 'date'], ['customerId', 'string'], ['salespersonId', 'string'],
         ['meblag', 'number'], ['ilkinOdenis', 'number'], ['muddet', 'int'], ['qeyd', 'text'], ['tehsilatciTeyinatlari', 'json'],
         ['kuratorTeyinatlari', 'json'], ['mehkemeQeydleri', 'json'],
+        // Status (köməkçi məlumat "Müqavilə statusları"nın dəyəri) və onun son dəyişmə tarixi (server yazır) — lookups.php
+        ['statusId', 'string'], ['statusTarix', 'date'],
+    ],
+    // Köməkçi məlumatlar: tip (kod — yalnız sistem tipində, proqram onu kodla tanıyır) və onun dəyərləri
+    'lookup_types' => [
+        ['kod', 'string'], ['ad', 'string'], ['qeyd', 'text'], ['sistem', 'int'],
+    ],
+    'lookup_values' => [
+        ['typeId', 'string'], ['kod', 'string'], ['ad', 'string'], ['sira', 'int'], ['reng', 'string'],
+        ['defolt', 'int'], ['aktiv', 'int'], ['sistem', 'int'], ['qeyd', 'text'],
     ],
     // Təhsilatçının gündəlik hesabatı (əl ilə daxil edilir): bir təhsilatçı + bir gün = bir qeyd;
     // gonderilenMebleg = tehsilatMeblegi − benzinXerci − digerXerc (server hesablayır, mənfi ola bilməz)

@@ -95,6 +95,7 @@ function audit_entity_name($col) {
         'salespeople' => 'Satıcı', 'collectors' => 'Təhsilatçı', 'curators' => 'Kurator',
         'customers' => 'Müştəri', 'contracts' => 'Müqavilə', 'payments' => 'Ödəniş', 'users' => 'İstifadəçi', 'reports' => 'Hesabat',
         'collector_reports' => 'Təhsilatçı hesabatı',
+        'lookup_types' => 'Köməkçi məlumat tipi', 'lookup_values' => 'Köməkçi məlumat dəyəri',
     ];
     return $m[$col] ?? $col;
 }
@@ -113,6 +114,8 @@ function audit_field_label($col, $field) {
         'contractId' => 'Müqavilə', 'odemeTarixi' => 'Ödəniş tarixi', 'collectorId' => 'Təhsilatçı',
         'tehsilatMeblegi' => 'Təhsilat məbləği', 'benzinXerci' => 'Benzin xərci', 'digerXerc' => 'Digər xərc',
         'senedSayi' => 'Sənəd sayı', 'gonderilenMebleg' => 'Göndərilən məbləğ',
+        'statusId' => 'Status', 'statusTarix' => 'Status tarixi',
+        'typeId' => 'Tip', 'sira' => 'Sıra', 'reng' => 'Rəng', 'defolt' => 'Defolt', 'aktiv' => 'Aktiv', 'sistem' => 'Sistem',
         'qrafikAyIndex' => 'Qrafik ayı (№)', 'qrafikAyLabel' => 'Qrafik ayı', 'emeliyyatNovu' => 'Əməliyyat növü',
     ];
     if ($col === 'payments' && $field === 'meblag') return 'Məbləğ';
@@ -134,6 +137,11 @@ function audit_ref_label($pdo, $table, $id) {
             $st->execute([$id]);
             $r = $st->fetch();
             if ($r) { $label = '№ ' . audit_str($r['nomre']); }
+        } elseif ($table === 'lookup_values' || $table === 'lookup_types') {
+            $st = $pdo->prepare("SELECT ad FROM `$table` WHERE id = ?");
+            $st->execute([$id]);
+            $r = $st->fetch();
+            if ($r) { $label = audit_str($r['ad']); }
         } elseif (in_array($table, ['customers', 'salespeople', 'collectors', 'curators'], true)) {
             $st = $pdo->prepare("SELECT soyad, ad, ataAdi FROM `$table` WHERE id = ?");
             $st->execute([$id]);
@@ -173,6 +181,10 @@ function audit_entity_label($pdo, $col, $rowOut) {
     }
     if ($col === 'payments') {
         return audit_cut('Müqavilə ' . audit_contract_label($pdo, $rowOut['contractId'] ?? ''), 250);
+    }
+    if ($col === 'lookup_types') { return audit_cut(audit_str($rowOut['ad'] ?? ''), 250); }
+    if ($col === 'lookup_values') {
+        return audit_cut(audit_ref_label($pdo, 'lookup_types', $rowOut['typeId'] ?? '') . ': ' . audit_str($rowOut['ad'] ?? ''), 250);
     }
     if ($col === 'collector_reports') {
         return audit_cut(audit_ref_label($pdo, 'collectors', $rowOut['collectorId'] ?? '') . ' — ' . audit_date($rowOut['tarix'] ?? ''), 250);
@@ -224,6 +236,9 @@ function audit_display($pdo, $col, $field, $type, $value) {
     if ($field === 'salespersonId') return audit_ref_label($pdo, 'salespeople', $value);
     if ($field === 'collectorId') return audit_ref_label($pdo, 'collectors', $value);
     if ($field === 'contractId') return audit_ref_label($pdo, 'contracts', $value);
+    if ($field === 'statusId') return audit_ref_label($pdo, 'lookup_values', $value);
+    if ($field === 'typeId') return audit_ref_label($pdo, 'lookup_types', $value);
+    if (in_array($field, ['defolt', 'aktiv', 'sistem'], true) && in_array($col, ['lookup_types', 'lookup_values'], true)) return ((int) $value) ? 'bəli' : 'xeyr';
     if ($type === 'number') return audit_money($value);
     if ($type === 'date') return audit_date($value);
     return audit_cut($value, 1000);
@@ -235,7 +250,7 @@ function audit_values_equal($type, $a, $b) {
     return audit_str($a) === audit_str($b);
 }
 
-const AUDIT_REF_FIELDS = ['customerId', 'salespersonId', 'collectorId', 'contractId'];
+const AUDIT_REF_FIELDS = ['customerId', 'salespersonId', 'collectorId', 'contractId', 'statusId'];
 
 // Dəyişən sahələr: [{f, l, o, n}] (köhnə → yeni); istinad sahələrində id-lər də (oi, ni)
 function audit_diff($pdo, $col, $schema, $oldOut, $newOut) {

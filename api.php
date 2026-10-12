@@ -60,6 +60,13 @@ function api_deny($msg) {
     fail(403, $msg);
 }
 
+// Status avtomatik dəyişəndə brauzerə müqavilənin yeni halı (istifadəçinin oxuma səviyyəsinə görə kəsilmiş)
+function api_contract_for_client($row) {
+    global $ctx, $SCHEMA;
+    $tier = authz_read_tier($ctx, 'contracts');
+    return $tier === null ? null : authz_project($row, 'contracts', $tier, $SCHEMA['contracts']);
+}
+
 $scoped = authz_scoped($ctx);
 [$cSql, $cParams] = authz_contract_scope($ctx, 'c', 'sc');   // "görünən müqavilələr" şərti (məhdudiyyətsizdə 1=1)
 // Ödənişlər üçün əhatə şərti (məhdudiyyətsiz istifadəçidə əlavə sorğu YOXDUR — sürət dəyişmir)
@@ -160,7 +167,16 @@ try {
         case 'POST':
             $body = json_decode(file_get_contents('php://input'), true);
             if (!is_array($body)) { $body = []; }
-            $why = authz_write_denied($ctx, $col, 'POST', $body);
+            if ($col === 'contracts') {
+                // Status: hüququ olmayan (və ya seçməyən) üçün defolt; tarixi server yazır
+                unset($body['statusTarix']);
+                $sid = (string) ($body['statusId'] ?? '');
+                if ($sid === '' || !authz_extra($ctx, 'contract-status')) { $sid = (string) contract_status_default_id($pdo); }
+                elseif (!contract_status_valid($pdo, $sid, true)) { fail(400, 'Status düzgün deyil.'); }
+                $body['statusId'] = $sid !== '' ? $sid : null;
+                $body['statusTarix'] = $sid !== '' ? baku_today() : null;
+            }
+            $why = authz_write_denied($ctx, $col, 'POST', $col === 'contracts' ? array_diff_key($body, ['statusId' => 1, 'statusTarix' => 1]) : $body);
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'POST', null, $body); }
             if ($why !== '') { api_deny($why); }
 
@@ -214,6 +230,10 @@ try {
                 [$err, $body] = collector_report_prepare($pdo, $body, null, null);
                 if ($err !== '') { fail(400, $err); }
             }
+            if ($col === 'lookup_types' || $col === 'lookup_values') {
+                [$err, $body] = lookup_prepare($pdo, $col, $body, null);
+                if ($err !== '') { fail(400, $err); }
+            }
 
             $newId = ($clientId !== '') ? strtolower($clientId) : make_uuid();
             $now = date('Y-m-d H:i:s');
@@ -258,6 +278,9 @@ try {
                 $sel->execute([':id' => $newId]);
                 $rowOut = row_out($sel->fetch(), $schema);
                 audit_log_create($pdo, $col, $schema, $rowOut);
+                if ($col === 'lookup_values') { lookup_after_write($pdo, $rowOut); }
+                // Ödənişdən sonra müqavilə statusu (Gecikmə→Normal, →Bağlı, Bağlı→geri) — eyni əməliyyatda, loga "Avtomatik"
+                $stChanged = ($col === 'payments') ? contract_status_auto($pdo, $rowOut['contractId'] ?? '', 'ödəniş') : null;
                 $pdo->commit();
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -270,10 +293,10 @@ try {
                 }
                 throw $e;
             }
-            if ($reassignTo !== null) {
-                // brauzer müqavilənin yeni təyinatlarını yeniləsin (istifadəçinin oxuma səviyyəsinə görə kəsilmiş)
+            if ($reassignTo !== null || $stChanged !== null) {
+                // brauzer müqavilənin yeni təyinatlarını / statusunu yeniləsin (istifadəçinin oxuma səviyyəsinə görə kəsilmiş)
                 $cSel3 = $pdo->prepare("SELECT * FROM contracts WHERE id = :id");
-                $cSel3->execute([':id' => $body['contractId']]);
+                $cSel3->execute([':id' => $rowOut['contractId']]);
                 $tier = authz_read_tier($ctx, 'contracts');
                 if ($tier !== null) { $rowOut['_contract'] = authz_project(row_out($cSel3->fetch(), $SCHEMA['contracts']), 'contracts', $tier, $SCHEMA['contracts']); }
             }
@@ -284,6 +307,19 @@ try {
             if (!$id) { fail(400, 'id parametri lazımdır'); }
             $body = json_decode(file_get_contents('php://input'), true);
             if (!is_array($body)) { $body = []; }
+            $statusDate = null;
+            if ($col === 'contracts') {
+                unset($body['statusTarix']);   // statusun tarixini yalnız server yazır
+                if (array_key_exists('statusId', $body)) {
+                    $cs = $pdo->prepare("SELECT statusId FROM contracts WHERE id = ?");
+                    $cs->execute([(string) $id]);
+                    $curSid = (string) $cs->fetchColumn();
+                    $sid = (string) ($body['statusId'] ?? '');
+                    if ($sid === $curSid) { unset($body['statusId']); }   // dəyişməyibsə status hüququ tələb olunmur
+                    elseif ($sid === '' || !contract_status_valid($pdo, $sid, true)) { fail(400, 'Status düzgün deyil.'); }
+                    else { $statusDate = baku_today(); }
+                }
+            }
             $why = authz_write_denied($ctx, $col, 'PUT', $body);
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'PUT', $id, $body); }
             if ($why !== '') { api_deny($why); }
@@ -311,6 +347,14 @@ try {
                 [$err, $body] = collector_report_prepare($pdo, $body, row_out($oRow, $schema), $id);
                 if ($err !== '') { fail(400, $err); }
             }
+            if ($col === 'lookup_types' || $col === 'lookup_values') {
+                $o = $pdo->prepare("SELECT * FROM `$col` WHERE id = ?");
+                $o->execute([$id]);
+                $oRow = $o->fetch();
+                if (!$oRow) { fail(404, 'Qeyd tapılmadı'); }
+                [$err, $body] = lookup_prepare($pdo, $col, $body, row_out($oRow, $schema));
+                if ($err !== '') { fail(400, $err); }
+            }
 
             $sets = [];
             $params = [':id' => $id];
@@ -330,6 +374,7 @@ try {
                     $sets[] = '`currentCuratorId` = :__ck';
                     $params[':__ck'] = derive_current_assignee($body['kuratorTeyinatlari'], 'curatorId');
                 }
+                if ($statusDate !== null) { $sets[] = '`statusTarix` = :__st'; $params[':__st'] = $statusDate; }
             }
 
             $pdo->beginTransaction();
@@ -352,11 +397,14 @@ try {
                 $sel2->execute([':id' => $id]);
                 $newOut = row_out($sel2->fetch(), $schema);
                 audit_log_update($pdo, $col, $schema, $oldOut, $newOut);  // dəyişiklik yoxdursa heç nə yazmır
+                if ($col === 'lookup_values') { lookup_after_write($pdo, $newOut); }
+                $stChanged = ($col === 'payments') ? contract_status_auto($pdo, $newOut['contractId'] ?? '', 'ödəniş dəyişdirildi') : null;
                 $pdo->commit();
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) { $pdo->rollBack(); }
                 throw $e;
             }
+            if ($stChanged !== null) { $newOut['_contract'] = api_contract_for_client($stChanged); }
             json_out($newOut);
             break;
 
@@ -366,6 +414,11 @@ try {
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'DELETE', $id, []); }
             if ($why === '' && $col === 'payments') { $why = authz_payment_row_denied($pdo, $ctx, $id); }
             if ($why !== '') { api_deny($why); }
+            if ($col === 'lookup_types' || $col === 'lookup_values') {
+                $why = lookup_delete_denied($pdo, $col, $id);
+                if ($why !== '') { fail(400, $why); }
+            }
+            $stChanged = null;
 
             $pdo->beginTransaction();
             try {
@@ -376,13 +429,14 @@ try {
                     $oldOut = row_out($oldRow, $schema);
                     $pdo->prepare("DELETE FROM `$col` WHERE id = :id")->execute([':id' => $id]);
                     audit_log_delete($pdo, $col, $schema, $oldOut);
+                    if ($col === 'payments') { $stChanged = contract_status_auto($pdo, $oldOut['contractId'] ?? '', 'ödəniş silindi'); }
                 }
                 $pdo->commit();
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) { $pdo->rollBack(); }
                 throw $e;
             }
-            json_out(['ok' => true]);
+            json_out($stChanged !== null ? ['ok' => true, '_contract' => api_contract_for_client($stChanged)] : ['ok' => true]);
             break;
 
         default:

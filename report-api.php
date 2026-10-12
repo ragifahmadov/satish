@@ -82,7 +82,7 @@ if ($report === 'collections') {
     }
 
     $st = $pdo->prepare("SELECT p.id, p.contractId, p.meblag, p.odemeTarixi, p.collectorId, p.emeliyyatNovu,
-            c.nomre, cu.soyad, cu.ad, cu.ataAdi
+            c.nomre, c.statusId, cu.soyad, cu.ad, cu.ataAdi
         FROM payments p
         LEFT JOIN contracts c ON c.id = p.contractId
         LEFT JOIN customers cu ON cu.id = c.customerId
@@ -97,6 +97,7 @@ if ($report === 'collections') {
             'id' => $r['id'],
             'cid' => $r['contractId'],
             'nomre' => (string) ($r['nomre'] ?? ''),
+            'st' => (string) ($r['statusId'] ?? ''),          // müqavilənin statusu (köməkçi məlumat dəyəri)
             'cust' => audit_full_name($r),                    // yalnız ad (yığcam)
             'col' => (string) ($r['collectorId'] ?? ''),
             'ret' => $isRet,
@@ -164,11 +165,15 @@ if ($report === 'contracts') {
         if (($x = $num($k . 'Max')) !== null) { $where[] = "$col <= :{$k}max"; $params[":{$k}max"] = $x; }
     }
     if (($v = $g('qeyd')) !== '') { $where[] = 'LOWER(c.qeyd) LIKE :qeyd'; $params[':qeyd'] = $like($v); }
+    if (($v = $uuidP('status')) !== '') {
+        if ($v === '__none__') { $where[] = "(c.statusId IS NULL OR c.statusId = '')"; }
+        else { $where[] = 'c.statusId = :stat'; $params[':stat'] = $v; }
+    }
     $borcMin = $num('borcMin'); $borcMax = $num('borcMax'); $qMin = $num('qrafikMin'); $qMax = $num('qrafikMax');
     $court = ($g('mehkeme') === '1');
 
     $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.customerId, c.salespersonId, c.meblag, c.ilkinOdenis, c.muddet,
-            c.tehsilatciTeyinatlari, c.kuratorTeyinatlari, c.mehkemeQeydleri, c.currentCollectorId, c.currentCuratorId,
+            c.tehsilatciTeyinatlari, c.kuratorTeyinatlari, c.mehkemeQeydleri, c.currentCollectorId, c.currentCuratorId, c.statusId, c.statusTarix,
             cu.soyad, cu.ad, cu.ataAdi, cu.finKod, cu.elaqeNomre1, cu.elaqeNomre2,
             COALESCE(ps.paid, 0) AS paid, COALESCE(ps.ret, 0) AS ret
         FROM contracts c
@@ -219,6 +224,7 @@ if ($report === 'contracts') {
             'colHist' => $hl($tt, 'collectorId'), 'curHist' => $hl($kt, 'curatorId'),
             'sale' => (float) $r['meblag'], 'ilkin' => $ilkin, 'muddet' => $m, 'paid' => round($paid, 2), 'ret' => round($ret, 2),
             'debt' => round($debt, 2), 'sched' => round($sched, 2), 'court' => count($mq) > 0,
+            'st' => (string) ($r['statusId'] ?? ''), 'stDate' => (string) ($r['statusTarix'] ?? ''),
         ];
     }
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
@@ -253,7 +259,7 @@ if ($report === 'debtor-sales') {
     $teh = $g('tehsilatci');
 
     [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
-    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.createdAt, c.customerId, c.salespersonId, c.currentCollectorId, c.meblag, c.ilkinOdenis,
+    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.createdAt, c.customerId, c.salespersonId, c.currentCollectorId, c.meblag, c.ilkinOdenis, c.statusId,
             cu.soyad, cu.ad, cu.ataAdi, cu.elaqeNomre1, cu.elaqeNomre2
         FROM contracts c LEFT JOIN customers cu ON cu.id = c.customerId
         WHERE $cSql AND c.customerId IS NOT NULL AND c.customerId <> ''
@@ -320,7 +326,7 @@ if ($report === 'debtor-sales') {
                 'cust' => audit_full_name($n), 'phones' => array_values(array_filter([(string) $n['elaqeNomre1'], (string) $n['elaqeNomre2']], 'strlen')),
                 'sp' => (string) $n['salespersonId'], 'col' => (string) ($n['currentCollectorId'] ?? ''),
                 'sale' => (float) $n['meblag'], 'oldCount' => $cnt, 'prior' => round($prior, 2), 'lastPay' => $last, 'months' => $months,
-                'after' => round($after, 2), 'now' => round($custDebtNow, 2),
+                'after' => round($after, 2), 'now' => round($custDebtNow, 2), 'st' => (string) ($n['statusId'] ?? ''),
             ];
         }
     }
@@ -357,7 +363,7 @@ if ($report === 'monthly-plan') {
     if ($teh === '__none__') { $where[] = "(c.currentCollectorId IS NULL OR c.currentCollectorId = '')"; }
     elseif ($teh !== '') { $where[] = 'c.currentCollectorId = :fcol'; $params[':fcol'] = $teh; }
     $params[':ms1'] = $ms; $params[':ms2'] = $ms;
-    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, c.muddet, c.currentCollectorId, c.mehkemeQeydleri,
+    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, c.muddet, c.currentCollectorId, c.mehkemeQeydleri, c.statusId,
             cu.soyad, cu.ad, cu.ataAdi, cu.elaqeNomre1, cu.elaqeNomre2, cu.faktikiUnvan, cu.qeydiyyatUnvani,
             COALESCE(ps.before_, 0) AS paidBefore, COALESCE(ps.month_, 0) AS paidMonth, COALESCE(ps.ret, 0) AS ret, ps.lastPay
         FROM contracts c
@@ -400,7 +406,7 @@ if ($report === 'monthly-plan') {
             'months' => $monthly > 0 ? (int) ceil($arrears / $monthly - 0.005) : 0,
             'arrears' => $arrears, 'cur' => round($plan - $arrears, 2), 'plan' => $plan,
             'coll' => $coll, 'covered' => round($covered, 2), 'rest' => round($plan - $covered, 2),
-            'lastPay' => (string) ($r['lastPay'] ?? ''), 'court' => $isCourt,
+            'lastPay' => (string) ($r['lastPay'] ?? ''), 'court' => $isCourt, 'st' => (string) ($r['statusId'] ?? ''),
         ];
     }
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));

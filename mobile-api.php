@@ -58,8 +58,8 @@ if ($action === 'search') {
     $q = trim(preg_replace('/\s+/u', ' ', (string) ($_GET['q'] ?? '')));
     if (mb_strlen($q) < 3) { mobile_out(['rows' => []]); }
     $like = '%' . addcslashes(mb_strtolower($q), '%_\\') . '%';
-    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, cu.soyad, cu.ad, cu.ataAdi
-        FROM contracts c LEFT JOIN customers cu ON cu.id = c.customerId
+    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, cu.soyad, cu.ad, cu.ataAdi, sv.ad AS stAd, sv.reng AS stReng
+        FROM contracts c LEFT JOIN customers cu ON cu.id = c.customerId LEFT JOIN lookup_values sv ON sv.id = c.statusId
         WHERE $cSql AND (LOWER(c.nomre) LIKE :q1 OR LOWER(CONCAT_WS(' ', cu.soyad, cu.ad, cu.ataAdi)) LIKE :q2)
         ORDER BY (LOWER(c.nomre) = :qx) DESC, cu.soyad, cu.ad, c.nomre
         LIMIT 20");
@@ -70,7 +70,8 @@ if ($action === 'search') {
     foreach ($rows as $r) {
         [$paid, $ret] = $sums[$r['id']] ?? [0.0, 0.0];
         $out[] = ['id' => $r['id'], 'nomre' => (string) $r['nomre'], 'tarix' => (string) ($r['tarix'] ?? ''), 'cust' => audit_full_name($r),
-            'debt' => round((float) $r['meblag'] - $ret - (float) $r['ilkinOdenis'] - $paid, 2)];
+            'debt' => round((float) $r['meblag'] - $ret - (float) $r['ilkinOdenis'] - $paid, 2),
+            'status' => (string) ($r['stAd'] ?? ''), 'statusColor' => (string) ($r['stReng'] ?? '')];
     }
     mobile_out(['rows' => $out]);
 }
@@ -98,9 +99,13 @@ if ($action === 'contract') {
             'qrafikAyIndex' => (int) $r['qrafikAyIndex'], 'collector' => $r['collectorId'] ? audit_ref_label($pdo, 'collectors', $r['collectorId']) : ''];
     }
     $curCol = derive_current_assignee($c['tehsilatciTeyinatlari'], 'collectorId');
+    $sv = $pdo->prepare("SELECT ad, reng FROM lookup_values WHERE id = ?");
+    $sv->execute([(string) ($c['statusId'] ?? '')]);
+    $svr = $sv->fetch() ?: ['ad' => '', 'reng' => ''];
     mobile_out([
         'contract' => ['id' => $c['id'], 'nomre' => $c['nomre'], 'tarix' => $c['tarix'], 'meblag' => $c['meblag'], 'ilkinOdenis' => $c['ilkinOdenis'],
-            'muddet' => $c['muddet'], 'collectorId' => $curCol, 'collector' => $curCol ? audit_ref_label($pdo, 'collectors', $curCol) : ''],
+            'muddet' => $c['muddet'], 'collectorId' => $curCol, 'collector' => $curCol ? audit_ref_label($pdo, 'collectors', $curCol) : '',
+            'status' => (string) $svr['ad'], 'statusColor' => (string) $svr['reng'], 'statusTarix' => (string) ($c['statusTarix'] ?? '')],
         'customer' => $cu,
         'payments' => $pays,
         'today' => baku_today(),

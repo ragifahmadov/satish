@@ -89,3 +89,17 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    istifadəçiyə açıqdır (ekran hüququ YOXDUR — `OPEN_SCREENS`), yalnız ÖZ hesabı (id sessiyadan). Hazırkı şifrə yoxlanır; yeni ≥6 simvol,
    təkrarı eyni, hazırkı ilə fərqli. Yalnız POST + JSON. Dəyişiklik və `USER_PASSWORD` logu bir əməliyyatda; səhv hazırkı şifrə → `PASSWORD_FAILED`.
    Şifrə/hash loga yazılmır. Başqasının şifrəsini yalnız admin (admin.php) dəyişir.
+19. **Köməkçi məlumatlar və müqavilə statusu** (`lookups.php`; cədvəllər `lookup_types`, `lookup_values` — $SCHEMA-da; ekran `lookups`,
+   Məlumat kitabçası altında). Tip + dəyərlər (ad, sıra, rəng, defolt, aktiv). Sistem tipi `contract-status` və sistem dəyərləri
+   (normal, gecikme, mehkeme, icra, bagli) proqram tərəfindən KODLA tanınır: adı/rəngi dəyişə bilər, kodu/tipi dəyişmir, silinmir, passiv edilmir.
+   Ad tip daxilində unikaldır (Azərbaycan hərfləri ilə böyük/kiçik fərqsiz); işlədilən dəyər silinmir (passiv edilir); tipdə bir defolt.
+   Müqavilədə `statusId` + `statusTarix` (tarixi yalnız server yazır). Əllə dəyişmək: ayrıca hüquq `contract-status` (dəyişməyən statusId
+   üçün tələb olunmur). Yeni müqavilə: hüququ yoxdursa defolt. Avtomatik (`contract_status_auto`, ödəniş əlavə/dəyiş/sil zamanı, eyni
+   əməliyyatda, loga "Avtomatik (…)"): qalıq ≤ 0 → Bağlı (istənilən statusdan); Gecikmə + qrafik üzrə borc yoxdur → Normal;
+   Bağlı + borc yenidən yaranıb → qrafik borcu varsa Gecikmə, yoxsa Normal. Gecikmiş borc = qrafik üzrə borc > 0 (istənilən məbləğ).
+   Normal → Gecikmə avtomatikası YOXDUR (sonrakı mərhələ). Statussuz müqavilələr (deploy, idxal) whoami.php-də ilkin doldurulur (bir FIX sətri).
+   Status müqavilə göstərən hər ekranda və hesabatda (Excel daxil) göstərilir; filtr: Müqavilələr siyahısı və Müqavilə axtarışı.
+20. **Gecikmiş müqavilələr — tablar:** nəticə 4 tabda: Ümumi siyahı · Kurator üzrə · Təhsilatçılar üzrə · Satıcılar üzrə (müqavilənin HAZIRKI
+   kuratoru/təhsilatçısı/satıcısı; sütunlar: Ad · Müqavilə sayı · Satış məbləği · Cari borc · Qrafik borcu · Orta gecikmə (ay); "Təyin olunmayıb"
+   sonda, "Cəmi" sətri). Şəxs sətrinə klik → Ümumi siyahıda şəxs süzgəci (nişan ✕ ilə götürülür; əsas filtrləri dəyişmir, yeni «Axtar» təmizləyir).
+   Excel: 4 vərəq + Məlumat; Ümumi siyahı vərəqində həmişə bütün axtarış nəticəsi (şəxs süzgəcindən asılı deyil).

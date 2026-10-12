@@ -131,7 +131,7 @@ function onec_is_ledger($path) {
 //    məbləğindən qalıq borca görə bölünərək çıxılır (aşağıda ətraflı).
 //  - "Поступление в кассу" (avans) nəzərə alınmır — bu faylda hamısı eyni ay içində sıfırlanır; sıfırlanmayan varsa qeyd olunur.
 //  - Adında dırnaq olan kontragentlər (şirkətlər, məs. "SIZE" MMC) köhnə idxaldakı kimi keçilir.
-function onec_read_ledger($path, &$stats) {
+function onec_read_ledger($path, &$stats, array $opts = []) {
     $sheets = onec_sheet_paths($path);
     $sst = onec_shared_strings($path);
     $stats = ['companies' => 0, 'netted' => 0, 'negLeft' => 0, 'returns' => 0, 'returnsUnmatched' => 0,
@@ -190,13 +190,14 @@ function onec_read_ledger($path, &$stats) {
     });
     if (!$hdrOk) throw new Exception('1C hesabatının başlığı gözlənilən formatda deyil (A1 "Контрагент").');
     $stats['companies'] = count($companies);
-    return onec_build_contracts($docs, $order, $stats);
+    return onec_build_contracts($docs, $order, $stats, $opts);
 }
 
 // Sənədlərdən (satış / qaytarma / digər) müqavilələr qurur — 1C və standart format üçün ORTAQ qaydalar:
 // mənfi ödənişlərin çıxılması, qaytarmaların satışlar arasında bölgüsü. Sənəd: ['cust','doc','type','no','docdate',
 // 'sold','saleDate','paid'=>[[tarix,məbləğ]],'pre','first'] + istəyə görə 'names'=>[soyad,ad,ataadi], 'tehsilatci'.
-function onec_build_contracts(array $docs, array $order, array &$stats) {
+function onec_build_contracts(array $docs, array $order, array &$stats, array $opts = []) {
+    $lastPayOrder = $opts['lastPayOrder'] ?? true;
     $contracts = [];
     $byCust = [];
     $negDays = []; // "müştəri|tarix" => [açar, ...] (həmin gün mənfi ödənişi olan satış sənədləri)
@@ -276,10 +277,17 @@ function onec_build_contracts(array $docs, array $order, array &$stats) {
         $amt = -$rt['effect'];
         $subset = array_flip(onec_exact_subset($cands, $contracts, $amt, $rd));
         $exact = fn($k) => isset($subset[$k]) ? 0 : 1;
-        usort($cands, function ($a, $b) use ($contracts, $rd, $hint, $exact) {
+        // sonra (lastPayOrder, 2026-10-13): ödənişləri ən tez dayanmış satış (son ödəniş tarixi ən erkən olan) —
+        // qaytarılan mal adətən odur, müştəri qalan satışı ödəməyə davam edir
+        $lastPay = function ($k) use ($contracts, $lastPayOrder) {
+            if (!$lastPayOrder) return '';
+            $m = ''; foreach ($contracts[$k]['payments'] as $p) if ($p['meblag'] > 0 && $p['tarix'] > $m) $m = $p['tarix'];
+            return $m;
+        };
+        usort($cands, function ($a, $b) use ($contracts, $rd, $hint, $exact, $lastPay) {
             $ta = strtotime((string) $contracts[$a]['sale_date']); $tb = strtotime((string) $contracts[$b]['sale_date']);
-            return [$exact($a), isset($hint[$a]) ? 0 : 1, $ta > $rd ? 1 : 0, abs($rd - $ta)]
-               <=> [$exact($b), isset($hint[$b]) ? 0 : 1, $tb > $rd ? 1 : 0, abs($rd - $tb)];
+            return [$exact($a), isset($hint[$a]) ? 0 : 1, $lastPay($a), $ta > $rd ? 1 : 0, abs($rd - $ta)]
+               <=> [$exact($b), isset($hint[$b]) ? 0 : 1, $lastPay($b), $tb > $rd ? 1 : 0, abs($rd - $tb)];
         });
         $left = -$rt['effect'];
         foreach ($cands as $k) {
@@ -304,7 +312,7 @@ function onec_build_contracts(array $docs, array $order, array &$stats) {
 // Standart format ("Ödənişlər" vərəqi: Müştəri, Soyad, Ad, Ata adı, Növ, Tarix, Məbləğ, Sənəd, [Təhsilatçı]) →
 // 1C ilə eyni sənəd strukturu → onec_build_contracts (qalıqlar 1C rejimi ilə eyni qaydada hesablanır).
 // $c: sütun indeksləri ['musteri','soyad','ad','ataadi','nov','tarix','meblag','sened','tehsilatci'] (null = yoxdur).
-function std_read_ledger(array $rows, $headerIdx, array $c, &$stats) {
+function std_read_ledger(array $rows, $headerIdx, array $c, &$stats, array $opts = []) {
     $stats = ['companies' => 0, 'netted' => 0, 'negLeft' => 0, 'returns' => 0, 'returnsUnmatched' => 0,
               'otherDocsNonZero' => 0, 'prepayCols' => 0, 'orphanPayments' => 0];
     $cell = fn($cells, $k) => $c[$k] === null ? '' : trim(preg_replace('/\s+/u', ' ', (string) ($cells[$c[$k]] ?? '')));
@@ -350,7 +358,7 @@ function std_read_ledger(array $rows, $headerIdx, array $c, &$stats) {
     // satışsız sənəddəki ödəniş (köhnə idxal da nəzərə almırdı) — avans hesabına düşməsin
     foreach ($order as $k) if ($docs[$k]['type'] === 'other') $docs[$k]['paid'] = [];
     $stats['companies'] = count($companies);
-    return onec_build_contracts($docs, $order, $stats);
+    return onec_build_contracts($docs, $order, $stats, $opts);
 }
 
 // İdxal faylındakı "Təhsilatçı" dəyəri → sistemdəki təhsilatçı (Soyad, Ad). Siyahıda olmayan dəyər (status, naməlum ad)

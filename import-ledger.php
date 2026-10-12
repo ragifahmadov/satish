@@ -30,7 +30,7 @@ require_admin(false);
 </style>
 </head>
 <body>
-  <div class="topbar"><a href="index.php">← Proqrama qayıt</a><a href="logout.php">Çıxış</a></div>
+  <div class="topbar"><a href="index.php">← Proqrama qayıt</a><a href="fix-idxal.php">İdxal düzəlişi</a><a href="logout.php">Çıxış</a></div>
   <h2>Köhnə sistemdən idxal</h2>
 
   <div class="card">

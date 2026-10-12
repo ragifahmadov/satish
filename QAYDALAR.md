@@ -82,3 +82,10 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    qalıq borc arasında); Keçmiş gecikmə = keçən ayın sonunadək çatmış hissə (plana daxildir); Yığılıb = bu ayın ödənişləri (qaytarma yox);
    Qalıq = Plan − min(Yığılıb, Plan); İcra % = Σmin(Yığılıb, Plan) / ΣPlan. Təhsilatçı = müqavilənin hazırkı təhsilatçısı (yığılan da ona yazılır).
    Məhkəməlik defolt daxildir. Hamısı əhatə daxilində. Excel 2 vərəq (Ümumiləşdirilmiş, Detallı).
+17. **Menyu qrupları** (`app.html → SCREENS`): İdarə paneli · Satış · Təhsilat · Təyinatlar · Hesabatlar · Məlumat kitabçası (+ Administrasiya).
+   Qrup yalnız qovluqdur — hüquq hər ekranın özündədir. Hüququ olan ekranı olmayan qrup gizlənir; qrupda bir ekran qalırsa qrupsuz göstərilir;
+   açıq ekranın qrupu həmişə açıqdır, digər açıq qruplar brauzerdə (localStorage) yadda saxlanır. Yeni ekran uyğun qrupa əlavə olunur.
+18. **Öz şifrəsini dəyişmək** (`password-api.php`; masaüstündə "Şifrəni dəyiş" ekranı `change-password`, mobil `sifre.php`): hər daxil olmuş
+   istifadəçiyə açıqdır (ekran hüququ YOXDUR — `OPEN_SCREENS`), yalnız ÖZ hesabı (id sessiyadan). Hazırkı şifrə yoxlanır; yeni ≥6 simvol,
+   təkrarı eyni, hazırkı ilə fərqli. Yalnız POST + JSON. Dəyişiklik və `USER_PASSWORD` logu bir əməliyyatda; səhv hazırkı şifrə → `PASSWORD_FAILED`.
+   Şifrə/hash loga yazılmır. Başqasının şifrəsini yalnız admin (admin.php) dəyişir.

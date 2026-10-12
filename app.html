@@ -103,7 +103,7 @@
   .btn-sm{padding:5px 10px;font-size:12.5px;}
   .card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;}
   .toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
-  input[type=text],input[type=search],input[type=number],input[type=date],input[type=tel],select,textarea{
+  input[type=text],input[type=password],input[type=search],input[type=number],input[type=date],input[type=tel],select,textarea{
     font-family:var(--font-ui);font-size:13.5px;color:var(--text);
     background:var(--bg-card);border:1px solid var(--border);border-radius:7px;
     padding:9px 11px;width:100%;
@@ -184,6 +184,7 @@
   .iconbtn:hover{background:var(--accent);border-color:var(--accent);color:#2A1D08;}
   .iconbtn.has{background:var(--accent);border-color:var(--accent);color:#2A1D08;}
   .navsub{padding:7px 12px 7px 41px;font-size:13px;}
+  .navgroup .navchev{opacity:.7;}
   .filters{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:12px;}
   .filters .field{margin-bottom:0;}
   .check{display:flex;align-items:center;gap:8px;height:38px;cursor:pointer;color:var(--text);font-size:13.5px;margin:0;}
@@ -246,6 +247,10 @@
         <a href="reset.php" class="navbtn navsub" style="text-decoration:none;"><span>Bazanı təmizlə</span></a>
       </div>
     </div>
+    <button class="navbtn" id="nav-password" data-action="nav" data-screen="change-password">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7.5a4 4 0 018 0V11"/><circle cx="12" cy="16" r="1.4" fill="currentColor" stroke="none"/></svg>
+      <span>Şifrəni dəyiş</span>
+    </button>
     <a href="logout.php" class="navbtn" style="text-decoration:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M12 19H5a2 2 0 01-2-2V7a2 2 0 012-2h7"/></svg>
       <span>Çıxış</span>
@@ -292,25 +297,35 @@ function removeFromState(col, id){
 }
 let currentScreen='contracts';
 
+// Menyu: qruplar yalnız qovluqdur — hər ekranın hüququ ayrıcadır. Hüququ olan heç bir ekranı olmayan qrup gizlənir;
+// qrupda bir ekran qalırsa, o qrupsuz (birbaşa) göstərilir. "Hesabatlar" başlığı həm də hesabatlar səhifəsini açır.
 const SCREENS=[
   {id:'dashboard',label:'İdarə paneli',icon:'dashboard'},
-  {id:'salespeople',label:'Satıcılar',icon:'sales'},
-  {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
-  {id:'curators',label:'Kuratorlar',icon:'curator'},
-  {id:'collector-reports',label:'Təhsilatçı hesabatları',icon:'collector'},
-  {id:'customers',label:'Müştərilər',icon:'customers'},
-  {id:'contracts',label:'Müqavilələr',icon:'contract'},
-  {id:'payments',label:'Ödənişlər',icon:'payment'},
-  {id:'reassign',label:'Təhsilatçı dəyişikliyi',icon:'reassign'},
-  {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'},
-  {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
-  {id:'reports',label:'Hesabatlar',icon:'reports',children:[{id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},{id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'}]},
+  {group:'sales',label:'Satış',icon:'contract',children:[
+    {id:'customers',label:'Müştərilər',icon:'customers'},
+    {id:'contracts',label:'Müqavilələr',icon:'contract'}]},
+  {group:'collection',label:'Təhsilat',icon:'payment',children:[
+    {id:'payments',label:'Ödənişlər',icon:'payment'},
+    {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
+    {id:'collector-reports',label:'Təhsilatçı hesabatları',icon:'collector'},
+    {id:'collector-mobile',label:'Təhsilat (mobil)',icon:'payment',href:'tehsilat.php'}]},   // ayrıca səhifə (tehsilat.php)
+  {group:'assign',label:'Təyinatlar',icon:'reassign',children:[
+    {id:'reassign',label:'Təhsilatçı dəyişikliyi',icon:'reassign'},
+    {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'}]},
+  {group:'reports',id:'reports',label:'Hesabatlar',icon:'reports',children:[
+    {id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},
+    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'}]},
+  {group:'catalog',label:'Məlumat kitabçası',icon:'sales',children:[
+    {id:'salespeople',label:'Satıcılar',icon:'sales'},
+    {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
+    {id:'curators',label:'Kuratorlar',icon:'curator'}]},
 ];
 
 /* ============ SƏLAHİYYƏTLƏR (brauzer yalnız rahatlıq üçün gizlədir; əsl nəzarət SERVERDƏDİR) ============ */
 let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
 const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
 const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
+const OPEN_SCREENS=['change-password'];   // hər daxil olmuş istifadəçiyə açıq (hüquq tələb olunmur; server: password-api.php yalnız öz hesabı)
 const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
 function isAdmin(){ return me.role==='admin'; }
 function permKey(id){ return SCREEN_PERM[id]||id; }
@@ -318,6 +333,7 @@ function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(i
 function canExtra(key){ return isAdmin() || !!me.extras[key]; }
 function screenAllowed(id){
   if(ADMIN_ONLY_SCREENS.includes(id)) return isAdmin();
+  if(OPEN_SCREENS.includes(id)) return true;
   if(id==='reports') return REPORT_SCREENS.some(r=>can(r,1));
   return can(id,1);
 }
@@ -395,20 +411,33 @@ function activeAssigneeId(contract, role){
 function activeCuratorForContract(contract){ return activeAssigneeId(contract,'curator'); }
 
 /* ============ RENDER SHELL ============ */
+// Açıq qruplar brauzerdə yadda saxlanır (yalnız rahatlıq); açıq ekranın qrupu həmişə açıqdır
+let navOpen=new Set();
+try{ navOpen=new Set(JSON.parse(localStorage.getItem('navOpen')||'[]')); }catch(e){}
+function saveNavOpen(){ try{ localStorage.setItem('navOpen', JSON.stringify([...navOpen])); }catch(e){} }
+function navChildAllowed(ch){ return ch.href?can(ch.id,1):screenAllowed(ch.id); }
+function navGroupOf(id){ const g=SCREENS.find(s=>s.group && (s.id===id || (s.children||[]).some(ch=>ch.id===id))); return g?g.group:null; }
+const NAV_CHEV='<svg class="navchev" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
+function navItemHtml(it, sub){
+  const cls='navbtn'+(sub?' navsub':'')+(it.id===currentScreen?' active':'');
+  const inner=(sub?'':(ICONS[it.icon]||''))+`<span>${it.label}</span>`;
+  return it.href?`<a class="${cls}" href="${it.href}" style="text-decoration:none;">${inner}</a>`
+    :`<button class="${cls}" data-action="nav" data-screen="${it.id}">${inner}</button>`;
+}
 function renderNav(){
   const nav=document.getElementById('nav');
-  nav.innerHTML=SCREENS.filter(s=>screenAllowed(s.id)).map(s=>{
-    const kids=(s.children||[]).filter(ch=>screenAllowed(ch.id));
-    const inGroup=kids.some(ch=>ch.id===currentScreen);
-    let html=`<button class="navbtn${s.id===currentScreen?' active':''}" data-action="nav" data-screen="${s.id}">${ICONS[s.icon]}<span>${s.label}</span></button>`;
-    if(kids.length && (s.id===currentScreen || inGroup)){
-      html+=kids.map(ch=>`<button class="navbtn navsub${ch.id===currentScreen?' active':''}" data-action="nav" data-screen="${ch.id}"><span>${ch.label}</span></button>`).join('');
-    }
-    return html;
-  }).join('')
-  // Mobil təhsilat ayrıca səhifədir (tehsilat.php) — hüququ olana menyuda keçid
-  +(can('collector-mobile',1)?`<a class="navbtn" href="tehsilat.php" style="text-decoration:none;">${ICONS.payment}<span>Təhsilat (mobil)</span></a>`:'');
+  nav.innerHTML=SCREENS.map(s=>{
+    if(!s.group) return screenAllowed(s.id)?navItemHtml(s,false):'';
+    const kids=(s.children||[]).filter(navChildAllowed);
+    if(s.id ? !screenAllowed(s.id) : !kids.length) return '';
+    if(!s.id && kids.length===1) return navItemHtml(kids[0],false);   // tək ekran — qrupsuz
+    const here=s.id===currentScreen || kids.some(ch=>ch.id===currentScreen);
+    const open=here || navOpen.has(s.group);
+    const head=`<button class="navbtn navgroup${s.id===currentScreen?' active':''}" data-action="${s.id?'nav':'nav-group'}"${s.id?` data-screen="${s.id}"`:''} data-group="${s.group}">${ICONS[s.icon]||''}<span>${s.label}</span>${NAV_CHEV.replace('navchev','navchev'+(open?' open':''))}</button>`;
+    return head+(open?kids.map(ch=>navItemHtml(ch,true)).join(''):'');
+  }).join('');
   syncAdminGroup();
+  const pw=document.getElementById('nav-password'); if(pw) pw.classList.toggle('active', currentScreen==='change-password');
 }
 // "Administrasiya" qrupu: log ekranındaykən avtomatik açıq, əks halda düymə ilə açılıb-bağlanır
 let adminGroupOpen=false;
@@ -438,6 +467,7 @@ const SCREEN_DEPS={
   'reassign-curator':['contracts','customers','curators','paymentSums'],
   'debt-inquiry':['customers','contracts','collectors','paymentSums'],
   reports:[],
+  'change-password':[],
   'report-overdue':['salespeople','collectors','curators'],   // filtr siyahıları; müqavilə/ödəniş məlumatı «Axtar»-da yüklənir (OVERDUE_DATA)
   'report-collections':['collectors'],   // sətirlər report-api.php-dən (server əhatəni tətbiq edir)
   'report-contracts':['salespeople','collectors','curators'],   // filtr siyahıları; sətirlər report-api.php-dən
@@ -509,6 +539,7 @@ async function renderScreen(){
     case 'reassign-curator': return renderReassign('curator');
     case 'debt-inquiry': return renderDebtInquiry();
     case 'reports': return renderReports();
+    case 'change-password': return renderChangePassword();
     case 'report-overdue': return renderReportOverdue();
     case 'report-collections': return renderReportCollections();
     case 'report-contracts': return renderReportContracts();
@@ -2705,6 +2736,35 @@ function renderReportMonthlyPlan(){
   refreshMp();
 }
 
+/* ---- Şifrəni dəyiş (hər istifadəçi öz şifrəsini; hüquq tələb olunmur) ----
+   Yoxlama və log serverdədir (password-api.php): hazırkı şifrə, ≥6 simvol, təkrar eyni, hazırkı ilə fərqli. */
+function renderChangePassword(){
+  setContent(`
+    <div class="topbar"><div><h1>Şifrəni dəyiş</h1><div class="sub">${esc(currentUsername||'')} — öz şifrənizi dəyişirsiniz</div></div></div>
+    <div class="card" style="padding:22px 24px;max-width:440px;">
+      <div id="pw-msg"></div>
+      <form id="password-form" autocomplete="off">
+        <div class="field"><label>Hazırkı şifrə</label><input type="password" name="current" autocomplete="current-password" required></div>
+        <div class="field"><label>Yeni şifrə <span class="muted" style="font-weight:400;">(ən azı 6 simvol)</span></label><input type="password" name="new" autocomplete="new-password" required></div>
+        <div class="field"><label>Yeni şifrə (təkrar)</label><input type="password" name="confirm" autocomplete="new-password" required></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px;"><button class="btn btn-primary" type="submit">Şifrəni dəyiş</button></div>
+      </form>
+    </div>`);
+}
+async function submitChangePassword(form){
+  const box=document.getElementById('pw-msg');
+  const show=(ok,t)=>{ box.innerHTML=ok?`<div class="notice" style="margin-bottom:14px;background:var(--green-bg);color:var(--green);">${esc(t)}</div>`:`<div class="banner" style="margin-bottom:14px;">${esc(t)}</div>`; };
+  const d={current:form.current.value, new:form.new.value, confirm:form.confirm.value};
+  if(d.new.length<6) return show(false,'Yeni şifrə ən azı 6 simvol olmalıdır.');
+  if(d.new!==d.confirm) return show(false,'Yeni şifrə və onun təkrarı eyni deyil.');
+  try{
+    const r=await fetch('password-api.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+    let j=null; try{ j=await r.json(); }catch(_){}
+    if(!r.ok || !j || !j.ok) throw new Error((j&&j.error)||('Server cavabı: '+r.status));
+    form.reset(); show(true,'Şifrə dəyişdirildi. Növbəti girişdə yeni şifrəni istifadə edin.');
+  }catch(err){ show(false,err.message); }
+}
+
 /* ============ EXCEL (.xlsx) EXPORT — brauzerdə, kənar kitabxanasız ============
    Qaydalar (QAYDALAR.md): hər hesabat REPORT_EXPORTS-da elan olunur və export düyməsini avtomatik alır;
    fayl yaradılmazdan ƏVVƏL export loga yazılır — loga yazılmasa fayl yaradılmır. */
@@ -2976,7 +3036,7 @@ const AUDIT_ACTIONS={
   LOGIN:['Giriş','tag-gray'], LOGOUT:['Çıxış','tag-gray'], LOGIN_FAILED:['Uğursuz giriş','tag-red'],
   IMPORT:['İdxal','tag-accent'], RESET:['Təmizləmə','tag-red'], FIX:['Düzəliş','tag-accent'],
   USER_CREATE:['İstifadəçi yaradıldı','tag-gray'], USER_BLOCK:['İstifadəçi bloklandı','tag-red'],
-  USER_UNBLOCK:['Blokdan çıxarıldı','tag-green'], USER_PASSWORD:['Şifrə dəyişdi','tag-amber'],
+  USER_UNBLOCK:['Blokdan çıxarıldı','tag-green'], USER_PASSWORD:['Şifrə dəyişdi','tag-amber'], PASSWORD_FAILED:['Şifrə dəyişmə: səhv şifrə','tag-red'],
   USER_DELETE:['İstifadəçi silindi','tag-red'], EXPORT:['Excel export','tag-accent'],
   USER_PERMISSIONS:['Səlahiyyət dəyişdi','tag-amber'], ACCESS_DENIED:['İcazə verilmədi','tag-red'],
 };
@@ -3465,7 +3525,8 @@ document.addEventListener('click', async (e)=>{
   const btn=e.target.closest('[data-action]');
   if(!btn) return;
   const action=btn.dataset.action, id=btn.dataset.id;
-  if(action==='nav'){ currentScreen=btn.dataset.screen; renderScreen(); return; }
+  if(action==='nav'){ currentScreen=btn.dataset.screen; if(btn.dataset.group){ navOpen.add(btn.dataset.group); saveNavOpen(); } renderScreen(); return; }
+  if(action==='nav-group'){ const g=btn.dataset.group; if(navOpen.has(g)) navOpen.delete(g); else navOpen.add(g); saveNavOpen(); renderNav(); return; }
   if(action==='manual-refresh'){
     const label=btn.querySelector('span');
     const oldText=label.textContent;
@@ -3593,6 +3654,7 @@ document.addEventListener('submit', async (e)=>{
   if(e.target.id==='customer-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCustomerForm(e.target)); }
   if(e.target.id==='contract-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitContractForm(e.target)); }
   if(e.target.id==='court-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCourtForm(e.target)); }
+  if(e.target.id==='password-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitChangePassword(e.target)); }
   if(e.target.id==='creport-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCollectorReportForm(e.target)); }
   if(e.target.id==='payment-edit-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPaymentEdit(e.target)); }
 });

@@ -58,7 +58,7 @@ header('Content-Type: text/html; charset=utf-8');
 </style>
 </head>
 <body>
-<header><div><span class="who">Təhsilat</span><b id="me"><?= htmlspecialchars($u['username'] ?? '') ?></b></div><a href="logout.php">Çıxış</a></header>
+<header><div><span class="who">Təhsilat</span><b id="me"><?= htmlspecialchars($u['username'] ?? '') ?></b></div><div style="display:flex;gap:8px;"><a href="sifre.php">Şifrə</a><a href="logout.php">Çıxış</a></div></header>
 <?php if (!$canView): ?>
   <main><div class="err">Bu ekrana girişiniz yoxdur. Admin ilə əlaqə saxlayın.</div></main>
 </body></html>

@@ -112,7 +112,7 @@ if ($kind === 'delete') {
 } elseif ($kind === 'export') {
     $where[] = "l.action = 'EXPORT'";
 } elseif ($kind === 'users') {
-    $where[] = "l.action IN ('USER_CREATE','USER_BLOCK','USER_UNBLOCK','USER_PASSWORD','USER_DELETE','USER_PERMISSIONS')";
+    $where[] = "l.action IN ('USER_CREATE','USER_BLOCK','USER_UNBLOCK','USER_PASSWORD','PASSWORD_FAILED','USER_DELETE','USER_PERMISSIONS')";
 } elseif ($kind === 'denied') {
     $where[] = "l.action = 'ACCESS_DENIED'";
 }

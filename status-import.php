@@ -113,6 +113,69 @@ function si_build_plan($pdo, $rows, $statusMap, $colMap) {
     return $res;
 }
 
+// ---- Tətbiq HİSSƏ-HİSSƏ (hər sorğu SI_STEP müqavilə): uzun tək sorğu Railway-də "upstream error" verirdi.
+// Hər hissə öz əməliyyatında; bütün hissələr eyni opId ilə logda bir əməliyyat kimi qruplaşır. Təkrar/davam təhlükəsizdir:
+// müqavilənin HAZIRKI vəziyyəti yoxlanır — təhsilatçı/status artıq hədəfdədirsə toxunulmur (iki dəfə təyinat yaranmır).
+const SI_STEP = 50;
+if (($_POST['action'] ?? '') === 'apply_step') {
+    header('Content-Type: application/json; charset=utf-8');
+    @set_time_limit(120);
+    $jout = function ($a) { echo json_encode($a, JSON_UNESCAPED_UNICODE); exit; };
+    $token = (string) ($_POST['token'] ?? '');
+    $path = sys_get_temp_dir() . '/status_import_' . $token . '.json';
+    if (!preg_match('/^[0-9a-f]{32}$/', $token) || !is_file($path)) { $jout(['error' => 'Önizləmə tapılmadı və ya artıq tətbiq olunub. Faylı yenidən yükləyin.']); }
+    $job = json_decode(file_get_contents($path), true);
+    if (($job['user'] ?? '') !== $me['id'] || time() - (int) $job['time'] > 6 * 3600) { $jout(['error' => 'Önizləmənin vaxtı keçib. Faylı yenidən yükləyin.']); }
+    $plan = $job['plan'];
+    if ($plan['errors']) { $jout(['error' => 'Önizləmədə xəta var — tətbiq olunmur.']); }
+    $job += ['offset' => 0, 'nCol' => 0, 'nSt' => 0, 'opId' => make_uuid()];
+    $_SERVER['HTTP_X_OP_ID'] = $job['opId'];
+    $_SERVER['HTTP_X_OP_LABEL'] = rawurlencode('Status/təhsilatçı idxalı: ' . $job['file']);
+    $schema = $SCHEMA['contracts']; $today = baku_today();
+    $total = count($plan['changes']);
+    $slice = array_slice($plan['changes'], (int) $job['offset'], SI_STEP);
+    $nCol = 0; $nSt = 0;
+    $pdo->beginTransaction();
+    try {
+        $sel = $pdo->prepare("SELECT * FROM contracts WHERE id = ?");
+        foreach ($slice as $ch) {
+            $sel->execute([$ch['id']]);
+            $row = $sel->fetch();
+            if (!$row) continue;
+            $old = row_out($row, $schema);
+            $sets = []; $p = [];
+            if ($ch['colNew'] && (string) derive_current_assignee($old['tehsilatciTeyinatlari'], 'collectorId') !== $ch['colNew']) {
+                $list = collector_reassign_list($old['tehsilatciTeyinatlari'], $ch['colNew'], $today);
+                $sets[] = 'tehsilatciTeyinatlari = ?'; $p[] = cast_in($list, 'json');
+                $sets[] = 'currentCollectorId = ?'; $p[] = derive_current_assignee($list, 'collectorId');
+                $nCol++;
+            }
+            if ($ch['stNew'] && (string) $old['statusId'] !== $ch['stNew']) { $sets[] = 'statusId = ?'; $p[] = $ch['stNew']; $sets[] = 'statusTarix = ?'; $p[] = $today; $nSt++; }
+            if (!$sets) continue;
+            $p[] = $ch['id'];
+            $pdo->prepare("UPDATE contracts SET " . implode(', ', $sets) . " WHERE id = ?")->execute($p);
+            $sel->execute([$ch['id']]);
+            audit_log_update($pdo, 'contracts', $schema, $old, row_out($sel->fetch(), $schema));
+        }
+        $job['offset'] = (int) $job['offset'] + count($slice);
+        $job['nCol'] += $nCol; $job['nSt'] += $nSt;
+        $done = $job['offset'] >= $total;
+        if ($done) {
+            audit_insert($pdo, ['action' => 'IMPORT', 'entity' => 'contracts',
+                'summary' => 'Status/təhsilatçı idxalı (' . $job['file'] . '): ' . $total . ' müqavilə — təhsilatçı ' . $job['nCol'] . ', status ' . $job['nSt'],
+                'changes' => [['f' => 'colCount', 'l' => 'Təhsilatçı dəyişdi', 'o' => '', 'n' => (string) $job['nCol']], ['f' => 'stCount', 'l' => 'Status dəyişdi', 'o' => '', 'n' => (string) $job['nSt']],
+                    ['f' => 'missing', 'l' => 'Sistemdə tapılmayan', 'o' => '', 'n' => (string) count($plan['missing'])]]]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('status-import: ' . $e->getMessage());
+        $jout(['error' => 'Xəta (' . (int) $job['offset'] . '/' . $total . ' tətbiq olunub, bu hissə yazılmadı): ' . $e->getMessage()]);
+    }
+    if ($done) { @unlink($path); } else { file_put_contents($path, json_encode($job)); }
+    $jout(['done' => $done, 'offset' => $job['offset'], 'total' => $total, 'nCol' => $job['nCol'], 'nSt' => $job['nSt']]);
+}
+
 $step = 'form'; $plan = null; $msg = ''; $err = '';
 $statusMapText = $_POST['statusMap'] ?? $DEFAULT_STATUS_MAP;
 $colMapText = $_POST['colMap'] ?? $DEFAULT_COL_MAP;
@@ -131,51 +194,6 @@ try {
             'file' => $_FILES['file']['name'], 'plan' => $plan]));
         $plan['token'] = $token; $plan['file'] = $_FILES['file']['name'];
         $step = 'preview';
-    } elseif (($_POST['action'] ?? '') === 'apply') {
-        $token = (string) ($_POST['token'] ?? '');
-        $path = $jobDir . '/status_import_' . $token . '.json';
-        if (!preg_match('/^[0-9a-f]{32}$/', $token) || !is_file($path)) { throw new Exception('Önizləmə tapılmadı və ya artıq tətbiq olunub. Faylı yenidən yükləyin.'); }
-        $job = json_decode(file_get_contents($path), true);
-        if (($job['user'] ?? '') !== $me['id'] || time() - (int) $job['time'] > 3600) { @unlink($path); throw new Exception('Önizləmənin vaxtı keçib. Faylı yenidən yükləyin.'); }
-        $plan = $job['plan'];
-        if ($plan['errors']) { throw new Exception('Önizləmədə xəta var — tətbiq olunmur.'); }
-        $schema = $SCHEMA['contracts']; $today = baku_today();
-        $_SERVER['HTTP_X_OP_ID'] = make_uuid();
-        $_SERVER['HTTP_X_OP_LABEL'] = rawurlencode('Status/təhsilatçı idxalı: ' . $job['file']);
-        $nCol = 0; $nSt = 0;
-        $pdo->beginTransaction();
-        try {
-            $sel = $pdo->prepare("SELECT * FROM contracts WHERE id = ?");
-            foreach ($plan['changes'] as $ch) {
-                $sel->execute([$ch['id']]);
-                $row = $sel->fetch();
-                if (!$row) continue;
-                $old = row_out($row, $schema);
-                $sets = []; $p = [];
-                if ($ch['colNew']) {
-                    $list = collector_reassign_list($old['tehsilatciTeyinatlari'], $ch['colNew'], $today);
-                    $sets[] = 'tehsilatciTeyinatlari = ?'; $p[] = cast_in($list, 'json');
-                    $sets[] = 'currentCollectorId = ?'; $p[] = derive_current_assignee($list, 'collectorId');
-                    $nCol++;
-                }
-                if ($ch['stNew']) { $sets[] = 'statusId = ?'; $p[] = $ch['stNew']; $sets[] = 'statusTarix = ?'; $p[] = $today; $nSt++; }
-                $p[] = $ch['id'];
-                $pdo->prepare("UPDATE contracts SET " . implode(', ', $sets) . " WHERE id = ?")->execute($p);
-                $sel->execute([$ch['id']]);
-                audit_log_update($pdo, 'contracts', $schema, $old, row_out($sel->fetch(), $schema));
-            }
-            audit_insert($pdo, ['action' => 'IMPORT', 'entity' => 'contracts',
-                'summary' => 'Status/təhsilatçı idxalı (' . $job['file'] . '): ' . count($plan['changes']) . ' müqavilə — təhsilatçı ' . $nCol . ', status ' . $nSt,
-                'changes' => [['f' => 'colCount', 'l' => 'Təhsilatçı dəyişdi', 'o' => '', 'n' => (string) $nCol], ['f' => 'stCount', 'l' => 'Status dəyişdi', 'o' => '', 'n' => (string) $nSt],
-                    ['f' => 'missing', 'l' => 'Sistemdə tapılmayan', 'o' => '', 'n' => (string) count($plan['missing'])]]]);
-            $pdo->commit();
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) { $pdo->rollBack(); }
-            throw $e;
-        }
-        @unlink($path);
-        $msg = 'Tətbiq olundu: ' . count($plan['changes']) . ' müqavilə yeniləndi (təhsilatçı: ' . $nCol . ', status: ' . $nSt . '). Dəyişikliklər logda bir əməliyyat kimi görünür.';
-        $step = 'done';
     }
 } catch (Throwable $e) { $err = $e->getMessage(); $step = $plan ? $step : 'form'; }
 ?><!DOCTYPE html>
@@ -232,10 +250,36 @@ try {
     <td><?= $c['colNew'] ? $h($c['colOld']) . ' → <b>' . $h($c['colNewName']) . '</b>' : '<span class="muted">dəyişmir</span>' ?></td>
     <td><?= $c['stNew'] ? $h($c['stOld']) . ' → <b>' . $h($c['stNewName']) . '</b>' : '<span class="muted">dəyişmir</span>' ?></td>
     <td class="num"><?= number_format($c['debt'], 2, '.', ' ') ?></td></tr><?php endforeach; ?></table></div></div>
-<form method="post" style="display:flex;gap:10px;">
-  <input type="hidden" name="action" value="apply"><input type="hidden" name="token" value="<?= $h($plan['token']) ?>">
-  <?php if (!$plan['errors'] && $plan['changes']): ?><button class="btn" type="submit" onclick="return confirm('<?= count($plan['changes']) ?> müqavilə yenilənsin?')">Təsdiq et və tətbiq et</button><?php endif; ?>
-  <a class="btn btn-ghost" href="status-import.php">Ləğv et</a>
-</form>
+<div id="apply-box">
+  <div id="apply-msg"></div>
+  <div style="display:flex;gap:10px;">
+  <?php if (!$plan['errors'] && $plan['changes']): ?><button class="btn" type="button" id="apply-btn" data-token="<?= $h($plan['token']) ?>" data-total="<?= count($plan['changes']) ?>">Təsdiq et və tətbiq et</button><?php endif; ?>
+  <a class="btn btn-ghost" href="status-import.php" id="cancel-btn">Ləğv et</a></div>
+</div>
+<script>
+// Tətbiq hissə-hissə (hər sorğu 50 müqavilə); xəta olsa "Davam et" qaldığı yerdən davam edir
+(function(){
+  const btn=document.getElementById('apply-btn'); if(!btn) return;
+  const box=document.getElementById('apply-msg');
+  const show=(cls,t)=>{ box.className=cls; box.textContent=t; };
+  let started=false;
+  btn.addEventListener('click', async ()=>{
+    if(!started && !confirm(btn.dataset.total+' müqavilə yenilənsin?')) return;
+    started=true; btn.disabled=true; document.getElementById('cancel-btn').style.display='none';
+    for(;;){
+      let j=null;
+      try{
+        const fd=new FormData(); fd.append('action','apply_step'); fd.append('token',btn.dataset.token);
+        const r=await fetch('status-import.php',{method:'POST',body:fd});
+        j=await r.json();
+      }catch(e){ j={error:'Serverlə əlaqə kəsildi ('+e.message+'). Yazılmış hissələr qalır.'}; }
+      if(j.error){ show('err', j.error+' — «Davam et» basın.'); btn.textContent='Davam et'; btn.disabled=false; return; }
+      show('warn','Tətbiq olunur: '+j.offset+' / '+j.total+' …');
+      if(j.done){ show('ok','Tətbiq olundu: '+j.total+' müqavilə (təhsilatçı dəyişdi: '+j.nCol+', status dəyişdi: '+j.nSt+'). Dəyişikliklər logda bir əməliyyat kimi görünür.');
+        btn.remove(); const a=document.getElementById('cancel-btn'); a.textContent='Yeni fayl'; a.style.display=''; return; }
+    }
+  });
+})();
+</script>
 <?php endif; ?>
 </div></body></html>

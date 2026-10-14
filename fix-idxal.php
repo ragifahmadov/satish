@@ -72,7 +72,7 @@ function fix_db_matches(PDO $pdo, array $row, array $exp, $lock, $loose = false)
     if (json_decode((string) $row['kuratorTeyinatlari'], true)) $why[] = 'kurator təyin olunub';
     if (json_decode((string) $row['mehkemeQeydleri'], true)) $why[] = 'məhkəmə qeydi var';
     if ((string) $row['salespersonId'] !== '') $why[] = 'satıcı təyin olunub';
-    if ((int) $row['muddet'] !== 10) $why[] = 'müddət dəyişib';
+    // müddət yoxlanılmır: «Müddət düzəlişi» onu dəyişə bilər, qaytarma bölgüsünə isə təsiri yoxdur
     $st = $pdo->prepare('SELECT odemeTarixi, meblag, collectorId, emeliyyatNovu FROM payments WHERE contractId = ?' . $lock);
     $st->execute([$row['id']]);
     $pp = [];
@@ -99,9 +99,13 @@ function fix_check(PDO $pdo, array $item, $lock, $mode = 'todo') {
         $row = $found[0];
         if ($custId !== null && $row['customerId'] !== $custId) return ['ok' => false, 'reason' => 'Müqavilələr fərqli müştərilərdədir'];
         $custId = $row['customerId'];
-        $unchanged = $mode === 'todo' && isset($item['new'][$nomre]) && $item['new'][$nomre] == $exp;
+        $tgt = $item['new'][$nomre] ?? null;
+        $unchanged = $mode === 'todo' && $tgt !== null && $tgt == $exp;
+        // yalnız məbləğ/ilkin/tarix dəyişirsə (ödənişlər, təhsilatçı, qeyd eyni) — idxaldan sonrakı ödəniş mane deyil
+        $fieldsOnly = $mode === 'todo' && $tgt !== null && $tgt['payments'] === $exp['payments']
+            && $tgt['collectorId'] === $exp['collectorId'] && $tgt['qeyd'] === $exp['qeyd'];
         if (!$unchanged) {
-            $why = fix_db_matches($pdo, $row, $exp, $lock, $mode === 'done');
+            $why = fix_db_matches($pdo, $row, $exp, $lock, $mode === 'done' || $fieldsOnly);
             if ($why !== '') return ['ok' => false, 'reason' => $why];
         }
         $rows[$nomre] = $row;
@@ -216,8 +220,16 @@ function fix_apply_one(PDO $pdo, array $item, array $chk, $opId) {
         } elseif ($item['old'][$nomre] != $exp) {
             $old = $item['old'][$nomre];
             $id = $chk['rows'][$nomre]['id'];
-            $pdo->prepare('UPDATE contracts SET tarix = ?, meblag = ?, ilkinOdenis = ?, qeyd = ?, tehsilatciTeyinatlari = ?, currentCollectorId = ? WHERE id = ?')
-                ->execute([$exp['tarix'], $exp['meblag'], $exp['ilkin'], $exp['qeyd'], $tt, $col !== '' ? $col : null, $id]);
+            // yalnız fərqli sahələr yenilənir (idxaldan sonra edilmiş təhsilatçı/qeyd dəyişikliyi qorunur)
+            $set = []; $vals = [];
+            foreach ([['tarix', 'tarix'], ['meblag', 'meblag'], ['ilkinOdenis', 'ilkin'], ['qeyd', 'qeyd']] as [$colName, $f]) {
+                if ((string) $old[$f] !== (string) $exp[$f]) { $set[] = "`$colName` = ?"; $vals[] = $exp[$f]; }
+            }
+            if ($old['collectorId'] !== $exp['collectorId']) {
+                $set[] = '`tehsilatciTeyinatlari` = ?'; $vals[] = $tt;
+                $set[] = '`currentCollectorId` = ?'; $vals[] = $col !== '' ? $col : null;
+            }
+            if ($set) { $vals[] = $id; $pdo->prepare('UPDATE contracts SET ' . implode(', ', $set) . ' WHERE id = ?')->execute($vals); }
             $ch = [];
             foreach ([['meblag', 'Satış məbləği'], ['ilkin', 'İlkin ödəniş'], ['tarix', 'Tarix'], ['qeyd', 'Qeyd']] as [$f, $l]) {
                 if ((string) $old[$f] !== (string) $exp[$f]) $ch[] = ['f' => $f, 'l' => $l, 'o' => (string) $old[$f], 'n' => (string) $exp[$f]];

@@ -131,8 +131,14 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
         } else {
             $c['ilkinOdenis'] = 0;
         }
+        // Müddət faylı (istəyə görə): müddət = (satış − ilkin) ÷ real aylıq, yuxarı yuvarlaqlaşdırılmış
+        $c['muddet'] = import_muddet($c, $opts['months'] ?? []);
     }
     unset($c);
+    // Bütün satışlar üzrə (bağlılar da daxil) müddət — qaytarma bölgüsündən asılı deyil (fix-muddet.php üçün)
+    $muddetAll = []; $invCount = [];
+    foreach ($contracts as $c) $invCount[(string) $c['invno']] = ($invCount[(string) $c['invno']] ?? 0) + 1;
+    foreach ($contracts as $c) if ($invCount[(string) $c['invno']] === 1) $muddetAll[(string) $c['invno']] = $c['muddet'];
 
     // Bağlanmış (qalıq borcu 0 olan) müqavilələri idxaldan çıxarırıq.
     $skippedClosed = 0;
@@ -199,7 +205,7 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
         $contractsOut[] = [
             'tempId' => $tempId, 'customerKey' => $key, 'nomre' => $nomre, 'tarix' => $tarix,
             'meblag' => round($c['meblag'], 2), 'ilkinOdenis' => round($c['ilkinOdenis'], 2),
-            'collectorId' => $colId, 'qeyd' => $qeyd,
+            'collectorId' => $colId, 'qeyd' => $qeyd, 'muddet' => $c['muddet'],
         ];
         foreach ($c['payments'] as $p) {
             $paymentsOut[] = ['contractTempId' => $tempId, 'tarix' => $p['tarix'], 'meblag' => round($p['meblag'], 2)];
@@ -208,10 +214,19 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
     }
 
 
+    $monthNotes = [];
+    if (!empty($opts['months'])) {
+        $inFile = 0; $diff = 0; $seen = [];
+        foreach ($contractsOut as $co) {
+            if (isset($opts['months'][preg_replace('/-\d+$/', '', (string) $co['nomre'])])) { $inFile++; $seen[preg_replace('/-\d+$/', '', (string) $co['nomre'])] = 1; }
+            if ((int) $co['muddet'] !== 10) $diff++;
+        }
+        $monthNotes[] = "Müddət faylı: $inFile müqaviləyə tətbiq olundu ($diff-də müddət 10 aydan fərqlidir); faylda olub idxal olunmayan (bağlı və ya tapılmayan): " . (count($opts['months']) - count($seen));
+    }
     return [
         'customers' => $customersOut, 'contracts' => $contractsOut, 'payments' => $paymentsOut,
-        'skippedClosed' => $skippedClosed, 'format' => $format, 'collectorsAssigned' => $collectorStats['assigned'],
-        'notes' => array_merge(import_notes($format, $onecStats, $nameLookup, $customersOut),
+        'skippedClosed' => $skippedClosed, 'muddetAll' => $muddetAll, 'format' => $format, 'collectorsAssigned' => $collectorStats['assigned'],
+        'notes' => array_merge(import_notes($format, $onecStats, $nameLookup, $customersOut), $monthNotes,
             $hasTehsil ? array_merge(
                 ['Təhsilatçı təyin olunan müqavilə: ' . $collectorStats['assigned'] . '; təhsilatçı dəyəri qeydə yazılan: ' . $collectorStats['noted']],
                 $collectorUnresolved ? ['Mapping-də olub sistemdə birmənalı tapılmayan (boş qalır, qeydə yazılır): ' . implode('; ', $collectorUnresolved)] : []
@@ -237,10 +252,42 @@ function parse_return_links($text, array &$errors) {
     return $out;
 }
 
+// Müddət faylı: A = müqavilə № (НФНФ-000056 / 56), B = "ay" (satış ÷ real aylıq ödəniş, kəsr ola bilər).
+// Bütün vərəqlər axınla oxunur (fayllarda milyonlarla boş sətir ola bilər). Qaytarır: [№ => ay]
+function read_months_file($path, array &$errors) {
+    $errors = []; $out = [];
+    $sheets = onec_sheet_paths($path);
+    $sst = onec_shared_strings($path);
+    foreach ($sheets as $name => $sp) {
+        onec_stream_rows($path, $sp, $sst, function ($r, $l, $cells) use (&$out, &$errors, $name) {
+            $a = trim((string) ($cells[0] ?? '')); $b = trim((string) ($cells[1] ?? ''));
+            if ($a === '' && $b === '') return true;
+            $no = preg_replace('/^(?:НФНФ-)?0*/u', '', $a);
+            if (!preg_match('/^\d+$/', $no)) return true;            // başlıq və s.
+            $v = (float) str_replace(',', '.', $b);
+            if ($v <= 0) { $errors[] = "$name, sətir $r: №$a — ay dəyəri səhvdir («{$b}»)"; return true; }
+            $out[$no] = $v;
+            return true;
+        });
+    }
+    return $out;
+}
+
+// Müqavilənin müddəti (ay): fayldakı "ay" = satış ÷ aylıq → aylıq = satış ÷ ay; müddət = ⌈(satış − ilkin) ÷ aylıq⌉.
+// Faylda yoxdursa 10 (köhnə defolt). Satış = 1C-dəki ilkin satış məbləği (qaytarmadan əvvəl).
+function import_muddet(array $c, array $months) {
+    $m = $months[(string) $c['invno']] ?? null;
+    $sale = (float) ($c['saleOrig'] ?? $c['meblag']);
+    if (!$m || $sale <= 0) return 10;
+    $aylik = $sale / $m;
+    $t = ($sale - (float) $c['ilkinOdenis']) / $aylik;
+    return max(1, (int) ceil($t - 0.05));
+}
+
 // Müqavilə tarixindən ödəniş tarixinə ay fərqi (qrafik ayı) — import-step.php ilə eyni qayda (1…10)
-function import_qrafik_index($contractTarix, $payTarix) {
+function import_qrafik_index($contractTarix, $payTarix, $muddet = 10) {
     [$fy, $fm] = array_map('intval', explode('-', substr((string) $contractTarix, 0, 7)));
     [$ty, $tm] = array_map('intval', explode('-', substr((string) $payTarix, 0, 7)));
     $idx = ($ty - $fy) * 12 + ($tm - $fm);
-    return max(1, min(10, $idx));
+    return max(1, min(max(1, (int) $muddet), $idx));
 }

@@ -30,7 +30,7 @@ require_admin(false);
 </style>
 </head>
 <body>
-  <div class="topbar"><a href="index.php">← Proqrama qayıt</a><a href="fix-idxal.php">İdxal düzəlişi</a><a href="logout.php">Çıxış</a></div>
+  <div class="topbar"><a href="index.php">← Proqrama qayıt</a><a href="fix-idxal.php">İdxal düzəlişi</a><a href="fix-muddet.php">Müddət düzəlişi</a><a href="logout.php">Çıxış</a></div>
   <h2>Köhnə sistemdən idxal</h2>
 
   <div class="card">
@@ -48,7 +48,13 @@ require_admin(false);
       <p class="hint">"Ödənişlər" adlı vərəqi olan, Müqavilə/Müştəri/Soyad/Ad/Ata adı/Növ/Tarix/Məbləğ/Sənəd sütunlu fayl (istəyə görə «Təhsilatçı» sütunu: tanınan ad → müqavilənin təhsilatçısı, qalan dəyər → müqavilənin qeydi) — <b>və ya</b> 1C-nin "Взаиморасчеты с контрагентами" hesabatı (Контрагент → Договор → Документ → Год → День qruplaşması ilə). Format avtomatik tanınır.</p>
 
       <div class="field">
-        <label>3) Qaytarma bağlamaları (istəyə görə)</label>
+        <label>3) Müddət faylı (istəyə görə, .xlsx)</label>
+        <input type="file" name="months_file" accept=".xlsx">
+      </div>
+      <p class="hint">A sütunu — müqavilə № (НФНФ-000056), B — «ay» (satış ÷ aylıq ödəniş). Müddət = (satış − ilkin) ÷ aylıq, yuxarı yuvarlaqlaşdırılır. Faylda olmayan müqavilə — 10 ay.</p>
+
+      <div class="field">
+        <label>4) Qaytarma bağlamaları (istəyə görə)</label>
         <textarea name="links" rows="4" style="width:100%;font-family:monospace;box-sizing:border-box;" placeholder="767 = 7112"></textarea>
       </div>
       <p class="hint">Hər sətirdə «qaytarma № = satış №» — 1C qaytarmanı satışa bağlamadığı üçün bunu siz göstərirsiniz. «İdxal düzəlişi»ndə tətbiq etdiyiniz bağlamaları yenidən idxalda da buraya yazın.</p>

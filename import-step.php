@@ -86,7 +86,7 @@ try {
             $dataList[] = [
                 'nomre' => $c['nomre'], 'tarix' => $c['tarix'], 'customerId' => $job['custIdMap'][$c['customerKey']] ?? '',
                 'salespersonId' => '', 'meblag' => $c['meblag'], 'ilkinOdenis' => $c['ilkinOdenis'],
-                'muddet' => 10, 'qeyd' => $c['qeyd'] ?? '',
+                'muddet' => $c['muddet'] ?? 10, 'qeyd' => $c['qeyd'] ?? '',
                 // təhsilatçı (idxal faylının "Təhsilatçı" sütunundan): müqavilə tarixindən davam edən təyinat
                 'tehsilatciTeyinatlari' => ($c['collectorId'] ?? '') !== ''
                     ? [['collectorId' => $c['collectorId'], 'baslama' => $c['tarix'], 'son' => '']] : [],
@@ -101,6 +101,7 @@ try {
             $job['offset'] = 0;
             // Qrafik ayını düzgün hesablamaq üçün hər müqavilənin tarixini saxlayırıq
             $job['contractDates'] = array_column($job['contracts'], 'tarix', 'tempId');
+            $job['contractMuddet'] = array_map(fn($c) => $c['muddet'] ?? 10, array_column($job['contracts'], null, 'tempId'));
             unset($job['contracts'], $job['custIdMap']); // qalanı artıq lazım deyil
         }
 
@@ -113,7 +114,8 @@ try {
             $contractTarix = $job['contractDates'][$p['contractTempId']] ?? $p['tarix'];
             $idx = month_diff($contractTarix, $p['tarix']);
             if ($idx < 1) $idx = 1;
-            if ($idx > 10) $idx = 10;
+            $maxIdx = (int) ($job['contractMuddet'][$p['contractTempId']] ?? 10);
+            if ($idx > $maxIdx) $idx = max(1, $maxIdx);
             $dataList[] = [
                 'contractId' => $cid, 'meblag' => $p['meblag'], 'odemeTarixi' => $p['tarix'],
                 'collectorId' => '', 'qeyd' => '', 'qrafikAyIndex' => $idx, 'qrafikAyLabel' => '',

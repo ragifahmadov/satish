@@ -245,7 +245,7 @@ function onec_build_contracts(array $docs, array $order, array &$stats, array $o
         $contracts[$key] = [
             'customer' => $d['cust'], 'soyad' => $nm[0], 'ad' => $nm[1], 'ataadi' => $nm[2],
             'tehsilatci' => $d['tehsilatci'] ?? '', 'sale_date' => $d['saleDate'] ?: $d['docdate'],
-            'meblag' => round($d['sold'] + $extra, 2), 'invno' => $d['no'] !== '' ? $d['no'] : $d['doc'], 'payments' => $payments,
+            'meblag' => round($d['sold'] + $extra, 2), 'saleOrig' => round($d['sold'], 2), 'invno' => $d['no'] !== '' ? $d['no'] : $d['doc'], 'payments' => $payments,
         ];
         $byCust[$d['cust']][] = $key;
     }

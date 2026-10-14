@@ -19,12 +19,15 @@ try {
     if (empty($_FILES['customer_fin_file']['tmp_name']) || empty($_FILES['contract_payments_file']['tmp_name'])) {
         fail_json('Hər iki faylı seçməlisiniz.');
     }
+    $linkErrors = []; $monthErrors = [];
     try {
         $r = import_prepare($_FILES['customer_fin_file']['tmp_name'], $_FILES['contract_payments_file']['tmp_name'], [
             'collectors' => fn() => get_pdo()->query('SELECT id, soyad, ad FROM collectors')->fetchAll(),
             'lastPayOrder' => true,
             'returnLinks' => parse_return_links($_POST['links'] ?? '', $linkErrors),
+            'months' => !empty($_FILES['months_file']['tmp_name']) ? read_months_file($_FILES['months_file']['tmp_name'], $monthErrors) : [],
         ]);
+        foreach ($monthErrors ?? [] as $e) $r['notes'][] = 'Müddət faylı — ' . $e;
         foreach ($linkErrors as $e) $r['notes'][] = 'Bağlama sətri oxunmadı — ' . $e;
     } catch (ImportUserError $e) {
         fail_json($e->getMessage());

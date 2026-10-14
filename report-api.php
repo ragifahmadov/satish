@@ -165,7 +165,10 @@ if ($report === 'contracts') {
         if (($x = $num($k . 'Max')) !== null) { $where[] = "$col <= :{$k}max"; $params[":{$k}max"] = $x; }
     }
     if (($v = $g('qeyd')) !== '') { $where[] = 'LOWER(c.qeyd) LIKE :qeyd'; $params[':qeyd'] = $like($v); }
-    if (($v = $uuidP('status')) !== '') {
+    // Status: boş — Bağlı XARİC (defolt); '__all__' — hamısı (Bağlı daxil)
+    if ($g('status') === '__all__') { /* süzgəc yoxdur */ }
+    elseif ($g('status') === '') { [$oSql, $oP] = contract_open_sql($pdo, 'c', 'op'); $where[] = $oSql; $params += $oP; }
+    elseif (($v = $uuidP('status')) !== '') {
         if ($v === '__none__') { $where[] = "(c.statusId IS NULL OR c.statusId = '')"; }
         else { $where[] = 'c.statusId = :stat'; $params[':stat'] = $v; }
     }
@@ -289,7 +292,9 @@ if ($report === 'debtor-sales') {
         return max(0, $m);
     };
     $byCust = [];
+    $closedId = contract_closed_id($pdo);
     foreach ($contracts as $c) {
+        if ($closedId !== '' && (string) ($c['statusId'] ?? '') === $closedId) continue;   // Bağlı müqavilələr hesabatda iştirak etmir
         [$paid, $ret] = $upTo($c['id'], null);
         $c['debtNow'] = (float) $c['meblag'] - $ret - (float) $c['ilkinOdenis'] - $paid;
         $byCust[$c['customerId']][] = $c;
@@ -359,7 +364,9 @@ if ($report === 'monthly-plan') {
     $prevEnd = (new DateTime($ms))->modify('-1 day')->format('Y-m-d');
 
     [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
-    $where = [$cSql];
+    [$oSql, $oP] = contract_open_sql($pdo, 'c', 'op');   // Bağlı müqavilələr planda iştirak etmir
+    $where = [$cSql, $oSql];
+    $params += $oP;
     if ($teh === '__none__') { $where[] = "(c.currentCollectorId IS NULL OR c.currentCollectorId = '')"; }
     elseif ($teh !== '') { $where[] = 'c.currentCollectorId = :fcol'; $params[':fcol'] = $teh; }
     $params[':ms1'] = $ms; $params[':ms2'] = $ms;

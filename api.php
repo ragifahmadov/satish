@@ -206,6 +206,7 @@ try {
                     }
                 }
                 $cid = (string) ($body['contractId'] ?? '');
+                if (contract_is_closed($pdo, $cid)) { fail(409, CONTRACT_CLOSED_MSG); }
                 $pc = payment_collector_for_contract($pdo, $cid);
                 $want = (string) ($body['reassignCollectorId'] ?? '');
                 if ($want !== '' && $want !== $pc) {
@@ -323,9 +324,14 @@ try {
             $why = authz_write_denied($ctx, $col, 'PUT', $body);
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'PUT', $id, $body); }
             if ($why !== '') { api_deny($why); }
+            // Bağlı müqavilə: yalnız statusun özü dəyişdirilə bilər (başqa sahə ilə birlikdə yox)
+            if ($col === 'contracts' && contract_is_closed($pdo, $id) && array_keys($body) !== ['statusId']) { fail(409, CONTRACT_CLOSED_MSG); }
             if ($col === 'payments') {
                 $why = authz_payment_row_denied($pdo, $ctx, $id);   // "Geri qaytarma" sətri → "Mal qaytarılması" hüququ
                 if ($why !== '') { api_deny($why); }
+                $pc0 = $pdo->prepare("SELECT contractId FROM payments WHERE id = ?");
+                $pc0->execute([(string) $id]);
+                if (contract_is_closed($pdo, (string) $pc0->fetchColumn())) { fail(409, CONTRACT_CLOSED_MSG); }
                 // Ödənişin təhsilatçısı və müqaviləsi redaktədə dəyişmir (yalnız məbləğ, tarix, qeyd)
                 unset($body['collectorId'], $body['contractId'], $body['reassignCollectorId']);
                 if (array_key_exists('meblag', $body)) {
@@ -417,6 +423,12 @@ try {
             if ($col === 'lookup_types' || $col === 'lookup_values') {
                 $why = lookup_delete_denied($pdo, $col, $id);
                 if ($why !== '') { fail(400, $why); }
+            }
+            if ($col === 'contracts' && contract_is_closed($pdo, $id)) { fail(409, CONTRACT_CLOSED_MSG); }
+            if ($col === 'payments') {
+                $pc0 = $pdo->prepare("SELECT contractId FROM payments WHERE id = ?");
+                $pc0->execute([(string) $id]);
+                if (contract_is_closed($pdo, (string) $pc0->fetchColumn())) { fail(409, CONTRACT_CLOSED_MSG); }
             }
             $stChanged = null;
 

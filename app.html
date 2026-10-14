@@ -248,6 +248,7 @@
         <button class="navbtn navsub" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
         <a href="admin.php" class="navbtn navsub" style="text-decoration:none;"><span>İstifadəçilər</span></a>
         <a href="import-ledger.php" class="navbtn navsub" style="text-decoration:none;"><span>İdxal</span></a>
+        <a href="status-import.php" class="navbtn navsub" style="text-decoration:none;"><span>Status/təhsilatçı idxalı</span></a>
         <a href="fix-qrafik.php" class="navbtn navsub" style="text-decoration:none;"><span>Qrafik ayını düzəlt</span></a>
         <a href="reset.php" class="navbtn navsub" style="text-decoration:none;"><span>Bazanı təmizlə</span></a>
       </div>
@@ -462,7 +463,7 @@ function setContent(html){ document.getElementById('content').innerHTML=html; }
 // Hər ekranın faktiki ehtiyac duyduğu cədvəllər (ad/borc kimi hesablanan
 // sahələr üçün başqa cədvəllərə də baxmaq lazım ola bilər).
 const SCREEN_DEPS={
-  dashboard:['contracts','paymentSums','customers','dashMonth'],
+  dashboard:['contracts','paymentSums','customers','dashMonth','lookup_types','lookup_values'],
   salespeople:['salespeople'],
   collectors:['collectors'],
   curators:['curators'],
@@ -561,15 +562,16 @@ async function renderScreen(){
 
 /* ============ DASHBOARD ============ */
 function renderDashboard(){
-  const totalSales=state.contracts.reduce((s,c)=>s+contractNetSale(c),0);
-  const totalPaid=state.contracts.reduce((s,c)=>s+contractPaidSum(c.id),0);
-  const totalIlkin=state.contracts.reduce((s,c)=>s+(Number(c.ilkinOdenis)||0),0);
-  const totalDebt=state.contracts.reduce((s,c)=>s+contractDebt(c),0);
+  const open=state.contracts.filter(c=>!isClosed(c));   // bağlı müqavilələr cəmlərdə iştirak etmir
+  const totalSales=open.reduce((s,c)=>s+contractNetSale(c),0);
+  const totalPaid=open.reduce((s,c)=>s+contractPaidSum(c.id),0);
+  const totalIlkin=open.reduce((s,c)=>s+(Number(c.ilkinOdenis)||0),0);
+  const totalDebt=open.reduce((s,c)=>s+contractDebt(c),0);
   const thisMonth=dashMonthTotal;
   setContent(`
     <div class="topbar"><div><h1>İdarə paneli</h1><div class="sub">Ümumi vəziyyətə baxış</div></div></div>
     <div class="kpis">
-      <div class="card kpi"><div class="lbl">Aktiv müqavilələr</div><div class="val">${state.contracts.length}</div></div>
+      <div class="card kpi"><div class="lbl">Aktiv müqavilələr</div><div class="val">${open.length}</div></div>
       <div class="card kpi"><div class="lbl">Ümumi satış məbləği</div><div class="val">${fmtMoney(totalSales)}</div></div>
       <div class="card kpi"><div class="lbl">Toplanmış məbləğ</div><div class="val">${fmtMoney(totalPaid+totalIlkin)}</div></div>
       <div class="card kpi"><div class="lbl">Qalan ümumi borc</div><div class="val" style="color:var(--red)">${fmtMoney(totalDebt)}</div></div>
@@ -579,7 +581,7 @@ function renderDashboard(){
     <div class="card">
       <div class="table-scroll"><table><thead><tr><th>Müqavilə №</th><th>Müştəri</th><th>Tarix</th><th class="num">Məbləğ</th><th class="num">Qalıq borc</th></tr></thead>
       <tbody>${
-        state.contracts.slice().sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'')).slice(0,6).map(c=>{
+        open.slice().sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'')).slice(0,6).map(c=>{
           const debt=contractDebt(c);
           return `<tr><td>${esc(c.nomre)}</td><td>${esc(customerName(c.customerId))}</td><td>${fmtDate(c.tarix)}</td><td class="num">${fmtMoney(c.meblag)}</td><td class="num"><span class="tag ${debt>0?'tag-red':'tag-green'}">${fmtMoney(debt)}</span></td></tr>`;
         }).join('') || '<tr><td colspan="5" class="empty">Hələ müqavilə yoxdur</td></tr>'
@@ -891,12 +893,21 @@ function statusById(id){ return id?byId(state.lookup_values||[],id):null; }
 function statusName(id){ const v=statusById(id); return v?v.ad:''; }
 function lkTagHtml(v){ if(!v) return '<span class="muted">—</span>'; const cls=(LK_COLORS[v.reng]||LK_COLORS.gray)[1]; return `<span class="tag ${cls}">${esc(v.ad)}</span>`; }
 function statusTagHtml(id){ return lkTagHtml(statusById(id)); }
+// «Bağlı» (sistem kodu bagli) müqavilə: dəyişdirilmir (server də qadağan edir), siyahı/hesabatlarda göstərilmir —
+// istisna: Müqavilələr və Müqavilə axtarışı (status filtri ilə), Təhsilat hesabatı (keçmiş ödənişlər)
+function isClosed(c){ const v=c?statusById(c.statusId):null; return !!(v && v.kod==='bagli'); }
+const CLOSED_MSG='Müqavilə bağlıdır (status «Bağlı») — dəyişiklik etmək olmaz. Lazım olarsa əvvəlcə statusunu dəyişin.';
+// Müqavilələr / Müqavilə axtarışı filtri: '' — Bağlı xaric (defolt), '__all__' — hamısı, '__none__' — statussuz, id — konkret status
+function statusFilterOptionsHtml(sel){
+  return `<option value=""${!sel?' selected':''}>Bağlı xaric (hamısı)</option><option value="__all__"${sel==='__all__'?' selected':''}>Hamısı (Bağlı daxil)</option>`
+    +statusOptionsHtml(sel,false)+`<option value="__none__"${sel==='__none__'?' selected':''}>Statussuz</option>`;
+}
 function statusOptionsHtml(sel, withAll){
   return (withAll?'<option value="">Hamısı</option>':'')
     +statusValues(false).map(v=>`<option value="${v.id}"${sel===v.id?' selected':''}>${esc(v.ad)}${Number(v.aktiv)?'':' (passiv)'}</option>`).join('')
     +(withAll?`<option value="__none__"${sel==='__none__'?' selected':''}>Statussuz</option>`:'');
 }
-let contractStatusFilter='';   // Müqavilələr siyahısında status filtri ('' — hamısı, '__none__' — statussuz)
+let contractStatusFilter='';   // Müqavilələr siyahısında status filtri ('' — Bağlı xaric, '__all__' — hamısı, '__none__' — statussuz)
 
 let lkSel=null;   // seçilmiş tipin id-si
 function renderLookups(){
@@ -1012,7 +1023,7 @@ async function deleteLookup(col,id){
 function contractRowsFor(q){
   return state.contracts
     .filter(c=>!q || (c.nomre+' '+customerName(c.customerId)).toLowerCase().includes(q))
-    .filter(c=>!contractStatusFilter || (contractStatusFilter==='__none__'?!c.statusId:c.statusId===contractStatusFilter))
+    .filter(c=>contractStatusFilter==='__all__' || (!contractStatusFilter ? !isClosed(c) : (contractStatusFilter==='__none__'?!c.statusId:c.statusId===contractStatusFilter)))
     .sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'') || (b.createdAt||'').localeCompare(a.createdAt||''));
 }
 function renderContracts(filter){
@@ -1023,7 +1034,7 @@ function renderContracts(filter){
     <div class="topbar" style="align-items:center;margin-bottom:8px;">
       <div><h1>Müqavilələr</h1><div class="sub">${state.contracts.length} qeyd</div></div>
       <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;">
-        <select id="contracts-status-filter" title="Status" style="width:150px;">${statusOptionsHtml(contractStatusFilter,true).replace('<option value="">Hamısı</option>','<option value="">Bütün statuslar</option>')}</select>
+        <select id="contracts-status-filter" title="Status" style="width:150px;">${statusFilterOptionsHtml(contractStatusFilter)}</select>
         <input class="searchbox" type="search" id="search-contracts" placeholder="Müqavilə № və ya müştəri…" style="width:220px;" value="${esc(filter||'')}">
         ${can('contracts',2)?`<button class="btn btn-primary" data-action="add-contracts" title="Yeni müqavilə" style="width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${ICONS.plus}</button>`:''}
       </div>
@@ -1058,12 +1069,12 @@ function renderContractRows(rows){
       <td class="num" style="font-size:11px;">${fmtMoney(monthly)}</td>
       <td class="num"><span class="tag ${debt>0?'tag-red':'tag-green'}">${fmtMoney(debt)}</span></td>
       <td><div class="rowactions">
-        ${can('contracts',2)?`<button class="iconbtn" data-action="edit-contracts" data-id="${c.id}" title="Redaktə et">${ICONS.edit}</button>`:''}
+        ${(isClosed(c)?canExtra('contract-status'):can('contracts',2))?`<button class="iconbtn" data-action="edit-contracts" data-id="${c.id}" title="${isClosed(c)?'Bağlıdır — yalnız statusu dəyişmək olar':'Redaktə et'}">${ICONS.edit}</button>`:''}
         <button class="iconbtn" data-action="show-schedule" data-id="${c.id}" title="Ödəniş qrafiki">${ICONS.calendar}</button>
         <button class="iconbtn" data-action="show-assignments" data-id="${c.id}" title="Təhsilatçı təyinatları">${ICONS.reassign}</button>
         <button class="iconbtn" data-action="show-curator-assignments" data-id="${c.id}" title="Kurator təyinatları">${ICONS.curator}</button>
         <button class="iconbtn${hasCourt?' has':''}" data-action="show-court" data-id="${c.id}" title="${hasCourt?'Məhkəmə qeydi ('+c.mehkemeQeydleri.length+')':'Məhkəmə qeydi'}">${ICONS.court}</button>
-        ${can('contracts',3)?`<button class="iconbtn" data-action="delete-contracts" data-id="${c.id}" title="Sil">${ICONS.trash}</button>`:''}
+        ${can('contracts',3)&&!isClosed(c)?`<button class="iconbtn" data-action="delete-contracts" data-id="${c.id}" title="Sil">${ICONS.trash}</button>`:''}
       </div></td></tr>`;
   }).join('');
 }
@@ -1071,9 +1082,11 @@ function openContractForm(id){
   if(!state.customers.length){ alert('Əvvəlcə ən azı bir müştəri əlavə edin.'); return; }
   if(!state.salespeople.length){ alert('Əvvəlcə ən azı bir satıcı əlavə edin.'); return; }
   const rec=id?byId(state.contracts,id):null;
+  const closed=isClosed(rec);
   document.getElementById('modal-panel').innerHTML=`
-    <h2>${rec?'Müqaviləni redaktə et':'Yeni müqavilə'}</h2>
-    <form id="contract-form" data-id="${id||''}">
+    <h2>${rec?(closed?'Bağlı müqavilə':'Müqaviləni redaktə et'):'Yeni müqavilə'}</h2>
+    ${closed?`<div class="notice" style="margin-bottom:14px;">Müqavilə bağlıdır — sahələri dəyişmək olmaz.${canExtra('contract-status')?' Yenidən açmaq üçün statusu dəyişin.':''}</div>`:''}
+    <form id="contract-form" data-id="${id||''}" data-closed="${closed?'1':''}">
       <div class="grid2">
         <div class="field">
           <label>Müqavilə nömrəsi</label>
@@ -1118,7 +1131,11 @@ function openContractForm(id){
       </div>
     </form>`;
   openModal();
-  bindCustomerSearch(document.getElementById('contract-form'));
+  const cf=document.getElementById('contract-form');
+  if(closed){
+    cf.querySelectorAll('input,select,textarea').forEach(el=>{ if(el.name!=='statusId') el.disabled=true; });
+    if(!canExtra('contract-status')){ const sb=cf.querySelector('button[type="submit"]'); if(sb) sb.remove(); }
+  } else bindCustomerSearch(cf);
 }
 function bindCustomerSearch(form){
   const input=form.querySelector('#customer-search');
@@ -1179,18 +1196,19 @@ function courtEntriesSorted(c){
 function openCourtModal(contractId){
   const c=byId(state.contracts,contractId);
   if(!c) return;
+  const canCourt=canExtra('court-notes') && !isClosed(c);   // bağlı müqavilədə məhkəmə qeydi dəyişmir
   const entries=courtEntriesSorted(c);
   const listHtml=entries.length ? entries.map(e=>`<div style="padding:10px 12px;border-radius:8px;margin-bottom:8px;background:var(--bg-page);border:1px solid var(--border);display:flex;gap:10px;align-items:flex-start;">
       <div style="flex:1;min-width:0;">
         <div class="muted" style="font-size:12.5px;margin-bottom:4px;">${fmtDate(e.tarix)}</div>
         <div style="white-space:pre-wrap;word-break:break-word;">${esc(e.qeyd)}</div>
       </div>
-      ${canExtra('court-notes')?`<button type="button" class="iconbtn" data-action="delete-court-note" data-id="${c.id}" data-idx="${e._i}" title="Qeydi sil">${ICONS.trash}</button>`:''}
+      ${canCourt?`<button type="button" class="iconbtn" data-action="delete-court-note" data-id="${c.id}" data-idx="${e._i}" title="Qeydi sil">${ICONS.trash}</button>`:''}
     </div>`).join('') : `<div class="muted" style="margin-bottom:6px;">Bu müqavilə üzrə hələ məhkəmə qeydi yoxdur.</div>`;
   document.getElementById('modal-panel').innerHTML=`
     <h2>Məhkəmə qeydi — ${esc(c.nomre)} <span class="muted" style="font-size:13px;font-weight:400;">— ${esc(customerName(c.customerId))}</span></h2>
     <div style="margin-bottom:16px;max-height:260px;overflow-y:auto;">${listHtml}</div>
-    ${canExtra('court-notes')?`<form id="court-form" data-id="${c.id}">
+    ${canCourt?`<form id="court-form" data-id="${c.id}">
       <div class="field" style="max-width:200px;"><label>Tarix</label><input type="date" name="tarix" value="${todayIso()}"></div>
       <div class="field"><label>Məhkəmə qeydi</label><textarea name="qeyd" rows="3"></textarea></div>
       <div class="field-err" id="court-err"></div>
@@ -1229,6 +1247,12 @@ async function deleteCourtNote(contractId, idx){
 async function submitContractForm(form){
   clearFieldErrors(form);
   const id=form.dataset.id; const fd=new FormData(form);
+  if(form.dataset.closed==='1'){   // bağlı müqavilə: yalnız status (server də yalnız bunu qəbul edir)
+    const rec=byId(state.contracts,id), sid=fd.get('statusId')||'';
+    if(!sid || !rec || sid===rec.statusId){ closeModal(); return; }
+    const saved=await apiUpdate('contracts',id,{statusId:sid});
+    upsertInState('contracts', saved); closeModal(); renderScreen(); return;
+  }
   const data={
     nomre:fd.get('nomre')||'', tarix:fd.get('tarix')||'', customerId:fd.get('customerId')||'',
     salespersonId:fd.get('salespersonId')||'', meblag:Number(fd.get('meblag'))||0, ilkinOdenis:Number(fd.get('ilkinOdenis'))||0, muddet:Number(fd.get('muddet'))||0,
@@ -1297,6 +1321,7 @@ function renderPaymentsPicker(filter){
     const query=(q||'').toLowerCase();
     if(query.length<3){ results.innerHTML=`<div class="search-item muted">Ən azı 3 simvol yazın…</div>`; results.style.display='block'; return; }
     const matches=state.contracts.filter(c=>{
+      if(isClosed(c)) return false;   // bağlı müqavilə ödəniş üçün seçilmir
       const cust=byId(state.customers,c.customerId);
       return (c.nomre+' '+(cust?fullName(cust):'')).toLowerCase().includes(query);
     }).slice(0,30);
@@ -1410,7 +1435,8 @@ function renderPaymentsPanel(contract){
       <div class="card kpi" style="padding:10px 14px;"><div class="lbl" style="margin-bottom:4px;">Qalıq borc</div><div class="val" style="font-size:18px;color:${debt>0?'var(--red)':'var(--green)'}">${fmtMoney(debt)}</div></div>
       <div class="card kpi" style="padding:10px 14px;background:${scheduleDebt>0?'var(--red)':'var(--green)'}"><div class="lbl" style="margin-bottom:4px;color:#000">Qrafik üzrə borc</div><div class="val" style="font-size:18px;color:#000">${fmtMoney(scheduleDebt)}</div></div>
     </div>
-    ${can('payments',2)?`<div class="card" style="padding:10px 14px;margin-bottom:12px;">
+    ${isClosed(contract)?`<div class="notice" id="pay-closed" style="margin-bottom:12px;">${CLOSED_MSG}</div>`:''}
+    ${can('payments',2)&&!isClosed(contract)?`<div class="card" style="padding:10px 14px;margin-bottom:12px;">
       <div id="qp-title" style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:8px;">Bugünkü ödənişi qeyd et</div>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
         <div class="field" style="max-width:130px;margin-bottom:0;"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" id="qp-amount"></div>
@@ -1450,6 +1476,7 @@ function updateReturnToggleUi(checked){
 /* ---- Qeyd olunmuş ödənişi dəyişmək / silmək (ayrıca hüquqlar; "Geri qaytarma" üçün "Mal qaytarılması" da) ---- */
 function paymentActionsVisible(){ return canExtra('payment-edit') || canExtra('payment-delete'); }
 function paymentRowButtons(p){
+  if(isClosed(byId(state.contracts,p.contractId))) return '';   // bağlı müqavilənin ödənişləri dəyişmir
   const ret=isReturnPayment(p);
   if(ret && !canExtra('goods-return')) return '';
   return (canExtra('payment-edit')?`<button class="iconbtn" data-action="edit-payment" data-id="${p.id}" title="Dəyiş">${ICONS.edit}</button> `:'')
@@ -1621,6 +1648,7 @@ function renderReassign(role){
     const query=(q||'').toLowerCase();
     if(query.length<3) return [];
     return state.contracts.filter(c=>{
+      if(isClosed(c)) return false;   // bağlı müqavilənin təyinatı dəyişmir
       const cust=byId(state.customers,c.customerId);
       return (c.nomre+' '+(cust?fullName(cust):'')).toLowerCase().includes(query);
     }).slice(0,30);
@@ -1968,7 +1996,7 @@ function renderDebtInquiry(){
       ${matches.map(c=>`<div class="search-item" style="position:static;padding:10px 12px;border-radius:7px;" data-action="debt-inquiry-select" data-id="${c.id}">${esc(fullName(c))}${c.finKod?' <span class="muted">— '+esc(c.finKod)+'</span>':''}</div>`).join('')}
     </div>`;
   } else if(customer){
-    const contracts=state.contracts.filter(c=>c.customerId===customer.id);
+    const contracts=state.contracts.filter(c=>c.customerId===customer.id && !isClosed(c));   // bağlı müqavilələr sorğuda iştirak etmir
     let totalDebt=0, totalScheduleDebt=0;
     const rowsHtml=contracts.map(c=>{
       const debt=contractDebt(c);
@@ -2116,6 +2144,7 @@ function buildOverdueBase(){
   const nm=(m,id)=>{ const o=m.get(id); return o?fullName(o):'—'; };
   const rows=[];
   for(const c of state.contracts){
+    if(isClosed(c)) continue;   // bağlı müqavilələr hesabatda iştirak etmir
     const debt=contractDebt(c);
     if(debt<=0.009) continue;
     const lastIso=paymentLast[c.id]||c.tarix;
@@ -2568,7 +2597,7 @@ function csFilterDescription(f){
   if(f.tarixDan) add('Müqavilə tarixi (dan)',fmtDate(f.tarixDan));
   if(f.tarixDek) add('Müqavilə tarixi (dək)',fmtDate(f.tarixDek));
   add('Müştəri (SAA)',f.musteri); add('FİN',f.fin); add('Əlaqə nömrəsi',f.tel);
-  if(f.status) add('Status',f.status==='__none__'?'Statussuz':statusName(f.status));
+  add('Status',!f.status?'Bağlı xaric':(f.status==='__all__'?'Hamısı (Bağlı daxil)':(f.status==='__none__'?'Statussuz':statusName(f.status))));
   if(f.satici) add('Satıcı',csPerson(state.salespeople,f.satici));
   if(f.tehsilatci) add('Təhsilatçı',who(state.collectors,f.tehsilatci)+mode(f.tehsilatciMode));
   if(f.kurator) add('Kurator',who(state.curators,f.kurator)+mode(f.kuratorMode));
@@ -2649,7 +2678,7 @@ function renderReportContracts(){
         ${inp('musteri','Müştəri (SAA)','text')}
         ${inp('fin','FİN','text')}
         ${inp('tel','Əlaqə nömrəsi','text')}
-        <div class="field"><label>Status</label><select data-csfilter="status">${statusOptionsHtml(f.status,true)}</select></div>
+        <div class="field"><label>Status</label><select data-csfilter="status">${statusFilterOptionsHtml(f.status)}</select></div>
         ${sel('satici','Satıcı',state.salespeople,false)}
         ${modeSel('tehsilatci','Təhsilatçı',state.collectors)}
         ${modeSel('kurator','Kurator',state.curators)}

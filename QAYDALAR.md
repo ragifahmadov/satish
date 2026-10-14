@@ -103,3 +103,13 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    kuratoru/təhsilatçısı/satıcısı; sütunlar: Ad · Müqavilə sayı · Satış məbləği · Cari borc · Qrafik borcu · Orta gecikmə (ay); "Təyin olunmayıb"
    sonda, "Cəmi" sətri). Şəxs sətrinə klik → Ümumi siyahıda şəxs süzgəci (nişan ✕ ilə götürülür; əsas filtrləri dəyişmir, yeni «Axtar» təmizləyir).
    Excel: 4 vərəq + Məlumat; Ümumi siyahı vərəqində həmişə bütün axtarış nəticəsi (şəxs süzgəcindən asılı deyil).
+21. **«Bağlı» müqavilə** (status kodu `bagli` — əllə, idxalla və ya avtomatik): SERVERDƏ kilidlidir — müqavilə sahələri, silmə, təyinatlar,
+   məhkəmə qeydi, ödəniş qəbulu/dəyişməsi/silinməsi, mal qaytarılması → 409 (`CONTRACT_CLOSED_MSG`). Yeganə istisna: "Müqavilə statusunu
+   dəyişmək" hüququ ilə YALNIZ statusu dəyişmək (müqavilə yenidən açılır). Göstərilmir: Gecikmiş, Cari ay planı, Borclu satışlar,
+   mobil təhsilat, ödəniş seçimi, təyinat siyahıları, borc sorğusu, İdarə paneli cəmləri. Göstərilir: Müqavilələr və Müqavilə axtarışı
+   (defolt "Bağlı xaric", filtrdə "Hamısı (Bağlı daxil)"), Təhsilat hesabatı (keçmiş ödənişlər). Yeni ekran/hesabat bu qaydaya əməl etməlidir
+   (`contract_open_sql()` / brauzerdə `isClosed()`).
+22. **Status/təhsilatçı idxalı** (`status-import.php`, yalnız admin, Administrasiya menyusu): xlsx (Müqavilə № + Tehsilatci + Status) + mapping
+   ("fayldakı = sistemdəki ad"; sağ tərəf boş — dəyişmir; boş xana — dəyişmir). Ada görə uyğunlaşdırma (hərf fərqləri nəzərə alınmır);
+   tapılmayan/təkrar ad — xəta, tətbiq bloklanır. Əvvəl önizləmə (bazaya yazılmır), sonra təsdiq: bir əməliyyat, hər müqavilə loga (bir opId) + IMPORT xülasəsi.
+   Təhsilatçı "Təhsilatçı dəyişikliyi" qaydası ilə. Önizləmə tokeni 1 saat, bir dəfəlik, yalnız onu yaradan admin üçün.

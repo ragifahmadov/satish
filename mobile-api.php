@@ -58,12 +58,13 @@ if ($action === 'search') {
     $q = trim(preg_replace('/\s+/u', ' ', (string) ($_GET['q'] ?? '')));
     if (mb_strlen($q) < 3) { mobile_out(['rows' => []]); }
     $like = '%' . addcslashes(mb_strtolower($q), '%_\\') . '%';
+    [$oSql, $oP] = contract_open_sql($pdo, 'c', 'op');   // Bağlı müqavilələr təhsilatda görünmür
     $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, cu.soyad, cu.ad, cu.ataAdi, sv.ad AS stAd, sv.reng AS stReng
         FROM contracts c LEFT JOIN customers cu ON cu.id = c.customerId LEFT JOIN lookup_values sv ON sv.id = c.statusId
-        WHERE $cSql AND (LOWER(c.nomre) LIKE :q1 OR LOWER(CONCAT_WS(' ', cu.soyad, cu.ad, cu.ataAdi)) LIKE :q2)
+        WHERE $cSql AND $oSql AND (LOWER(c.nomre) LIKE :q1 OR LOWER(CONCAT_WS(' ', cu.soyad, cu.ad, cu.ataAdi)) LIKE :q2)
         ORDER BY (LOWER(c.nomre) = :qx) DESC, cu.soyad, cu.ad, c.nomre
         LIMIT 20");
-    $st->execute(array_merge($cParams, [':q1' => $like, ':q2' => $like, ':qx' => mb_strtolower($q)]));
+    $st->execute(array_merge($cParams, $oP, [':q1' => $like, ':q2' => $like, ':qx' => mb_strtolower($q)]));
     $rows = $st->fetchAll();
     $sums = mobile_sums($pdo, array_column($rows, 'id'));
     $out = [];
@@ -82,6 +83,7 @@ if ($action === 'contract') {
     $st->execute(array_merge($cParams, [':cid' => $id]));
     $c = $st->fetch();
     if (!$c) { fail(404, 'Müqavilə tapılmadı və ya sizin əhatənizdə deyil.'); }
+    if (contract_is_closed($pdo, $id)) { fail(404, 'Bu müqavilə bağlıdır.'); }
     $c = row_out($c, $SCHEMA['contracts']);
     $cu = null;
     $q = $pdo->prepare("SELECT soyad, ad, ataAdi, elaqeNomre1, elaqeNomre2, qeydiyyatUnvani, faktikiUnvan FROM customers WHERE id = ?");

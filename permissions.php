@@ -58,7 +58,7 @@ function perm_level_labels() {
 // "Ekrana baxış" hüququ olmayan istifadəçi başqa ekran üçün lazım olan sahələri YALNIZ yığcam şəkildə (ad kimi) alır.
 function perm_screen_needs() {
     return [
-        'dashboard' => ['contracts' => 'ref', 'customers' => 'ref', '@sums' => 1, '@month' => 1],
+        'dashboard' => ['contracts' => 'ref', 'customers' => 'ref', '@sums' => 1, '@month' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         'salespeople' => ['salespeople' => 'full'],
         'collectors' => ['collectors' => 'full'],
         'curators' => ['curators' => 'full'],

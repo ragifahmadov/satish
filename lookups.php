@@ -67,6 +67,25 @@ function contract_status_ids($pdo, $reset = false) {
     return $map;
 }
 
+// «Bağlı» müqavilə (status kodu bagli — əllə və ya avtomatik): heç bir dəyişiklik olmaz (müqavilə, ödəniş, təyinat, məhkəmə qeydi);
+// yalnız "Müqavilə statusunu dəyişmək" hüququ ilə STATUSU dəyişdirilə bilər (müqaviləni yenidən açmaq). Siyahı/hesabatlarda göstərilmir
+// (istisna: Müqavilələr, Müqavilə axtarışı — status filtri ilə; Təhsilat hesabatı — keçmiş ödənişlər).
+const CONTRACT_CLOSED_MSG = 'Müqavilə bağlıdır (status «Bağlı») — dəyişiklik etmək olmaz. Lazım olarsa əvvəlcə müqavilənin statusunu dəyişin.';
+function contract_closed_id($pdo) { return (string) (contract_status_ids($pdo)['bagli'] ?? ''); }
+function contract_is_closed($pdo, $contractId) {
+    $bid = contract_closed_id($pdo);
+    if ($bid === '') return false;
+    $st = $pdo->prepare("SELECT statusId FROM contracts WHERE id = ?");
+    $st->execute([(string) $contractId]);
+    return (string) $st->fetchColumn() === $bid;
+}
+// "Bağlı olmayan" SQL şərti: [sql, params]
+function contract_open_sql($pdo, $alias, $prefix) {
+    $bid = contract_closed_id($pdo);
+    if ($bid === '') return ['1=1', []];
+    return ["($alias.statusId IS NULL OR $alias.statusId <> :{$prefix}bagli)", [":{$prefix}bagli" => $bid]];
+}
+
 function contract_status_code($pdo, $statusId) {
     $statusId = (string) $statusId;
     if ($statusId === '') return '';

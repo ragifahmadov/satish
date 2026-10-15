@@ -149,6 +149,7 @@
   body:not(.is-admin) .admin-only{display:none !important;}
   .modal-panel.wide{max-width:900px;}
   tr.clickable{cursor:pointer;}
+  a.cl-link{color:inherit;font-weight:600;text-decoration:none;border-bottom:1px dashed var(--border);}
   tr.clickable:hover td{background:rgba(184,134,63,.07);}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
   .chip{padding:6px 13px;border:1px solid var(--border);border-radius:20px;background:var(--bg-card);color:var(--text);font-size:12.5px;cursor:pointer;font-family:inherit;}
@@ -282,6 +283,7 @@ const ICONS = {
   lookup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg>',
   bank:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"/><path d="M3 20h18"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 3.5h3.2l1.6 4.3-2.1 1.4a11.5 11.5 0 006.1 6.1l1.4-2.1 4.3 1.6V18a2.5 2.5 0 01-2.5 2.5A15.5 15.5 0 012.5 6 2.5 2.5 0 015 3.5z"/></svg>',
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7"/></svg>',
 };
@@ -314,6 +316,7 @@ const SCREENS=[
   {group:'collection',label:'Təhsilat',icon:'payment',children:[
     {id:'payments',label:'Ödənişlər',icon:'payment'},
     {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
+    {id:'calls',label:'Zənglər',icon:'phone'},
     {id:'collector-reports',label:'Təhsilatçı hesabatları',icon:'collector'},
     {id:'collector-mobile',label:'Təhsilat (mobil)',icon:'payment',href:'tehsilat.php'}]},   // ayrıca səhifə (tehsilat.php)
   {group:'assign',label:'Təyinatlar',icon:'reassign',children:[
@@ -321,7 +324,7 @@ const SCREENS=[
     {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'}]},
   {group:'reports',id:'reports',label:'Hesabatlar',icon:'reports',children:[
     {id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},
-    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'},{id:'report-debt-payments',label:'Borc ödənişləri'}]},
+    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'},{id:'report-debt-payments',label:'Borc ödənişləri'},{id:'report-calls',label:'Zənglər'}]},
   {group:'catalog',label:'Məlumat kitabçası',icon:'sales',children:[
     {id:'salespeople',label:'Satıcılar',icon:'sales'},
     {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
@@ -336,7 +339,7 @@ let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
 const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
 const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
 const OPEN_SCREENS=['change-password'];   // hər daxil olmuş istifadəçiyə açıq (hüquq tələb olunmur; server: password-api.php yalnız öz hesabı)
-const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan','report-debt-payments'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
+const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan','report-debt-payments','report-calls'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
 function isAdmin(){ return me.role==='admin'; }
 function permKey(id){ return SCREEN_PERM[id]||id; }
 function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(id)]||0)>=level; }   // 1 baxış, 2 dəyişiklik, 3 silmə
@@ -348,7 +351,7 @@ function screenAllowed(id){
   return can(id,1);
 }
 function pickInitialScreen(){
-  const order=['dashboard','contracts','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','collector-reports','reassign','reassign-curator','lookups','company-debts'];
+  const order=['dashboard','contracts','customers','payments','debt-inquiry','calls','reports','salespeople','collectors','curators','collector-reports','reassign','reassign-curator','lookups','company-debts'];
   return order.find(screenAllowed)||null;
 }
 
@@ -488,7 +491,9 @@ const SCREEN_DEPS={
   'report-contracts':['salespeople','collectors','curators','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən
   'report-debtor-sales':['salespeople','collectors','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən
   'report-monthly-plan':['collectors','lookup_types','lookup_values'],
-  'report-debt-payments':['company_debts'],   // borc yerləri (filtr); sətirlər report-api.php-dən   // təhsilatçı siyahısı; sətirlər report-api.php-dən
+  'report-debt-payments':['company_debts'],
+  calls:['collectors','curators','lookup_types','lookup_values'],   // siyahılar və kart calls-api.php-dən (əhatə serverdə)
+  'report-calls':['lookup_types','lookup_values'],   // borc yerləri (filtr); sətirlər report-api.php-dən   // təhsilatçı siyahısı; sətirlər report-api.php-dən
   'audit-log':[],
   'user-access':[],
 };
@@ -564,6 +569,8 @@ async function renderScreen(){
     case 'report-debtor-sales': return renderReportDebtorSales();
     case 'report-monthly-plan': return renderReportMonthlyPlan();
     case 'report-debt-payments': return renderReportDebtPayments();
+    case 'calls': return renderCalls();
+    case 'report-calls': return renderReportCalls();
     case 'audit-log': return renderAuditLog();
     case 'user-access': return renderUserAccess();
   }
@@ -637,7 +644,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'calls':1,'report-calls':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -962,6 +969,8 @@ function renderLookups(){
           <tbody>${valRows}</tbody></table></div>
         ${t&&t.kod===LK_STATUS?`<div class="muted" style="font-size:12px;padding:10px 16px 14px;line-height:1.5;">Sistem dəyərləri (Normal, Gecikmə, Məhkəmə, İcra, Bağlı) proqram tərəfindən avtomatik istifadə olunur: adını və rəngini dəyişmək olar, silmək və passiv etmək olmaz.
           Ödəniş zamanı: tam bağlanan müqavilə → Bağlı; Gecikmədə olan, gecikmiş borcu qalmayan → Normal; borc yenidən yaranarsa Bağlı → Gecikmə/Normal.</div>`:''}
+        ${t&&t.kod==='call-contact'?`<div class="muted" style="font-size:12px;padding:10px 16px 14px;line-height:1.5;">Zəng ekranında istifadə olunur. Sistem dəyərləri: «Cavab verdi» seçiləndə danışığın nəticəsi məcburidir; «Cavab vermədi», «Nömrə söndürülüb / əlçatmaz», «Nömrə səhvdir» seçiləndə danışığın nəticəsi və vəd yazılmır. Adını və rəngini dəyişmək olar, silmək və passiv etmək olmaz. Öz dəyərlərinizi əlavə edə bilərsiniz.</div>`:''}
+        ${t&&t.kod==='call-result'?`<div class="muted" style="font-size:12px;padding:10px 16px 14px;line-height:1.5;">Zəng ekranında istifadə olunur. «Ödəməyə söz verdi» və «Qismən ödəyəcək» seçiləndə vəd məbləği və tarixi məcburidir; «İmtina», «Mübahisə», «Ödədiyini deyir», «Məhkəmə» seçiləndə vəd yazılmır; öz dəyərlərinizdə vəd istəyə bağlıdır. Zəngdə istifadə olunan dəyər silinmir — passiv edin.</div>`:''}
       </div>
     </div>`);
 }
@@ -1349,8 +1358,10 @@ function openContractForm(id){
           <button type="submit" class="btn btn-primary">Yadda saxla</button>
         </div>
       </div>
-    </form>`;
+    </form>
+    ${rec&&can('calls',1)?'<div id="contract-calls"></div>':''}`;
   openModal();
+  if(rec && can('calls',1)) fillCallsSection('contract-calls','op=contract&id='+encodeURIComponent(rec.id),false);   // zəng tarixçəsi (yalnız oxumaq)
   const cf=document.getElementById('contract-form');
   if(closed){
     cf.querySelectorAll('input,select,textarea').forEach(el=>{ if(el.name!=='statusId') el.disabled=true; });
@@ -2252,6 +2263,7 @@ function renderDebtInquiry(){
         <thead><tr><th>Müqavilə №</th><th>Tarix</th><th class="num">Satış məbləği</th><th class="num">İlkin ödəniş</th><th class="num">Qalıq borc</th><th class="num">Qrafik üzrə borc</th><th>Təhsilatçı</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div></div>
+      ${can('calls',1)?'<div id="di-calls"></div>':''}
     `;
   }
 
@@ -2266,6 +2278,7 @@ function renderDebtInquiry(){
     </div>
     ${resultHtml}
   `);
+  if(customer && can('calls',1)) fillCallsSection('di-calls','op=customer&id='+encodeURIComponent(customer.id),true);   // zəng tarixçəsi (yalnız oxumaq)
   const input=document.getElementById('debt-inquiry-fin');
   input.addEventListener('keydown', (e)=>{
     if(e.key==='Enter'){ e.preventDefault(); debtInquiryQuery=input.value.trim(); debtInquirySelectedId=null; renderDebtInquiry(); }
@@ -2301,6 +2314,10 @@ function renderReports(){
       ${can('report-debt-payments',1)?`<div class="card" data-action="nav" data-screen="report-debt-payments" style="padding:18px 20px;cursor:pointer;">
         <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Borc ödənişləri</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">Şirkətin borcları üzrə seçilmiş dövrdə ödənişlər, faizlər və borc artımları — borc yerləri üzrə</div>
+      </div>`:''}
+      ${can('report-calls',1)?`<div class="card" data-action="nav" data-screen="report-calls" style="padding:18px 20px;cursor:pointer;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Zənglər</div>
+        <div class="muted" style="font-size:13px;line-height:1.5;">Əməkdaşlar üzrə zəng sayı, danışığın nəticələri, vədlər və onların icrası</div>
       </div>`:''}
     </div>
   `);
@@ -3220,6 +3237,470 @@ function renderReportMonthlyPlan(){
   refreshMp();
 }
 
+/* ============ ZƏNGLƏR (ofis əməkdaşının müştəriyə zəngləri) ============
+   Məlumat serverdən (calls-api.php; əhatə + «Bağlı xaric» serverdə), yazı api.php?col=contract_calls ilə (log eyni əməliyyatda).
+   Yoxlamalar serverdədir (calls.php): danışıq yoxdursa nəticə/vəd yazılmır, «Cavab verdi»də danışığın nəticəsi, «Söz verdi»/«Qismən»də vəd
+   məcburidir; əməkdaş, vaxt və zəng anındakı borc serverdən yazılır; öz qeydini yalnız həmin gün dəyişmək olar (admin — həmişə).
+   Tablar: Bu gün (açılanda yüklənir) · Gecikmiş müqavilələr və Zəng tarixçəsi («Axtar» qaydası). */
+const CL_TARGETS={musteri:'Müştəri',zamin:'Zamin',aile:'Ailə üzvü',diger:'Digər'};
+const CL_NO_TALK=['cavabsiz','sondurulub','sehv'], CL_PROMISE=['ved','qismen'], CL_NO_PROMISE=['imtina','mubahise','odeyib','mehkeme'];
+const CL_VS={kept:['Yerinə yetirilib','tag-green'],broken:['Pozulub','tag-red'],pending:['Gözlənilir','tag-amber']};
+const CL_WHY={broken:['Vəd pozulub','tag-red'],due:['Vəd tarixi bu gündür','tag-amber'],next:['Növbəti zəng','tag-blue']};
+const CL_PAGE_SIZE=50;
+let clTab='today';
+let clR={today:{rows:[],loaded:false,loading:false,err:'',req:0}, overdue:{rows:[],applied:null,loading:false,err:'',req:0}, history:{rows:[],applied:null,loading:false,err:'',req:0}};
+let clOF={}, clHF={};
+function resetClOF(){ clOF={collector:'',curator:'',status:'',gecMin:'',called:'',days:'7'}; }
+function resetClHF(){ const t=bakuDateIso(); clHF={from:t.slice(0,8)+'01',to:t,user:'',elaqe:'',netice:'',ved:''}; }
+resetClOF(); resetClHF();
+let clUsers=[];
+let clFindReq=0, clFindTimer=null;
+let clCard=null;   // {cid, data, editId}
+
+function clTypeValues(kod, onlyActive){ const t=lkType(kod); return t?lkValues(t.id,onlyActive):[]; }
+function clVal(id){ return id?byId(state.lookup_values||[],id):null; }
+function clCode(id){ const v=clVal(id); return v?(v.kod||''):''; }
+function clVaxt(v){ return v?fmtDate(v.slice(0,10))+' '+v.slice(11,16):'—'; }
+function clTags(ids, map){ return ids.map(k=>`<span class="tag ${map[k][1]}">${map[k][0]}</span>`).join(' '); }
+function clVsHtml(c){ return c && c.vs?`<span class="tag ${CL_VS[c.vs][1]}">${CL_VS[c.vs][0]}</span>`:''; }
+function clVedText(c){ return c && c.vt?(fmtMoney(c.vm)+' — '+fmtDate(c.vt)):''; }
+function clLastText(c){ if(!c) return ''; const v=clVal(c.dn)||clVal(c.el); return clVaxt(c.vaxt)+' · '+c.user+(v?' · '+v.ad:''); }
+function clLastHtml(c){
+  if(!c) return '<span class="muted">heç zəng edilməyib</span>';
+  return `<div style="white-space:nowrap;">${clVaxt(c.vaxt)} <span class="muted">· ${esc(c.user)}</span></div><div>${lkTagHtml(clVal(c.el))} ${c.dn?lkTagHtml(clVal(c.dn)):''}</div>`;
+}
+function clCust(r){ return `<div>${esc(r.cust||'—')}</div><div class="muted" style="font-size:12px;white-space:nowrap;">${esc((r.tel||[]).join(', ')||'—')}</div>`; }
+
+const CL_COLS={
+  no:{th:'<th>№</th>', xl:'Müqavilə №', type:'text', width:13, td:r=>`<td><a href="#" class="cl-link" data-action="cl-open" data-id="${r.cid}">${esc(r.no)}</a></td>`, val:r=>r.no},
+  st:{th:'<th>Status</th>', xl:'Status', type:'text', width:13, td:r=>`<td>${statusTagHtml(r.st)}</td>`, val:r=>statusName(r.st)},
+  cust:{th:'<th>Müştəri / telefon</th>', xl:'Müştəri', type:'text', width:34, td:r=>`<td>${clCust(r)}</td>`, val:r=>r.cust},
+  tel:{th:'', xl:'Telefon', type:'text', width:24, td:()=>'', val:r=>(r.tel||[]).join(', ')},
+  col:{th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:24, td:r=>`<td class="muted">${esc(r.col?collectorName(r.col):'—')}</td>`, val:r=>r.col?collectorName(r.col):''},
+  cur:{th:'<th>Kurator</th>', xl:'Kurator', type:'text', width:24, td:r=>`<td class="muted">${esc(r.cur?curatorName(r.cur):'—')}</td>`, val:r=>r.cur?curatorName(r.cur):''},
+  gec:{th:'<th class="num">Gecikmə<br>(ay)</th>', xl:'Gecikmə (ay)', type:'int', width:12, td:r=>`<td class="num">${r.gec>=OVERDUE_MIN_MONTHS?`<span class="tag tag-red">${r.gec}</span>`:r.gec}</td>`, val:r=>r.gec},
+  qaliq:{th:'<th class="num">Qalıq<br>borc</th>', xl:'Qalıq borc', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.qaliq)}</td>`, val:r=>r.qaliq},
+  qrafik:{th:'<th class="num">Qrafik<br>borcu</th>', xl:'Qrafik borcu', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.qrafik)}</td>`, val:r=>r.qrafik},
+  lastPay:{th:'<th>Son<br>ödəniş</th>', xl:'Son ödəniş', type:'date', width:13, td:r=>`<td>${fmtDate(r.lastPay)}</td>`, val:r=>r.lastPay},
+  n:{th:'<th class="num">Zəng</th>', xl:'Zəng sayı', type:'int', width:10, td:r=>`<td class="num">${r.n||''}</td>`, val:r=>r.n},
+  last:{th:'<th>Son zəng</th>', xl:'Son zəng', type:'text', width:40, td:r=>`<td style="font-size:12.5px;">${clLastHtml(r.lc)}</td>`, val:r=>clLastText(r.lc)},
+  ved:{th:'<th>Vəd</th>', xl:'Vəd', type:'text', width:24, td:r=>`<td style="font-size:12.5px;white-space:nowrap;">${r.lc&&r.lc.vt?`${esc(clVedText(r.lc))}<div>${clVsHtml(r.lc)} <span class="muted">ödənilib ${fmtMoney(r.lc.vp)}</span></div>`:'<span class="muted">—</span>'}</td>`, val:r=>clVedText(r.lc)},
+  vs:{th:'', xl:'Vədin vəziyyəti', type:'text', width:16, td:()=>'', val:r=>r.lc&&r.lc.vs?CL_VS[r.lc.vs][0]:''},
+  nz:{th:'<th>Növbəti<br>zəng</th>', xl:'Növbəti zəng', type:'date', width:13, td:r=>`<td>${r.lc&&r.lc.nz?(r.lc.nz<=bakuDateIso()?`<span class="tag tag-blue">${fmtDate(r.lc.nz)}</span>`:fmtDate(r.lc.nz)):'—'}</td>`, val:r=>r.lc?r.lc.nz:''},
+  why:{th:'<th>Səbəb</th>', xl:'Səbəb', type:'text', width:26, td:r=>`<td>${clTags(r.why||[],CL_WHY)}</td>`, val:r=>(r.why||[]).map(k=>CL_WHY[k][0]).join(', ')},
+};
+// Zəng sətri (tarixçə, kart, müqavilə/borc sorğusu)
+const CL_CALL_COLS={
+  vaxt:{th:'<th>Vaxt</th>', xl:'Zəng vaxtı', type:'text', width:17, td:c=>`<td style="white-space:nowrap;">${clVaxt(c.vaxt)}</td>`, val:c=>clVaxt(c.vaxt)},
+  no:{th:'<th>№</th>', xl:'Müqavilə №', type:'text', width:13, td:c=>`<td>${can('calls',1)?`<a href="#" class="cl-link" data-action="cl-open" data-id="${c.cid}">${esc(c.no)}</a>`:esc(c.no)}</td>`, val:c=>c.no},
+  cust:{th:'<th>Müştəri</th>', xl:'Müştəri', type:'text', width:30, td:c=>`<td>${esc(c.cust||'')}</td>`, val:c=>c.cust||''},
+  kime:{th:'<th>Kimə / nömrə</th>', xl:'Kimə', type:'text', width:14, td:c=>`<td style="white-space:nowrap;">${esc(CL_TARGETS[c.kime]||c.kime)}<div class="muted" style="font-size:12px;">${esc(c.nomre)}</div></td>`, val:c=>CL_TARGETS[c.kime]||c.kime},
+  nomre:{th:'', xl:'Nömrə', type:'text', width:18, td:()=>'', val:c=>c.nomre},
+  el:{th:'<th>Əlaqə</th>', xl:'Əlaqə nəticəsi', type:'text', width:24, td:c=>`<td>${lkTagHtml(clVal(c.el))}</td>`, val:c=>(clVal(c.el)||{}).ad||''},
+  dn:{th:'<th>Danışığın nəticəsi</th>', xl:'Danışığın nəticəsi', type:'text', width:28, td:c=>`<td>${c.dn?lkTagHtml(clVal(c.dn)):'<span class="muted">—</span>'}</td>`, val:c=>(clVal(c.dn)||{}).ad||''},
+  ved:{th:'<th>Vəd</th>', xl:'Vəd məbləği', type:'money', width:14, td:c=>`<td style="white-space:nowrap;font-size:12.5px;">${c.vt?`${esc(clVedText(c))}<div>${clVsHtml(c)}</div>`:'<span class="muted">—</span>'}</td>`, val:c=>c.vm},
+  vt:{th:'', xl:'Vəd tarixi', type:'date', width:13, td:()=>'', val:c=>c.vt},
+  vs:{th:'', xl:'Vədin vəziyyəti', type:'text', width:16, td:()=>'', val:c=>c.vs?CL_VS[c.vs][0]:''},
+  vp:{th:'', xl:'Vəd üzrə ödənilib', type:'money', width:16, td:()=>'', val:c=>c.vt?c.vp:null},
+  nz:{th:'<th>Növbəti<br>zəng</th>', xl:'Növbəti zəng', type:'date', width:13, td:c=>`<td>${fmtDate(c.nz)}</td>`, val:c=>c.nz},
+  qeyd:{th:'<th>Qeyd</th>', xl:'Qeyd', type:'text', width:40, td:c=>`<td class="muted" style="font-size:12px;max-width:260px;">${esc(c.qeyd||'')}</td>`, val:c=>c.qeyd||''},
+  sq:{th:'', xl:'Qalıq borc (zəng anı)', type:'money', width:16, td:()=>'', val:c=>c.sq},
+  sa:{th:'', xl:'Gecikmə, ay (zəng anı)', type:'int', width:14, td:()=>'', val:c=>c.sa},
+  user:{th:'<th>Əməkdaş</th>', xl:'Əməkdaş', type:'text', width:18, td:c=>`<td class="muted">${esc(c.user)}</td>`, val:c=>c.user},
+};
+const CL_TAB_COLS={
+  today:['why','no','st','cust','tel','qaliq','qrafik','gec','last','ved','vs','nz'],
+  overdue:['no','st','cust','tel','col','cur','gec','qaliq','qrafik','lastPay','n','last','nz'],
+};
+const CL_HISTORY_COLS=['vaxt','no','cust','kime','nomre','el','dn','ved','vt','vs','vp','nz','qeyd','sq','sa','user'];
+function clColumns(tab){ return tab==='history'?CL_HISTORY_COLS.map(k=>CL_CALL_COLS[k]):CL_TAB_COLS[tab].map(k=>CL_COLS[k]); }
+function clScreenColumns(tab){ return clColumns(tab).filter(c=>c.th); }
+function clResultRows(tab){ tab=tab||clTab; const s=clR[tab]; if(s.loading||s.err) return []; if(tab!=='today' && !s.applied) return []; return s.rows; }
+
+async function clFetch(qs){
+  const r=await fetch('calls-api.php?'+qs);
+  if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+  return r.json();
+}
+async function loadClToday(){
+  const s=clR.today, my=++s.req; s.loading=true; s.err=''; refreshCl();
+  try{ const j=await clFetch('op=today'); if(my!==s.req) return; s.rows=j.rows||[]; s.loaded=true; }
+  catch(e){ if(my!==s.req) return; s.rows=[]; s.err='Məlumat yüklənmədi: '+e.message; }
+  finally{ if(my===s.req) s.loading=false; }
+  if(currentScreen==='calls') refreshCl();
+}
+// $f — filtrlər (defolt: ekrandakı); zəngdən sonra yeniləmədə əvvəlki axtarışın filtrləri ilə təkrarlanır
+async function clSearch(tab, fOverride){
+  const s=clR[tab], f=fOverride||(tab==='overdue'?clOF:clHF);
+  if(tab==='history'){
+    if(!f.from || !f.to){ s.err='Hər iki tarixi seçin.'; s.applied=null; refreshCl(); return; }
+    if(f.from>f.to){ s.err='Başlanğıc tarixi son tarixdən böyük ola bilməz.'; s.applied=null; refreshCl(); return; }
+  }
+  s.applied=JSON.parse(JSON.stringify(f));
+  const qs='op='+tab+'&'+Object.entries(s.applied).filter(([k,v])=>v!=='').map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  const my=++s.req; s.loading=true; s.err=''; pageNum.calls=1; refreshCl();
+  try{ const j=await clFetch(qs); if(my!==s.req) return; s.rows=j.rows||[]; }
+  catch(e){ if(my!==s.req) return; s.rows=[]; s.err='Məlumat yüklənmədi: '+e.message; s.applied=null; }
+  finally{ if(my===s.req) s.loading=false; }
+  if(currentScreen==='calls') refreshCl();
+}
+function clFilterDescription(tab){
+  tab=tab||clTab;
+  if(tab==='today') return [{l:'Siyahı',v:'Bu gün zəng ediləcəklər ('+fmtDate(bakuDateIso())+')'}];
+  const f=clR[tab].applied||(tab==='overdue'?clOF:clHF), out=[];
+  const nm=(arr,id,fn)=>id==='__none__'?'Təyin olunmayıb':fn(id);
+  if(tab==='overdue'){
+    out.push({l:'Siyahı',v:'Gecikmiş müqavilələr'});
+    if(f.collector) out.push({l:'Təhsilatçı',v:nm(state.collectors,f.collector,collectorName)});
+    if(f.curator) out.push({l:'Kurator',v:nm(state.curators,f.curator,curatorName)});
+    if(f.status) out.push({l:'Status',v:statusName(f.status)});
+    out.push({l:'Gecikmə (ay), ən azı',v:String(f.gecMin||OVERDUE_MIN_MONTHS)});
+    if(f.called==='never') out.push({l:'Zəng',v:'Heç zəng edilməyib'});
+    if(f.called==='stale') out.push({l:'Zəng',v:'Son '+f.days+' gündə zəng edilməyib'});
+    return out;
+  }
+  out.push({l:'Siyahı',v:'Zəng tarixçəsi'},{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)});
+  if(f.user) out.push({l:'Əməkdaş',v:(clUsers.find(u=>u.id===f.user)||{}).name||f.user});
+  if(f.elaqe) out.push({l:'Əlaqə nəticəsi',v:(clVal(f.elaqe)||{}).ad||''});
+  if(f.netice) out.push({l:'Danışığın nəticəsi',v:f.netice==='__none__'?'Danışıq olmayıb':((clVal(f.netice)||{}).ad||'')});
+  if(f.ved) out.push({l:'Vəd',v:f.ved==='any'?'Vəd olanlar':CL_VS[f.ved][0]});
+  return out;
+}
+function clSummaryHtml(tab, rows){
+  if(tab==='today'){
+    const c=k=>rows.filter(r=>(r.why||[]).includes(k)).length;
+    return `<strong>${rows.length}</strong> müqavilə &nbsp;·&nbsp; vəd pozulub: <strong>${c('broken')}</strong> &nbsp;·&nbsp; vəd tarixi bu gündür: <strong>${c('due')}</strong> &nbsp;·&nbsp; növbəti zəng: <strong>${c('next')}</strong>`;
+  }
+  if(tab==='overdue'){
+    return `<strong>${rows.length}</strong> müqavilə &nbsp;·&nbsp; heç zəng edilməyib: <strong>${rows.filter(r=>!r.lc).length}</strong> &nbsp;·&nbsp; cəmi qalıq: <strong>${fmtMoney(rows.reduce((a,r)=>a+r.qaliq,0))}</strong>`;
+  }
+  const v=rows.filter(c=>c.vt);
+  return `<strong>${rows.length}</strong> zəng &nbsp;·&nbsp; ${new Set(rows.map(c=>c.cid)).size} müqavilə &nbsp;·&nbsp; vəd: <strong>${v.length}</strong> (${fmtMoney(v.reduce((a,c)=>a+(c.vm||0),0))}) — yerinə yetirilib ${v.filter(c=>c.vs==='kept').length}, pozulub ${v.filter(c=>c.vs==='broken').length}, gözlənilir ${v.filter(c=>c.vs==='pending').length}`;
+}
+function refreshCl(){
+  const box=document.getElementById('cl-body'); if(!box) return;
+  const s=clR[clTab], sumEl=document.getElementById('cl-summary'), eb=document.getElementById('export-btn');
+  const rows=clResultRows();
+  if(eb){ eb.disabled=!rows.length; eb.textContent=rows.length?('Excelə yüklə — '+rows.length+' sətir'):'Excelə yüklə'; }
+  document.querySelectorAll('[data-action="cl-tab"]').forEach(b=>b.classList.toggle('active',b.dataset.tab===clTab));
+  const tc=document.getElementById('cl-today-count'); if(tc) tc.textContent=clR.today.loaded?' ('+clR.today.rows.length+')':'';
+  if(s.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(s.err)}</div>`; return; }
+  if(clTab!=='today' && !s.applied && !s.loading){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
+  if(s.loading || (clTab==='today' && !s.loaded)){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Yüklənir…</div>`; return; }
+  sumEl.innerHTML=clSummaryHtml(clTab, rows);
+  const cols=clScreenColumns(clTab);
+  const {pageRows, totalPages, total}=paginateArr(rows,'calls',CL_PAGE_SIZE);
+  const empty=clTab==='today'?'Bu gün zəng ediləcək müqavilə yoxdur':(clTab==='overdue'?'Şərtə uyğun müqavilə yoxdur':'Seçilmiş dövrdə zəng yoxdur');
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="cl-table" style="min-width:${clTab==='today'?1250:1400}px;">
+    <thead><tr>${cols.map(c=>c.th).join('')}</tr></thead>
+    <tbody>${pageRows.length?pageRows.map(r=>`<tr class="clickable" data-action="cl-open" data-id="${r.cid}">${cols.map(c=>c.td(r)).join('')}</tr>`).join('')
+      :`<tr><td colspan="${cols.length}" class="empty" style="padding:40px;">${empty}</td></tr>`}</tbody></table></div>
+    <div id="pagination-calls" style="padding:0 14px 14px;">${paginationHtml('calls',totalPages,total)}</div></div>`;
+}
+async function clEnsureMeta(){
+  // zəng nəticələrinin tipləri hələ yaradılmayıbsa: calls-api onları yaradır, sonra köməkçi məlumatlar yenidən oxunur
+  const j=await clFetch('op=meta');
+  clUsers=j.users||[];
+  if(!lkType('call-contact') || !lkType('call-result')) await lkReload();
+}
+async function renderCalls(){
+  try{ await clEnsureMeta(); }
+  catch(e){ setContent(`<div class="topbar"><div><h1>Zənglər</h1></div></div><div class="banner">Məlumat yüklənmədi: ${esc(e.message)}</div>`); return; }
+  if(currentScreen!=='calls') return;
+  const o=(v,label,sel)=>`<option value="${v}"${sel===v?' selected':''}>${esc(label)}</option>`;
+  const people=(arr,sel,all)=>o('',all,sel)+arr.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az')).map(x=>o(x.id,fullName(x),sel)).join('')+o('__none__','Təyin olunmayıb',sel);
+  const tab=(id,label)=>`<button type="button" class="tab${clTab===id?' active':''}" data-action="cl-tab" data-tab="${id}">${label}</button>`;
+  let filters='';
+  if(clTab==='overdue'){
+    const f=clOF;
+    filters=`<div class="card" style="padding:16px 18px;margin-bottom:14px;"><div class="filters">
+      <div class="field"><label>Təhsilatçı</label><select data-clofilter="collector">${people(state.collectors,f.collector,'Hamısı')}</select></div>
+      <div class="field"><label>Kurator</label><select data-clofilter="curator">${people(state.curators,f.curator,'Hamısı')}</select></div>
+      <div class="field"><label>Status</label><select data-clofilter="status">${o('','Hamısı',f.status)}${statusValues(false).filter(v=>v.kod!=='bagli').map(v=>o(v.id,v.ad,f.status)).join('')}</select></div>
+      <div class="field"><label>Gecikmə (ay), ən azı</label><input type="number" min="${OVERDUE_MIN_MONTHS}" step="1" data-clofilter="gecMin" value="${esc(f.gecMin)}" placeholder="${OVERDUE_MIN_MONTHS}"></div>
+      <div class="field"><label>Zəng</label><select data-clofilter="called">${o('','Hamısı',f.called)}${o('never','Heç zəng edilməyib',f.called)}${o('stale','Son N gündə zəng edilməyib',f.called)}</select></div>
+      <div class="field"><label>N (gün)</label><input type="number" min="1" max="365" step="1" data-clofilter="days" value="${esc(f.days)}"></div>
+    </div>${reportFilterButtonsHtml('calls-overdue','cl-o-reset')}</div>${reportDirtyHtml('calls-overdue')}`;
+  } else if(clTab==='history'){
+    const f=clHF;
+    filters=`<div class="card" style="padding:16px 18px;margin-bottom:14px;"><div class="filters">
+      <div class="field"><label>Tarixdən</label><input type="date" data-clhfilter="from" value="${esc(f.from)}"></div>
+      <div class="field"><label>Tarixədək</label><input type="date" data-clhfilter="to" value="${esc(f.to)}"></div>
+      <div class="field"><label>Əməkdaş</label><select data-clhfilter="user">${o('','Hamısı',f.user)}${clUsers.map(u=>o(u.id,u.name,f.user)).join('')}</select></div>
+      <div class="field"><label>Əlaqə nəticəsi</label><select data-clhfilter="elaqe">${o('','Hamısı',f.elaqe)}${clTypeValues('call-contact',false).map(v=>o(v.id,v.ad,f.elaqe)).join('')}</select></div>
+      <div class="field"><label>Danışığın nəticəsi</label><select data-clhfilter="netice">${o('','Hamısı',f.netice)}${o('__none__','Danışıq olmayıb',f.netice)}${clTypeValues('call-result',false).map(v=>o(v.id,v.ad,f.netice)).join('')}</select></div>
+      <div class="field"><label>Vəd</label><select data-clhfilter="ved">${o('','Hamısı',f.ved)}${o('any','Vəd olanlar',f.ved)}${Object.entries(CL_VS).map(([k,v])=>o(k,v[0],f.ved)).join('')}</select></div>
+    </div>${reportFilterButtonsHtml('calls-history','cl-h-reset')}</div>${reportDirtyHtml('calls-history')}`;
+  }
+  setContent(`
+    <div class="topbar">
+      <div><h1>Zənglər</h1><div class="sub">Müştərilərə müqavilə üzrə zənglər, danışığın nəticəsi və vədlər</div></div>
+      <div style="display:flex;gap:8px;">${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="calls" disabled>Excelə yüklə</button>`:''}</div>
+    </div>
+    <div class="card" style="padding:14px 18px;margin-bottom:14px;position:relative;max-width:560px;">
+      <div class="field" style="margin:0;"><label>Müqavilə tap (zəng kartını açmaq üçün)</label>
+        <input type="text" id="cl-find" autocomplete="off" placeholder="Müqavilə №, müştərinin adı və ya telefon…"></div>
+      <div id="cl-find-results" class="search-dropdown"></div>
+    </div>
+    <div class="tabs">${tab('today','Bu gün zəng ediləcəklər<span id="cl-today-count"></span>')}${tab('overdue','Gecikmiş müqavilələr')}${tab('history','Zəng tarixçəsi')}</div>
+    ${filters}
+    <div id="cl-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="cl-body"></div>
+  `);
+  refreshCl();
+  if(clTab==='today' && !clR.today.loaded && !clR.today.loading) loadClToday();
+}
+async function clFindRun(q){
+  const box=document.getElementById('cl-find-results'); if(!box) return;
+  if(q.trim().length<2){ box.innerHTML=''; box.style.display='none'; return; }
+  const my=++clFindReq;
+  let rows=[];
+  try{ rows=(await clFetch('op=find&q='+encodeURIComponent(q.trim()))).rows||[]; }catch(e){ if(my===clFindReq){ box.innerHTML=`<div class="search-item muted">${esc(e.message)}</div>`; box.style.display='block'; } return; }
+  if(my!==clFindReq) return;
+  box.innerHTML=rows.length?rows.map(r=>`<div class="search-item" data-action="cl-open" data-id="${r.cid}"><strong>${esc(r.no)}</strong> — ${esc(r.cust)} <span class="muted">${esc((r.tel||[]).join(', '))} · qalıq ${fmtMoney(r.qaliq)}</span></div>`).join('')
+    :'<div class="search-item muted">Tapılmadı (bağlı müqavilələr axtarılmır)</div>';
+  box.style.display='block';
+}
+
+/* ---- zəng kartı (modal) ---- */
+async function openCallCard(cid, keepEdit){
+  const panel=document.getElementById('modal-panel');
+  if(!clCard || clCard.cid!==cid || !document.getElementById('modal-root').classList.contains('open')){
+    panel.innerHTML='<h2>Zəng kartı</h2><div class="muted" style="padding:30px;text-align:center;">Yüklənir…</div>';
+    panel.classList.add('wide'); openModal();
+  }
+  clCard={cid, data:null, editId:keepEdit?(clCard&&clCard.editId):null};
+  try{ clCard.data=await clFetch('op=contract&id='+encodeURIComponent(cid)); }
+  catch(e){ panel.innerHTML=`<h2>Zəng kartı</h2><div class="banner">${esc(e.message)}</div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`; return; }
+  renderCallCard();
+}
+function clCallsTableHtml(calls, opts){
+  opts=opts||{};
+  const keys=['vaxt'].concat(opts.showNo?['no']:[],['kime','el','dn','ved','nz','qeyd','user']);
+  const cols=keys.map(k=>CL_CALL_COLS[k]);
+  const acts=opts.actions && calls.some(c=>c.canEdit||c.canDelete);
+  if(!calls.length) return `<div class="muted" style="padding:14px 4px;">Hələ zəng qeydi yoxdur</div>`;
+  return `<table class="table-compact cl-calls"><thead><tr>${cols.map(c=>c.th).join('')}${acts?'<th></th>':''}</tr></thead><tbody>${calls.map(c=>`<tr${opts.editId===c.id?' style="background:var(--accent-bg,#f6efe2);"':''}>${cols.map(col=>col.td(c)).join('')}${acts?`<td style="white-space:nowrap;">${c.canEdit?`<button class="iconbtn" data-action="cl-edit" data-id="${c.id}" title="Dəyiş">${ICONS.edit}</button>`:''}${c.canDelete?`<button class="iconbtn" data-action="cl-delete" data-id="${c.id}" title="Sil">${ICONS.trash}</button>`:''}</td>`:''}</tr>`).join('')}</tbody></table>`;
+}
+function renderCallCard(){
+  const d=clCard.data, c=d.contract, ed=clCard.editId?d.calls.find(x=>x.id===clCard.editId):null;
+  const kv=(l,v)=>`<div class="card kpi" style="padding:8px 12px;"><div class="lbl" style="margin-bottom:2px;">${l}</div><div class="val" style="font-size:16px;">${v}</div></div>`;
+  const o=(v,label,sel)=>`<option value="${v}"${sel===v?' selected':''}>${esc(label)}</option>`;
+  const vals=(kod,cur)=>{ const act=clTypeValues(kod,true); const cv=cur?clVal(cur):null; return (cv && !act.some(v=>v.id===cur)?[cv,...act]:act); };
+  const def=(kod)=>(clTypeValues(kod,true).find(v=>Number(v.defolt))||{}).id||'';
+  const f=ed||{kime:'musteri', nomre:(c.tel||[])[0]||'', el:def('call-contact'), dn:'', vm:null, vt:'', nz:'', qeyd:''};
+  const form=d.canAdd||ed?`<form id="call-form" data-cid="${c.cid}" data-id="${ed?ed.id:''}" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+      <div style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:8px;">${ed?'Zəng qeydini dəyiş ('+clVaxt(ed.vaxt)+')':'Yeni zəng'}</div>
+      <div class="grid3">
+        <div class="field"><label>Kimə</label><select name="kime">${Object.entries(CL_TARGETS).map(([k,l])=>o(k,l,f.kime)).join('')}</select></div>
+        <div class="field"><label>Nömrə</label><input type="text" name="nomre" list="cl-tels" value="${esc(f.nomre)}" autocomplete="off"><datalist id="cl-tels">${(c.tel||[]).map(t=>`<option value="${esc(t)}">`).join('')}</datalist></div>
+        <div class="field"><label>Əlaqə nəticəsi</label><select name="elaqeNeticeId">${o('','— seçin —',f.el)}${vals('call-contact',f.el).map(v=>o(v.id,v.ad+(Number(v.aktiv)?'':' (passiv)'),f.el)).join('')}</select></div>
+      </div>
+      <div class="grid3">
+        <div class="field" id="cl-f-dn"><label>Danışığın nəticəsi</label><select name="danisiqNeticeId">${o('','— yoxdur —',f.dn)}${vals('call-result',f.dn).map(v=>o(v.id,v.ad+(Number(v.aktiv)?'':' (passiv)'),f.dn)).join('')}</select></div>
+        <div class="field" id="cl-f-vm"><label>Vəd məbləği (₼)</label><input type="number" step="0.01" min="0" name="vedMeblag" value="${f.vm!=null?esc(f.vm):''}"></div>
+        <div class="field" id="cl-f-vt"><label>Vəd tarixi</label><input type="date" name="vedTarix" value="${esc(f.vt||'')}" min="${ed?ed.vaxt.slice(0,10):d.today}"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Növbəti zəng</label><input type="date" name="novbetiZeng" value="${esc(f.nz||'')}" min="${ed?ed.vaxt.slice(0,10):d.today}"></div>
+        <div class="field" style="grid-column:span 2;"><label>Qeyd (danışığın qısa mətni)</label><input type="text" name="qeyd" maxlength="2000" value="${esc(f.qeyd||'')}"></div>
+      </div>
+      <div class="field-err" id="call-form-err"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">${ed?'<button type="button" class="btn btn-ghost" data-action="cl-cancel-edit">Ləğv et</button>':''}<button type="submit" class="btn btn-primary">${ed?'Yadda saxla':'Zəngi qeyd et'}</button></div>
+    </form>`
+    :(c.closed?'<div class="notice">Müqavilə bağlıdır — zəng qeyd etmək olmaz.</div>':'');
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>Müqavilə № ${esc(c.no)} ${statusTagHtml(c.st)}</h2>
+    <div class="muted" style="font-size:13px;margin:-6px 0 10px;line-height:1.6;"><strong style="color:var(--text);">${esc(c.cust)}</strong> · ${esc((c.tel||[]).join(', ')||'telefon yoxdur')}<br>
+      Təhsilatçı: ${esc(c.col?collectorName(c.col):'—')} · Kurator: ${esc(c.cur?curatorName(c.cur):'—')} · Müqavilə tarixi: ${fmtDate(c.tarix)}</div>
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
+      ${kv('Qalıq borc',`<span style="color:${c.qaliq>0?'var(--red)':'var(--green)'}">${fmtMoney(c.qaliq)}</span>`)}${kv('Qrafik borcu',fmtMoney(c.qrafik))}${kv('Gecikmə (ay)',c.gec>=OVERDUE_MIN_MONTHS?`<span style="color:var(--red)">${c.gec}</span>`:c.gec)}${kv('Son ödəniş',fmtDate(c.lastPay))}
+    </div>
+    <div style="max-height:260px;overflow:auto;margin-bottom:10px;">${clCallsTableHtml(d.calls,{actions:true, editId:clCard.editId})}</div>
+    ${form}
+    <div class="modal-actions"><button type="button" class="btn btn-ghost admin-only" data-action="show-history" data-kind="contract" data-id="${c.cid}" data-title="Müqavilə № ${esc(c.no)}">Tarixçə</button><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`;
+  const fm=document.getElementById('call-form'); if(fm) clFormSync(fm, false);
+}
+// Forma: danışıq yoxdursa nəticə və vəd gizlənir; vəd yalnız icazə verilən nəticələrdə (məcburi — «Söz verdi»/«Qismən»)
+function clFormSync(form, clear){
+  const el=clCode(form.elaqeNeticeId.value), noTalk=CL_NO_TALK.includes(el);
+  const dnBox=document.getElementById('cl-f-dn');
+  dnBox.style.display=noTalk?'none':'';
+  if(noTalk && clear) form.danisiqNeticeId.value='';
+  const dnId=form.danisiqNeticeId.value, dn=clCode(dnId);
+  const showVed=!noTalk && dnId!=='' && !CL_NO_PROMISE.includes(dn);
+  const req=CL_PROMISE.includes(dn);
+  ['cl-f-vm','cl-f-vt'].forEach(id=>{ const b=document.getElementById(id); b.style.display=showVed?'':'none'; b.querySelector('label').innerHTML=(id==='cl-f-vm'?'Vəd məbləği (₼)':'Vəd tarixi')+(req?' <span style="color:var(--red);">*</span>':''); });
+  if(!showVed && clear){ form.vedMeblag.value=''; form.vedTarix.value=''; }
+  dnBox.querySelector('label').innerHTML='Danışığın nəticəsi'+(el==='cavab'?' <span style="color:var(--red);">*</span>':'');
+}
+async function submitCallForm(form){
+  const err=document.getElementById('call-form-err');
+  const showErr=m=>{ err.textContent=m; err.style.display='block'; };
+  clFormSync(form, true);
+  const g=n=>(form[n].value||'').trim();
+  const data={kime:g('kime'), nomre:g('nomre'), elaqeNeticeId:g('elaqeNeticeId'), danisiqNeticeId:g('danisiqNeticeId'),
+    vedMeblag:g('vedMeblag'), vedTarix:g('vedTarix'), novbetiZeng:g('novbetiZeng'), qeyd:g('qeyd')};
+  if(!data.nomre) return showErr('Zəng edilən nömrəni yazın.');
+  if(!data.elaqeNeticeId) return showErr('Əlaqə nəticəsini seçin.');
+  if(clCode(data.elaqeNeticeId)==='cavab' && !data.danisiqNeticeId) return showErr('Danışığın nəticəsini seçin.');
+  if(CL_PROMISE.includes(clCode(data.danisiqNeticeId)) && (!data.vedMeblag || !data.vedTarix)) return showErr('Vəd məbləğini və vəd tarixini yazın.');
+  const id=form.dataset.id;
+  try{ id?await apiUpdate('contract_calls',id,data):await apiAdd('contract_calls',Object.assign({contractId:form.dataset.cid},data)); }
+  catch(e){ return showErr(e.message); }
+  clCard.editId=null;
+  await openCallCard(form.dataset.cid);
+  clAfterChange();
+}
+async function deleteCall(callId){
+  const c=clCard && clCard.data ? clCard.data.calls.find(x=>x.id===callId) : null;
+  if(!c || !confirm('Zəng qeydi silinsin? '+clVaxt(c.vaxt)+', '+c.user)) return;
+  try{ await apiDelete('contract_calls',callId); }catch(e){ alert(e.message); return; }
+  if(clCard.editId===callId) clCard.editId=null;
+  await openCallCard(clCard.cid, true);
+  clAfterChange();
+}
+// Zəng yazılandan/dəyişəndən sonra açıq siyahı yenilənir
+function clAfterChange(){
+  clR.today.loaded=false;
+  if(currentScreen!=='calls') return;
+  if(clTab==='today') loadClToday();
+  else if(clR[clTab].applied){ const t=clTab; clSearch(t, clR[t].applied).then(()=>updateReportDirty('calls-'+t)); }
+}
+// Müqavilə kartı / Borc sorğusu: zəng tarixçəsi (yalnız oxumaq; «Zənglər» → Baxış hüququ ilə)
+async function fillCallsSection(boxId, qs, showNo){
+  const box=document.getElementById(boxId); if(!box) return;
+  box.innerHTML='<div class="muted" style="padding:8px 0;">Zənglər yüklənir…</div>';
+  try{
+    const j=await clFetch(qs);
+    if(!document.getElementById(boxId)) return;
+    if(!lkType('call-contact')) await lkReload().catch(()=>{});
+    box.innerHTML=`<div class="section-title" style="margin-top:14px;">Zənglər${j.calls.length?' ('+j.calls.length+')':''}</div><div class="card" style="max-height:240px;overflow:auto;">${clCallsTableHtml(j.calls,{showNo})}</div>`;
+  }catch(e){ box.innerHTML=`<div class="banner">Zənglər yüklənmədi: ${esc(e.message)}</div>`; }
+}
+
+/* ---- Hesabat: Zənglər (report-api.php?report=calls) ----
+   Seçilmiş dövrün zəngləri; Ümumiləşdirilmiş — əməkdaşlar üzrə (zəng, müqavilə, danışıq, vəd və icrası), Nəticələr üzrə, Detallı. «Axtar» qaydası. */
+let rcFilters={};
+let rcR={tab:'summary', applied:null, rows:[], users:[], loading:false, err:'', req:0};
+function resetRcFilters(){ const t=bakuDateIso(); rcFilters={from:t.slice(0,8)+'01', to:t, user:''}; }
+resetRcFilters();
+function rcSummaryRows(rows){
+  const m=new Map();
+  for(const c of rows){
+    let g=m.get(c.uid);
+    if(!g){ g={user:c.user, cnt:0, cids:new Set(), talk:0, noTalk:0, ved:0, vedSum:0, kept:0, broken:0, pending:0, paid:0}; m.set(c.uid,g); }
+    g.cnt++; g.cids.add(c.cid);
+    if(c.dn) g.talk++;
+    if(CL_NO_TALK.includes(clCode(c.el))) g.noTalk++;
+    if(c.vt){ g.ved++; g.vedSum+=c.vm||0; g[c.vs]++; g.paid+=c.vp||0; }
+  }
+  return [...m.values()].map(g=>Object.assign(g,{contracts:g.cids.size, pct:g.ved?Math.round(g.kept/g.ved*1000)/10:null})).sort((a,b)=>b.cnt-a.cnt || a.user.localeCompare(b.user,'az'));
+}
+function rcTotals(g){ const t=g.reduce((t,x)=>{ ['cnt','contracts','talk','noTalk','ved','vedSum','kept','broken','pending','paid'].forEach(k=>t[k]+=x[k]); return t; },{cnt:0,contracts:0,talk:0,noTalk:0,ved:0,vedSum:0,kept:0,broken:0,pending:0,paid:0}); t.pct=t.ved?Math.round(t.kept/t.ved*1000)/10:null; return t; }
+function rcResultsRows(rows){
+  const m=new Map();
+  const add=(kind,id)=>{ const k=kind+'|'+id; let g=m.get(k); if(!g){ const v=clVal(id); g={kind, ad:id?(v?v.ad:'?'):'Danışıq olmayıb', cnt:0}; m.set(k,g); } g.cnt++; };
+  rows.forEach(c=>{ add('Əlaqə nəticəsi',c.el); add('Danışığın nəticəsi',c.dn||''); });
+  return [...m.values()].sort((a,b)=>a.kind.localeCompare(b.kind,'az') || b.cnt-a.cnt);
+}
+const rcPct=p=>p==null?'—':String(p).replace('.',',')+'%';
+const RC_SUMMARY_COLUMNS=[
+  {th:'<th>Əməkdaş</th>', xl:'Əməkdaş', type:'text', width:22, td:g=>`<td><strong>${esc(g.user)}</strong></td>`, val:g=>g.user},
+  {th:'<th class="num">Zəng</th>', xl:'Zəng sayı', type:'int', width:11, td:g=>`<td class="num">${g.cnt}</td>`, val:g=>g.cnt},
+  {th:'<th class="num">Müqavilə</th>', xl:'Müqavilə sayı', type:'int', width:12, td:g=>`<td class="num">${g.contracts}</td>`, val:g=>g.contracts},
+  {th:'<th class="num">Danışıq<br>olub</th>', xl:'Danışıq olub', type:'int', width:12, td:g=>`<td class="num">${g.talk}</td>`, val:g=>g.talk},
+  {th:'<th class="num">Əlaqə<br>alınmayıb</th>', xl:'Əlaqə alınmayıb', type:'int', width:13, td:g=>`<td class="num">${g.noTalk}</td>`, val:g=>g.noTalk},
+  {th:'<th class="num">Vəd</th>', xl:'Vəd sayı', type:'int', width:10, td:g=>`<td class="num">${g.ved}</td>`, val:g=>g.ved},
+  {th:'<th class="num">Vəd<br>məbləği</th>', xl:'Vəd məbləği', type:'money', width:15, td:g=>`<td class="num">${fmtMoney(g.vedSum)}</td>`, val:g=>g.vedSum},
+  {th:'<th class="num">Yerinə<br>yetirilib</th>', xl:'Yerinə yetirilib', type:'int', width:13, td:g=>`<td class="num">${g.kept}</td>`, val:g=>g.kept},
+  {th:'<th class="num">Pozulub</th>', xl:'Pozulub', type:'int', width:11, td:g=>`<td class="num"${g.broken?' style="color:var(--red);"':''}>${g.broken}</td>`, val:g=>g.broken},
+  {th:'<th class="num">Gözlənilir</th>', xl:'Gözlənilir', type:'int', width:11, td:g=>`<td class="num">${g.pending}</td>`, val:g=>g.pending},
+  {th:'<th class="num">İcra</th>', xl:'Vədlərin icrası %', type:'money', width:12, td:g=>`<td class="num">${rcPct(g.pct)}</td>`, val:g=>g.pct},
+  {th:'<th class="num">Vəd üzrə<br>ödənilib</th>', xl:'Vəd üzrə ödənilib', type:'money', width:16, td:g=>`<td class="num">${fmtMoney(g.paid)}</td>`, val:g=>g.paid},
+];
+const RC_RESULTS_COLUMNS=[
+  {xl:'Növ', type:'text', width:22, val:g=>g.kind},{xl:'Nəticə', type:'text', width:34, val:g=>g.ad},{xl:'Zəng sayı', type:'int', width:12, val:g=>g.cnt},
+];
+function rcFilterDescription(f){
+  f=f||rcR.applied||rcFilters;
+  const out=[{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)}];
+  if(f.user) out.push({l:'Əməkdaş',v:(rcR.users.find(u=>u.id===f.user)||{}).name||f.user});
+  return out;
+}
+async function searchCallsReport(){
+  const f=rcFilters;
+  if(!f.from || !f.to){ rcR.err='Hər iki tarixi seçin.'; rcR.applied=null; refreshRc(); return; }
+  if(f.from>f.to){ rcR.err='Başlanğıc tarixi son tarixdən böyük ola bilməz.'; rcR.applied=null; refreshRc(); return; }
+  rcR.applied=JSON.parse(JSON.stringify(f));
+  const qs=Object.entries(rcR.applied).filter(([k,v])=>v!=='').map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  const my=++rcR.req; rcR.loading=true; rcR.err=''; pageNum['report-calls']=1; refreshRc();
+  try{
+    const r=await fetch('report-api.php?report=calls&'+qs);
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json();
+    if(my!==rcR.req) return;
+    rcR.rows=j.rows||[];
+  }catch(err){ if(my!==rcR.req) return; rcR.rows=[]; rcR.err='Məlumat yüklənmədi: '+err.message; rcR.applied=null; }
+  finally{ if(my===rcR.req) rcR.loading=false; }
+  if(currentScreen==='report-calls') refreshRc();
+}
+function rcResultRows(){ return (rcR.applied && !rcR.loading && !rcR.err)?rcR.rows:[]; }
+function refreshRc(){
+  const box=document.getElementById('rc-body'); if(!box) return;
+  const eb=document.getElementById('export-btn'), sumEl=document.getElementById('rc-summary');
+  const rows=rcResultRows();
+  if(eb){ eb.disabled=!rows.length; eb.textContent=rows.length?('Excelə yüklə — '+rows.length+' sətir'):'Excelə yüklə'; }
+  if(rcR.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(rcR.err)}</div>`; return; }
+  if(!rcR.applied){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
+  if(rcR.loading){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Yüklənir…</div>`; return; }
+  const sum=rcSummaryRows(rows), t=rcTotals(sum);
+  sumEl.innerHTML=`${fmtDate(rcR.applied.from)} — ${fmtDate(rcR.applied.to)} &nbsp;·&nbsp; <strong>${t.cnt}</strong> zəng &nbsp;·&nbsp; vəd: <strong>${t.ved}</strong> (${fmtMoney(t.vedSum)}) — yerinə yetirilib ${t.kept}, pozulub ${t.broken}, gözlənilir ${t.pending} &nbsp;·&nbsp; icra: <strong>${rcPct(t.pct)}</strong>`;
+  if(rcR.tab==='summary'){
+    box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="rc-table">
+      <thead><tr>${RC_SUMMARY_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${sum.length
+        ? sum.map(g=>`<tr>${RC_SUMMARY_COLUMNS.map(c=>c.td(g)).join('')}</tr>`).join('')
+          +`<tr class="total-row"><td>Cəmi</td>${['cnt','contracts','talk','noTalk','ved'].map(k=>`<td class="num">${t[k]}</td>`).join('')}<td class="num">${fmtMoney(t.vedSum)}</td><td class="num">${t.kept}</td><td class="num">${t.broken}</td><td class="num">${t.pending}</td><td class="num">${rcPct(t.pct)}</td><td class="num">${fmtMoney(t.paid)}</td></tr>`
+        : `<tr><td colspan="${RC_SUMMARY_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə zəng yoxdur</td></tr>`}</tbody></table></div></div>`;
+    return;
+  }
+  const cols=CL_HISTORY_COLS.map(k=>CL_CALL_COLS[k]).filter(c=>c.th);
+  const {pageRows, totalPages, total}=paginateArr(rows,'report-calls',CL_PAGE_SIZE);
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="rc-table" style="min-width:1300px;">
+    <thead><tr>${cols.map(c=>c.th).join('')}</tr></thead><tbody>${pageRows.length?pageRows.map(c=>`<tr>${cols.map(col=>col.td(c)).join('')}</tr>`).join('')
+      :`<tr><td colspan="${cols.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə zəng yoxdur</td></tr>`}</tbody></table></div>
+    <div id="pagination-report-calls" style="padding:0 14px 14px;">${paginationHtml('report-calls',totalPages,total)}</div></div>`;
+}
+async function renderReportCalls(){
+  rcR.applied=null; rcR.rows=[]; rcR.err=''; rcR.loading=false; rcR.req++;
+  try{ const r=await fetch('report-api.php?report=calls&meta=1'); if(r.ok) rcR.users=(await r.json()).users||[]; }catch(e){}
+  if(currentScreen!=='report-calls') return;
+  const f=rcFilters, o=(v,label,sel)=>`<option value="${v}"${sel===v?' selected':''}>${esc(label)}</option>`;
+  const tab=(id,label)=>`<button type="button" class="tab${rcR.tab===id?' active':''}" data-action="rc-tab" data-tab="${id}">${label}</button>`;
+  setContent(`
+    <div class="topbar">
+      <div><h1>Zənglər</h1><div class="sub">Əməkdaşlar üzrə zənglər, danışığın nəticələri, vədlər və onların icrası</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="report-calls" disabled>Excelə yüklə</button>`:''}
+        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      </div>
+    </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:14px;">
+      <div class="filters">
+        <div class="field"><label>Tarixdən</label><input type="date" data-rcfilter="from" value="${esc(f.from)}"></div>
+        <div class="field"><label>Tarixədək</label><input type="date" data-rcfilter="to" value="${esc(f.to)}"></div>
+        <div class="field"><label>Əməkdaş</label><select data-rcfilter="user">${o('','Hamısı',f.user)}${rcR.users.map(u=>o(u.id,u.name,f.user)).join('')}</select></div>
+      </div>
+      ${reportFilterButtonsHtml('report-calls','rc-reset')}
+    </div>
+    ${reportDirtyHtml('report-calls')}
+    <div class="tabs">${tab('summary','Ümumiləşdirilmiş')}${tab('detail','Detallı')}</div>
+    <div id="rc-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="rc-body"></div>
+  `);
+  refreshRc();
+}
+
 /* ---- Şifrəni dəyiş (hər istifadəçi öz şifrəsini; hüquq tələb olunmur) ----
    Yoxlama və log serverdədir (password-api.php): hazırkı şifrə, ≥6 simvol, təkrar eyni, hazırkı ilə fərqli. */
 function renderChangePassword(){
@@ -3575,6 +4056,29 @@ const REPORT_EXPORTS={
       ];
     },
   },
+  calls:{
+    title:'Zənglər', file:'Zengler',
+    rows:()=>clResultRows(),
+    filters:()=>clFilterDescription(),
+    totals:(rows)=>clTab==='history'?[['Vəd məbləği',rows.filter(c=>c.vt).reduce((a,c)=>a+(c.vm||0),0)],['Vəd üzrə ödənilib',rows.filter(c=>c.vt).reduce((a,c)=>a+(c.vp||0),0)]]
+      :[['Cəmi qalıq borc',rows.reduce((a,r)=>a+r.qaliq,0)],['Cəmi qrafik borcu',rows.reduce((a,r)=>a+r.qrafik,0)]],
+    sheets:(rows)=>[{name:{today:'Bu gün',overdue:'Gecikmiş müqavilələr',history:'Zəng tarixçəsi'}[clTab], columns:clColumns(clTab), rows}],
+  },
+  'report-calls':{
+    title:'Zəng hesabatı', file:'Zeng_hesabati',
+    rows:()=>rcResultRows(),
+    filters:()=>rcFilterDescription(),
+    totals:(rows)=>{ const t=rcTotals(rcSummaryRows(rows)); return [['Zəng sayı',t.cnt],['Vəd sayı',t.ved],['Vəd məbləği',t.vedSum],['Yerinə yetirilib',t.kept],['Pozulub',t.broken],['Gözlənilir',t.pending],['Vəd üzrə ödənilib',t.paid]]; },
+    sheets:(rows)=>{
+      const sum=rcSummaryRows(rows), t=rcTotals(sum);
+      return [
+        {name:'Ümumiləşdirilmiş', columns:RC_SUMMARY_COLUMNS, rows:sum, filter:false,
+          extraRows:[[{v:'Cəmi',s:5},{v:t.cnt,t:'int'},{v:t.contracts,t:'int'},{v:t.talk,t:'int'},{v:t.noTalk,t:'int'},{v:t.ved,t:'int'},{v:t.vedSum,t:'money'},{v:t.kept,t:'int'},{v:t.broken,t:'int'},{v:t.pending,t:'int'},{v:t.pct,t:'money'},{v:t.paid,t:'money'}]]},
+        {name:'Nəticələr üzrə', columns:RC_RESULTS_COLUMNS, rows:rcResultsRows(rows), filter:false},
+        {name:'Detallı', columns:CL_HISTORY_COLS.map(k=>CL_CALL_COLS[k]), rows},
+      ];
+    },
+  },
   'company-debts':{
     title:'Şirkətin borcları', file:'Sirketin_borclari',
     rows:()=>cdRows(),
@@ -3626,6 +4130,9 @@ const REPORT_SEARCH={
   'debtor-sales':{filters:()=>dsFilters, applied:()=>dsR.applied, search:searchDebtorSales},
   'monthly-plan':{filters:()=>mpFilters, applied:()=>mpR.applied, search:searchMonthlyPlan},
   'debt-payments':{filters:()=>dpFilters, applied:()=>dpR.applied, search:searchDebtPayments},
+  'calls-overdue':{filters:()=>clOF, applied:()=>clR.overdue.applied, search:()=>clSearch('overdue')},
+  'calls-history':{filters:()=>clHF, applied:()=>clR.history.applied, search:()=>clSearch('history')},
+  'report-calls':{filters:()=>rcFilters, applied:()=>rcR.applied, search:searchCallsReport},
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -3675,7 +4182,7 @@ const AUDIT_ACTIONS={
   USER_DELETE:['İstifadəçi silindi','tag-red'], EXPORT:['Excel export','tag-accent'],
   USER_PERMISSIONS:['Səlahiyyət dəyişdi','tag-amber'], ACCESS_DENIED:['İcazə verilmədi','tag-red'],
 };
-const AUDIT_ENTITIES={company_debts:'Şirkət borcu',company_debt_ops:'Şirkət borcu əməliyyatı',lookup_types:'Köməkçi məlumat tipi',lookup_values:'Köməkçi məlumat dəyəri',contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
+const AUDIT_ENTITIES={contract_calls:'Zəng',company_debts:'Şirkət borcu',company_debt_ops:'Şirkət borcu əməliyyatı',lookup_types:'Köməkçi məlumat tipi',lookup_values:'Köməkçi məlumat dəyəri',contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
 
 // Log vaxtları serverdə UTC saxlanılır; burada Bakı vaxtı ilə göstərilir
 const _bakuFmt=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Baku',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
@@ -3926,7 +4433,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək','contract-status':'müqavilənin statusunu əllə dəyişmək (Normal, Gecikmə, Məhkəmə, İcra…); ödəniş zamanı avtomatik dəyişiklik bu hüquqdan asılı deyil'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
@@ -4171,6 +4678,16 @@ document.addEventListener('click', async (e)=>{
     return;
   }
   if(action==='close-modal'){ closeModal(); return; }
+  if(action==='cl-open'){ e.preventDefault(); const fr=document.getElementById('cl-find-results'); if(fr) fr.style.display='none'; openCallCard(btn.dataset.id); return; }
+  if(action==='cl-tab'){ clTab=['overdue','history'].includes(btn.dataset.tab)?btn.dataset.tab:'today'; pageNum.calls=1; renderCalls(); return; }
+  if(action==='cl-edit'){ clCard.editId=btn.dataset.id; renderCallCard(); return; }
+  if(action==='cl-cancel-edit'){ clCard.editId=null; renderCallCard(); return; }
+  if(action==='cl-delete'){ await withButtonLoading(btn, ()=>deleteCall(btn.dataset.id)); return; }
+  if(action==='cl-o-reset'){ resetClOF(); renderCalls(); return; }
+  if(action==='cl-h-reset'){ resetClHF(); renderCalls(); return; }
+  if(action==='rc-reset'){ resetRcFilters(); renderReportCalls(); return; }
+  if(action==='rc-tab'){ rcR.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-calls']=1;
+    document.querySelectorAll('[data-action="rc-tab"]').forEach(b=>b.classList.toggle('active',b.dataset.tab===rcR.tab)); refreshRc(); return; }
   if(action==='add-salespeople'){ openSimpleForm('salespeople'); return; }
   if(action==='edit-salespeople'){ openSimpleForm('salespeople', id); return; }
   if(action==='delete-salespeople'){ await withButtonLoading(btn, ()=>deleteRecord('salespeople', id, 'satıcı')); return; }
@@ -4201,6 +4718,8 @@ document.addEventListener('click', async (e)=>{
     if(key==='report-debtor-sales'){ refreshDs(); return; }
     if(key==='report-monthly-plan'){ refreshMp(); return; }
     if(key==='report-debt-payments'){ refreshDp(); return; }
+    if(key==='calls'){ refreshCl(); return; }
+    if(key==='report-calls'){ refreshRc(); return; }
     if(key==='collector-reports-f'){ refreshCrFilter(); return; }
     if(key==='collector-reports'){ const sv=document.getElementById('search-collector-reports'); const q=sv&&sv.value.length>=3?sv.value:''; const {pageRows,totalPages,total}=paginateArr(crListFiltered(q),key);
       document.getElementById('tbody-collector-reports').innerHTML=crRowsHtml(pageRows); document.getElementById('pagination-collector-reports').innerHTML=paginationHtml(key,totalPages,total); return; }
@@ -4319,6 +4838,7 @@ document.addEventListener('submit', async (e)=>{
   if(e.target.id==='password-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitChangePassword(e.target)); }
   if(e.target.id==='creport-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCollectorReportForm(e.target)); }
   if(e.target.id==='payment-edit-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPaymentEdit(e.target)); }
+  if(e.target.id==='call-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCallForm(e.target)); }
 });
 // "Mal qaytarılması" işarəsi dəyişəndə ödəniş blokunun görünüşünü yenilə
 document.addEventListener('change', (e)=>{
@@ -4330,6 +4850,10 @@ document.addEventListener('change', (e)=>{
   if(ds.dsfilter){ dsFilters[ds.dsfilter]=t.value; updateReportDirty('debtor-sales'); return; }
   if(ds.mpfilter){ mpFilters[ds.mpfilter]=t.value; updateReportDirty('monthly-plan'); return; }
   if(ds.dpfilter){ dpFilters[ds.dpfilter]=t.value; updateReportDirty('debt-payments'); return; }
+  if(ds.clofilter){ clOF[ds.clofilter]=t.value; updateReportDirty('calls-overdue'); return; }
+  if(ds.clhfilter){ clHF[ds.clhfilter]=t.value; updateReportDirty('calls-history'); return; }
+  if(ds.rcfilter){ rcFilters[ds.rcfilter]=t.value; updateReportDirty('report-calls'); return; }
+  if(t.form && t.form.id==='call-form' && (t.name==='elaqeNeticeId' || t.name==='danisiqNeticeId')){ clFormSync(t.form, true); return; }
   if(ds.cdfilter){ cdFilters[ds.cdfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; refreshCompanyDebts(); return; }   // siyahı ekranı — dərhal
   if(ds.crfilter){ crFilters[ds.crfilter]=t.value; updateReportDirty('collector-reports'); return; }
   if(ds.csfilter){ csFilters[ds.csfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; updateReportDirty('contracts'); return; }   // Müqavilə axtarışı: yalnız «Axtar» ilə   // Təhsilat hesabatı filtrləri: yalnız «Axtar» ilə tətbiq olunur
@@ -4339,14 +4863,22 @@ document.addEventListener('change', (e)=>{
   if(ds.uaCollector && ua.draft){ ua.draft.collectorId=t.value; ua.msg=''; uaRedrawEditor(); return; }
   if(ds.uaPerson && ua.draft){ uaTogglePerson(ds.uaPerson, t.value, t.checked); return; }
 });
+// Zəng ekranındakı müqavilə axtarışının nəticələri: kənara basanda bağlanır
+document.addEventListener('click', (e)=>{
+  const fr=document.getElementById('cl-find-results');
+  if(fr && fr.style.display==='block' && !e.target.closest('#cl-find-results') && e.target.id!=='cl-find') fr.style.display='none';
+});
 // Hesabat filtr sahəsində Enter = «Axtar»
 document.addEventListener('keydown', (e)=>{
   if(e.key!=='Enter') return;
   const ds=(e.target && e.target.dataset)||{};
-  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':(ds.dpfilter!==undefined?'debt-payments':null))))));
+  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':(ds.dpfilter!==undefined?'debt-payments':(ds.clofilter!==undefined?'calls-overdue':(ds.clhfilter!==undefined?'calls-history':(ds.rcfilter!==undefined?'report-calls':null)))))))));
   if(!key) return;
   e.preventDefault();
   if(ds.dpfilter!==undefined) dpFilters[ds.dpfilter]=e.target.value;
+  if(ds.clofilter!==undefined) clOF[ds.clofilter]=e.target.value;
+  if(ds.clhfilter!==undefined) clHF[ds.clhfilter]=e.target.value;
+  if(ds.rcfilter!==undefined) rcFilters[ds.rcfilter]=e.target.value;
   if(ds.cfilter!==undefined) collFilters[ds.cfilter]=e.target.value;   // tarix sahəsi "change" verməmiş ola bilər
   if(ds.csfilter!==undefined && e.target.type!=='checkbox' && e.target.type!=='radio') csFilters[ds.csfilter]=e.target.value;
   const b=document.getElementById('report-search-'+key);
@@ -4356,6 +4888,8 @@ document.addEventListener('input', (e)=>{
   if(e.target && e.target.dataset && e.target.dataset.crCalc){ crUpdateCalc(); return; }
   const dsf=e.target && e.target.dataset ? e.target.dataset.dsfilter : null;
   if(dsf){ dsFilters[dsf]=e.target.value; updateReportDirty('debtor-sales'); return; }
+  if(e.target && e.target.id==='cl-find'){ const v=e.target.value; clearTimeout(clFindTimer); clFindTimer=setTimeout(()=>clFindRun(v),250); return; }
+  if(e.target && e.target.dataset && e.target.dataset.clofilter){ clOF[e.target.dataset.clofilter]=e.target.value; updateReportDirty('calls-overdue'); return; }
   const crf=e.target && e.target.dataset ? e.target.dataset.crfilter : null;
   if(crf){ crFilters[crf]=e.target.value; updateReportDirty('collector-reports'); return; }
   const csf=e.target && e.target.dataset ? e.target.dataset.csfilter : null;

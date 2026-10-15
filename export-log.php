@@ -35,6 +35,8 @@ $REPORTS = [
     'monthly-plan' => ['Cari ay təhsilat planı', 'report-monthly-plan'],
     'company-debts' => ['Şirkətin borcları', 'company-debts'],
     'debt-payments' => ['Borc ödənişləri', 'report-debt-payments'],
+    'calls' => ['Zənglər', 'calls'],
+    'report-calls' => ['Zəng hesabatı', 'report-calls'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

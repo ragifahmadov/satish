@@ -34,6 +34,7 @@ $REPORT_SCREENS = [
     'debtor-sales' => 'report-debtor-sales',
     'monthly-plan' => 'report-monthly-plan',
     'debt-payments' => 'report-debt-payments',
+    'calls' => 'report-calls',
 ];
 
 $report = (string) ($_GET['report'] ?? '');
@@ -457,6 +458,26 @@ if ($report === 'debt-payments') {
     }
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
     echo json_encode(['rows' => $rows, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+/* ---------- Zənglər (hesabat) ----------
+   Dövrün zəngləri (əhatə + "Bağlı xaric" — calls.php → call_history_rows); brauzer əməkdaşlar üzrə cəmləyir.
+   Vədin vəziyyəti bu günə görə: yerinə yetirilib / pozulub / gözlənilir (calls.php → call_promise_state). */
+if ($report === 'calls') {
+    $users = [];
+    foreach ($pdo->query("SELECT userId, MAX(userName) AS userName FROM contract_calls GROUP BY userId ORDER BY MAX(userName)")->fetchAll() as $r) {
+        $users[] = ['id' => (string) $r['userId'], 'name' => (string) $r['userName']];
+    }
+    if (($_GET['meta'] ?? '') === '1') { echo json_encode(['users' => $users], JSON_UNESCAPED_UNICODE); exit; }   // filtr siyahısı
+    $from = report_date_param('from');
+    $to = report_date_param('to');
+    if ($from > $to) { fail(400, 'Başlanğıc tarixi son tarixdən böyük ola bilməz.'); }
+    $user = (string) ($_GET['user'] ?? '');
+    if ($user !== '' && !preg_match('/^[0-9a-fA-F-]{36}$/', $user)) { fail(400, 'Əməkdaş düzgün deyil'); }
+    $rows = call_history_rows($pdo, $ctx, ['from' => $from, 'to' => $to, 'user' => $user], baku_today());
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['rows' => $rows, 'users' => $users, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 

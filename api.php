@@ -239,6 +239,11 @@ try {
                 [$err, $body] = cd_prepare($pdo, $col, $body, null);
                 if ($err !== '') { fail(400, $err); }
             }
+            if ($col === 'contract_calls') {   // zəng: bağlı müqaviləyə yazılmır; vaxt, əməkdaş və vəziyyət serverdən
+                if (contract_is_closed($pdo, (string) ($body['contractId'] ?? ''))) { fail(409, CONTRACT_CLOSED_MSG); }
+                [$err, $body] = call_prepare($pdo, $ctx, $body, null);
+                if ($err !== '') { fail(400, $err); }
+            }
 
             $newId = ($clientId !== '') ? strtolower($clientId) : make_uuid();
             $now = date('Y-m-d H:i:s');
@@ -374,6 +379,17 @@ try {
                 [$err, $body] = cd_prepare($pdo, $col, $body, row_out($oRow, $schema));
                 if ($err !== '') { fail(400, $err); }
             }
+            if ($col === 'contract_calls') {   // yalnız yazan əməkdaş və yalnız həmin gün (admin — həmişə); bağlı müqavilədə — yox
+                $o = $pdo->prepare("SELECT * FROM contract_calls WHERE id = ?");
+                $o->execute([$id]);
+                $oRow = $o->fetch();
+                if (!$oRow) { fail(404, 'Qeyd tapılmadı'); }
+                if (contract_is_closed($pdo, (string) $oRow['contractId'])) { fail(409, CONTRACT_CLOSED_MSG); }
+                $why = call_edit_denied($ctx, $oRow);
+                if ($why !== '') { api_deny($why); }
+                [$err, $body] = call_prepare($pdo, $ctx, $body, row_out($oRow, $schema));
+                if ($err !== '') { fail(400, $err); }
+            }
 
             $sets = [];
             $params = [':id' => $id];
@@ -444,8 +460,8 @@ try {
                 $why = cd_delete_denied($pdo, $col, $id);
                 if ($why !== '') { fail(400, $why); }
             }
-            if ($col === 'payments') {
-                $pc0 = $pdo->prepare("SELECT contractId FROM payments WHERE id = ?");
+            if ($col === 'payments' || $col === 'contract_calls') {
+                $pc0 = $pdo->prepare("SELECT contractId FROM `$col` WHERE id = ?");
                 $pc0->execute([(string) $id]);
                 if (contract_is_closed($pdo, (string) $pc0->fetchColumn())) { fail(409, CONTRACT_CLOSED_MSG); }
             }

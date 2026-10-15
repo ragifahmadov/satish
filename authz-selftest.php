@@ -257,6 +257,21 @@ t('Mövcud olmayan müqavilə üçün təhsilatçı yoxdur (ödəniş rədd edil
 $allCtx = mk([], [], 'all');
 t('Əhatəsiz ("Bütün müqavilələr") istifadəçi: şərt 1=1', authz_contract_scope($allCtx, 'c', 'sc')[0] === '1=1' && !authz_scoped($allCtx));
 
+/* ---------- Zənglər (calls.php) ---------- */
+t('Zənglər: ekran "calls" və hesabat "report-calls" reyestrdə', isset(perm_screens()['calls']) && isset(perm_screens()['report-calls']));
+t('Zənglər: yazı hüququ — əlavə/dəyişmə "Dəyişiklik", silmə "Silmə"', authz_write_needs('contract_calls', 'POST', []) === [['screen' => 'calls', 'level' => 2]]
+    && authz_write_needs('contract_calls', 'PUT', []) === [['screen' => 'calls', 'level' => 2]] && authz_write_needs('contract_calls', 'DELETE', []) === [['screen' => 'calls', 'level' => 3]]);
+t('Zənglər: api.php ümumi siyahısı verilmir (oxuma yalnız calls-api.php ilə)', authz_read_tier(['role' => 'user', 'screens' => ['calls' => 3], 'extras' => [], 'scopeMode' => 'all', 'scope' => []], 'contract_calls') === null);
+t('Zənglər: sistem tipləri (əlaqə nəticəsi 6, danışığın nəticəsi 6)', count(lk_system_types()['call-contact'][1]) === 6 && count(lk_system_types()['call-result'][1]) === 6);
+$cz = ['zengVaxti' => '2026-10-01 10:00:00', 'vedTarix' => '2026-10-05', 'vedMeblag' => 100];
+t('Vəd: aralıqda 100 ödənilib → yerinə yetirilib (zəngdən əvvəlki və vəddən sonrakı sayılmır)', call_promise_state($cz, [['2026-09-30', 500], ['2026-10-02', 60], ['2026-10-05', 40], ['2026-10-06', 9]], '2026-10-10') === ['kept', 100.0]);
+t('Vəd: çatmayıb, tarix keçib → pozulub; keçməyib → gözlənilir', call_promise_state($cz, [['2026-10-02', 60]], '2026-10-06')[0] === 'broken' && call_promise_state($cz, [['2026-10-02', 60]], '2026-10-05')[0] === 'pending');
+t('Gecikmə ayı (brauzerdəki monthsSince ilə eyni)', call_months_since('2026-02-10', '2026-10-15') === 8 && call_months_since('2026-02-10', '2026-10-09') === 7 && call_months_since('2026-10-20', '2026-10-15') === 0);
+$me = ['id' => 'u1', 'role' => 'user'];
+t('Zəng qeydini dəyişmək: yalnız yazan və yalnız həmin gün; admin — həmişə', call_edit_denied($me, ['userId' => 'u1', 'zengVaxti' => baku_today() . ' 09:00:00']) === ''
+    && call_edit_denied($me, ['userId' => 'u2', 'zengVaxti' => baku_today() . ' 09:00:00']) !== '' && call_edit_denied($me, ['userId' => 'u1', 'zengVaxti' => '2020-01-01 09:00:00']) !== ''
+    && call_edit_denied(['id' => 'a', 'role' => 'admin'], ['userId' => 'u2', 'zengVaxti' => '2020-01-01 09:00:00']) === '');
+
 /* ---------- nəticə ---------- */
 $fail = 0;
 foreach ($results as $r) { if (!$r[1]) $fail++; }

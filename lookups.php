@@ -23,31 +23,53 @@ function lk_system_values() {
     ];
 }
 
-// Sistem tipini və dəyərlərini yaradır (yalnız çatışmayanları; ad dəyişdirilibsə toxunmur). Yaradılan sayını qaytarır.
+// Proqramın KODLA tanıdığı sistem tipləri: kod => [ad, dəyərlər [kod, ad, rəng, sıra], defolt dəyərin kodu]
+function lk_system_types() {
+    return [
+        LK_STATUS_TYPE => ['Müqavilə statusları', lk_system_values(), 'normal'],
+        // Zənglər (calls.php): əlaqə nəticəsi və danışığın nəticəsi
+        'call-contact' => ['Zəng: əlaqə nəticəsi', [
+            ['cavab', 'Cavab verdi', 'green', 1], ['cavabsiz', 'Cavab vermədi', 'amber', 2],
+            ['sondurulub', 'Nömrə söndürülüb / əlçatmaz', 'gray', 3], ['sehv', 'Nömrə səhvdir', 'red', 4],
+            ['baskasi', 'Başqası cavab verdi', 'blue', 5], ['geri', 'Geri zəng istədi', 'purple', 6],
+        ], ''],
+        'call-result' => ['Zəng: danışığın nəticəsi', [
+            ['ved', 'Ödəməyə söz verdi', 'green', 1], ['qismen', 'Qismən ödəyəcək', 'blue', 2],
+            ['imtina', 'Ödəməkdən imtina edir', 'red', 3], ['mubahise', 'Məbləğ / mal ilə bağlı mübahisə', 'amber', 4],
+            ['odeyib', 'Ödədiyini deyir', 'purple', 5], ['mehkeme', 'Məhkəməyə yönəltmək lazımdır', 'red', 6],
+        ], ''],
+    ];
+}
+
+// Sistem tiplərini və dəyərlərini yaradır (yalnız çatışmayanları; ad dəyişdirilibsə toxunmur). Yaradılan sayını qaytarır.
 function lookup_seed($pdo) {
-    $n = 0;
-    $st = $pdo->prepare("SELECT id FROM lookup_types WHERE kod = ?");
-    $st->execute([LK_STATUS_TYPE]);
-    $typeId = $st->fetchColumn();
-    if (!$typeId) {
-        $typeId = make_uuid();
-        $pdo->prepare("INSERT INTO lookup_types (id, createdAt, kod, ad, qeyd, sistem) VALUES (?,?,?,?,?,1)")
-            ->execute([$typeId, date('Y-m-d H:i:s'), LK_STATUS_TYPE, 'Müqavilə statusları', '']);
-        $n++;
+    $total = 0;
+    foreach (lk_system_types() as $typeKod => [$typeAd, $values, $defKod]) {
+        $n = 0;
+        $st = $pdo->prepare("SELECT id FROM lookup_types WHERE kod = ?");
+        $st->execute([$typeKod]);
+        $typeId = $st->fetchColumn();
+        if (!$typeId) {
+            $typeId = make_uuid();
+            $pdo->prepare("INSERT INTO lookup_types (id, createdAt, kod, ad, qeyd, sistem) VALUES (?,?,?,?,?,1)")
+                ->execute([$typeId, date('Y-m-d H:i:s'), $typeKod, $typeAd, '']);
+            $n++;
+        }
+        $st = $pdo->prepare("SELECT kod FROM lookup_values WHERE typeId = ?");
+        $st->execute([$typeId]);
+        $have = array_flip(array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN)));
+        foreach ($values as [$kod, $ad, $reng, $sira]) {
+            if (isset($have[$kod])) continue;
+            $pdo->prepare("INSERT INTO lookup_values (id, createdAt, typeId, kod, ad, sira, reng, defolt, aktiv, sistem, qeyd) VALUES (?,?,?,?,?,?,?,?,1,1,'')")
+                ->execute([make_uuid(), date('Y-m-d H:i:s'), $typeId, $kod, $ad, $sira, $reng, $kod === $defKod ? 1 : 0]);
+            $n++;
+        }
+        if ($n > 0) {
+            audit_event($pdo, 'FIX', 'Köməkçi məlumatlar: "' . $typeAd . '" sistem tipi/dəyərləri yaradıldı (' . $n . ')', ['entity' => 'lookup_types']);
+        }
+        $total += $n;
     }
-    $st = $pdo->prepare("SELECT kod FROM lookup_values WHERE typeId = ?");
-    $st->execute([$typeId]);
-    $have = array_flip(array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN)));
-    foreach (lk_system_values() as [$kod, $ad, $reng, $sira]) {
-        if (isset($have[$kod])) continue;
-        $pdo->prepare("INSERT INTO lookup_values (id, createdAt, typeId, kod, ad, sira, reng, defolt, aktiv, sistem, qeyd) VALUES (?,?,?,?,?,?,?,?,1,1,'')")
-            ->execute([make_uuid(), date('Y-m-d H:i:s'), $typeId, $kod, $ad, $sira, $reng, $kod === 'normal' ? 1 : 0]);
-        $n++;
-    }
-    if ($n > 0) {
-        audit_event($pdo, 'FIX', 'Köməkçi məlumatlar: "Müqavilə statusları" sistem tipi/dəyərləri yaradıldı (' . $n . ')', ['entity' => 'lookup_types']);
-    }
-    return $n;
+    return $total;
 }
 
 // kod => id (müqavilə statusunun sistem dəyərləri); lazım olsa sistem dəyərlərini yaradır
@@ -278,6 +300,8 @@ function lookup_delete_denied($pdo, $col, $id) {
     $st->execute([(string) $id]);
     $n = (int) $st->fetchColumn();
     if ($n > 0) return 'Bu dəyər ' . $n . ' müqavilədə istifadə olunur — silmək olmaz, passiv edin.';
+    $n = call_lookup_usage($pdo, $id);
+    if ($n > 0) return 'Bu dəyər ' . $n . ' zəng qeydində istifadə olunur — silmək olmaz, passiv edin.';
     return '';
 }
 

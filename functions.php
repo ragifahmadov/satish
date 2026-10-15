@@ -54,6 +54,13 @@ $SCHEMA = [
         ['tarix', 'date'], ['collectorId', 'string'], ['tehsilatMeblegi', 'number'], ['benzinXerci', 'number'],
         ['digerXerc', 'number'], ['senedSayi', 'int'], ['gonderilenMebleg', 'number'], ['qeyd', 'text'],
     ],
+    // Zənglər (calls.php): müqavilə üzrə müştəriyə zəng; zengVaxti/userId/userName/sn* — server yazır
+    'contract_calls' => [
+        ['contractId', 'string'], ['zengVaxti', 'string'], ['userId', 'string'], ['userName', 'string'],
+        ['kime', 'string'], ['nomre', 'string'], ['elaqeNeticeId', 'string'], ['danisiqNeticeId', 'string'],
+        ['vedMeblag', 'number'], ['vedTarix', 'date'], ['novbetiZeng', 'date'], ['qeyd', 'text'],
+        ['snQaliq', 'number'], ['snQrafik', 'number'], ['snGecikme', 'int'], ['snStatusId', 'string'],
+    ],
     'payments' => [
         ['contractId', 'string'], ['meblag', 'number'], ['odemeTarixi', 'date'], ['collectorId', 'string'],
         ['qeyd', 'text'], ['qrafikAyIndex', 'int'], ['qrafikAyLabel', 'string'], ['emeliyyatNovu', 'string'],

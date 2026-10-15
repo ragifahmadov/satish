@@ -9,7 +9,7 @@
 //  * Yeni ekran/hesabat əlavə edəndə perm_screens() və perm_screen_needs()-də elan edin.
 
 // Struktur dəyişəndə artırın — db.php strukturu yenidən yoxlasın
-const SCOPE_SCHEMA_VERSION = 'scope-v5';   // v2: payments.odemeTarixi indeksi; v4: contracts.statusId, lookup_values.typeId indeksləri
+const SCOPE_SCHEMA_VERSION = 'scope-v6';   // v6: contract_calls indeksləri   // v2: payments.odemeTarixi indeksi; v4: contracts.statusId, lookup_values.typeId indeksləri
 const USERS_SCHEMA_VERSION = 'users-v3';   // v3: users.collectorId (istifadəçi ↔ təhsilatçı bağlantısı)
 
 /* ---------- reyestr ---------- */
@@ -30,12 +30,14 @@ function perm_screens() {
         'reassign-collector' => 'Təhsilatçı dəyişikliyi',
         'reassign-curator' => 'Kurator dəyişikliyi',
         'debt-inquiry' => 'Müştəri borc sorğusu',
+        'calls' => 'Zənglər',
         'report-overdue' => 'Hesabat: Gecikmiş müqavilələr',
         'report-collections' => 'Hesabat: Təhsilat hesabatı',
         'report-contracts' => 'Hesabat: Müqavilə axtarışı',
         'report-debtor-sales' => 'Hesabat: Borclu müştərilərə satışlar',
         'report-monthly-plan' => 'Hesabat: Cari ay təhsilat planı',
         'report-debt-payments' => 'Hesabat: Borc ödənişləri',
+        'report-calls' => 'Hesabat: Zənglər',
     ];
 }
 
@@ -78,6 +80,8 @@ function perm_screen_needs() {
         'reassign-collector' => ['contracts' => 'ref', 'customers' => 'ref', 'collectors' => 'ref', '@sums' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         'reassign-curator' => ['contracts' => 'ref', 'customers' => 'ref', 'curators' => 'ref', '@sums' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         'debt-inquiry' => ['customers' => 'ref_addr', 'contracts' => 'ref', 'collectors' => 'ref', '@sums' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
+        // Zənglər: siyahılar və kart calls-api.php-dən (əhatə serverdə); burada yalnız filtr/forma siyahıları
+        'calls' => ['collectors' => 'ref', 'curators' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         'report-overdue' => ['contracts' => 'ref', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@last' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Təhsilat hesabatının sətirləri report-api.php-dən gəlir (müqavilə №, müştəri adı — yığcam); burada yalnız təhsilatçı siyahısı
         'report-collections' => ['collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
@@ -89,6 +93,7 @@ function perm_screen_needs() {
         'report-monthly-plan' => ['collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Borc ödənişləri (şirkətin borcları): sətirlər report-api.php-dən; burada yalnız borc yerləri (filtr siyahısı)
         'report-debt-payments' => ['company_debts' => 'ref'],
+        'report-calls' => ['lookup_types' => 'ref', 'lookup_values' => 'ref'],
     ];
 }
 
@@ -379,6 +384,7 @@ function authz_write_needs($col, $method, $body) {
     if ($col === 'collector_reports') { $needs[] = ['screen' => 'collector-reports', 'level' => $lvl]; return $needs; }
     if ($col === 'lookup_types' || $col === 'lookup_values') { $needs[] = ['screen' => 'lookups', 'level' => $lvl]; return $needs; }
     if ($col === 'company_debts' || $col === 'company_debt_ops') { $needs[] = ['screen' => 'company-debts', 'level' => $lvl]; return $needs; }
+    if ($col === 'contract_calls') { $needs[] = ['screen' => 'calls', 'level' => $lvl]; return $needs; }
     $needs[] = ['screen' => $col, 'level' => $lvl];   // customers, salespeople, collectors, curators
     return $needs;
 }
@@ -450,6 +456,13 @@ function authz_scope_write_denied($pdo, $ctx, $col, $method, $id, $body) {
         }
         return '';
     }
+    if ($col === 'contract_calls') {   // zəng: müqaviləsi əhatədə olmalıdır (əlavədə body-dəki, dəyişmə/silmədə qeydin öz müqaviləsi)
+        if ($method === 'POST') return authz_contract_visible($pdo, $ctx, $body['contractId'] ?? '') ? '' : $outMsg;
+        $st = $pdo->prepare("SELECT contractId FROM contract_calls WHERE id = :id");
+        $st->execute([':id' => (string) $id]);
+        $cid = $st->fetchColumn();
+        return ($cid !== false && authz_contract_visible($pdo, $ctx, $cid)) ? '' : $outMsg;
+    }
     if ($col === 'company_debts' || $col === 'company_debt_ops') return '';   // şirkətin borcları — əhatə yoxdur
     if ($col === 'lookup_types' || $col === 'lookup_values') return '';   // köməkçi məlumatlar müqaviləyə bağlı deyil — əhatə yoxdur
     if ($col === 'collector_reports') return '';   // müqaviləyə bağlı deyil — əhatə yoxdur (Satıcılar/Müştərilər kimi yalnız ekran hüququ)
@@ -505,6 +518,9 @@ function ensure_scope_columns($pdo) {
     add_index_if_missing($pdo, 'contracts', 'statusId');   // statussuz müqavilə yoxlaması (hər girişdə), status filtri
     add_index_if_missing($pdo, 'lookup_values', 'typeId');
     add_index_if_missing($pdo, 'company_debt_ops', 'debtId');
+    add_index_if_missing($pdo, 'contract_calls', 'contractId');   // müqavilənin zəngləri, son zəng
+    add_index_if_missing($pdo, 'contract_calls', 'zengVaxti');    // tarixçə / hesabat: tarix intervalı
+    lookup_seed($pdo);   // sistem tipləri (statuslar, zəng nəticələri) — yalnız çatışmayanlar
     backfill_current_assignees($pdo);
 }
 
@@ -638,3 +654,4 @@ function collector_report_prepare($pdo, $body, $old, $id) {
 
 require_once __DIR__ . '/lookups.php';   // köməkçi məlumatlar + müqavilə statusu qaydaları
 require_once __DIR__ . '/company-debts.php';   // şirkətin borcları
+require_once __DIR__ . '/calls.php';   // zənglər (ofis əməkdaşının müştəriyə zəngləri)

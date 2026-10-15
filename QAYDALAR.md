@@ -132,3 +132,11 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    Menyu qrupları girişdə / F5-də bağlıdır; açılan qrup yalnız səhifə yenilənənə qədər açıq qalır (brauzerdə saxlanmır). Xidməti alətlər
    (`status-import.php`, `fix-qrafik.php`, `reset.php`) menyudan çıxarılıb — səhifələr qalır (yalnız admin, ünvanla). `fix-qrafik.php`
    40 gün güzəşti NƏZƏRƏ ALMIR — işlətməyin.
+27. **Zənglər (ofis əməkdaşı → müştəri):** cədvəl `contract_calls`; qaydalar `calls.php`-də. Hüquq: ekran «Zənglər» (Baxış — siyahılar,
+   kart, tarixçə; Dəyişiklik — zəng qeyd etmək və ÖZ qeydini YALNIZ HƏMİN GÜN dəyişmək; Silmə — qeydi silmək; admin — həmişə),
+   ayrıca «Hesabat: Zənglər». Əhatə — müqavilə əhatəsi; Bağlı müqaviləyə zəng yazılmır, onun zəngləri dəyişmir (409).
+   Vaxt, əməkdaş və zəng anındakı borc/gecikmə/status SERVERDƏN yazılır. Nəticələr köməkçi məlumatlardadır (sistem tipləri
+   `call-contact`, `call-result`, kodla tanınır): danışıq olmayıbsa (cavabsiz/sondurulub/sehv) nəticə və vəd yazılmır; «Cavab verdi»də
+   danışığın nəticəsi, «Söz verdi»/«Qismən»də vəd məbləği+tarixi məcburidir. Vəd: zəng günündən vəd tarixinədək real ödənişlər ≥ vəd
+   → yerinə yetirilib; tarix keçib → pozulub; əks halda gözlənilir. «Bu gün zəng ediləcəklər» = SON zəngin növbəti zəng tarixi çatıb /
+   vədi pozulub / vəd tarixi bu gündür. Oxuma yalnız `calls-api.php` və `report-api.php?report=calls` ilə (api.php siyahı vermir).

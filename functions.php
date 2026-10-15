@@ -36,6 +36,14 @@ $SCHEMA = [
     'lookup_types' => [
         ['kod', 'string'], ['ad', 'string'], ['qeyd', 'text'], ['sistem', 'int'],
     ],
+    // Şirkətin borcları (şirkətin özü borcludur): borc kartı və əməliyyatları — company-debts.php
+    'company_debts' => [
+        ['ad', 'string'], ['tip', 'string'], ['meblag', 'number'], ['baslama', 'date'], ['ayliq', 'number'], ['odenisGunu', 'int'],
+        ['qeyd', 'text'], ['veziyyet', 'string'],
+    ],
+    'company_debt_ops' => [
+        ['debtId', 'string'], ['tarix', 'date'], ['meblag', 'number'], ['nov', 'string'], ['qeyd', 'text'],
+    ],
     'lookup_values' => [
         ['typeId', 'string'], ['kod', 'string'], ['ad', 'string'], ['sira', 'int'], ['reng', 'string'],
         ['defolt', 'int'], ['aktiv', 'int'], ['sistem', 'int'], ['qeyd', 'text'],

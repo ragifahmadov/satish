@@ -142,6 +142,7 @@
   .tag-accent{background:var(--accent);color:#2A1D08;}
   .tag-blue{background:#E0EAF5;color:#2F5D8A;}
   .tag-purple{background:#ECE3F3;color:#6A4A86;}
+  tr.cd-late td{background:rgba(169,64,47,.06);}
   .lk-type{display:flex;gap:8px;align-items:center;width:100%;padding:9px 10px;border:none;background:none;border-radius:8px;cursor:pointer;font:inherit;font-size:13.5px;color:var(--text);text-align:left;}
   .lk-type:hover{background:var(--bg-page);}
   .lk-type.active{background:rgba(184,134,63,.13);font-weight:600;}
@@ -281,6 +282,7 @@ const ICONS = {
   curator:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="8" r="3.4"/><path d="M3.5 21c0-4 3-6.2 6.5-6.2"/><path d="M14.5 17.5l2.3 2.3 4.2-4.6"/></svg>',
   court:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4v16M8 20h8M4 7h16"/><path d="M4 7l-2.5 6.5a2.5 2.5 0 005 0z"/><path d="M20 7l-2.5 6.5a2.5 2.5 0 005 0z"/></svg>',
   lookup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg>',
+  bank:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8"/><path d="M3 20h18"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7"/></svg>',
@@ -288,7 +290,7 @@ const ICONS = {
 const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust','Sentyabr','Oktyabr','Noyabr','Dekabr'];
 
 /* ============ STATE ============ */
-const state={salespeople:[],collectors:[],curators:[],customers:[],contracts:[],payments:[],collector_reports:[],lookup_types:[],lookup_values:[]};
+const state={salespeople:[],collectors:[],curators:[],customers:[],contracts:[],payments:[],collector_reports:[],lookup_types:[],lookup_values:[],company_debts:[],company_debt_ops:[]};
 let paymentSums={};   // müqavilə id -> ödənişlərin cəmi (geri qaytarma xaric; yüngül, tam sətirlər olmadan)
 let returnSums={};    // müqavilə id -> geri qaytarılan (mal qaytarılması) məbləğ, müsbət ədəd
 let paymentLast={};   // müqavilə id -> ən son real ödəniş tarixi (YYYY-MM-DD)
@@ -327,6 +329,8 @@ const SCREENS=[
     {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
     {id:'curators',label:'Kuratorlar',icon:'curator'},
     {id:'lookups',label:'Köməkçi məlumatlar',icon:'lookup'}]},
+  {group:'finance',label:'Maliyyə',icon:'bank',children:[
+    {id:'company-debts',label:'Şirkətin borcları',icon:'bank'}]},
 ];
 
 /* ============ SƏLAHİYYƏTLƏR (brauzer yalnız rahatlıq üçün gizlədir; əsl nəzarət SERVERDƏDİR) ============ */
@@ -346,7 +350,7 @@ function screenAllowed(id){
   return can(id,1);
 }
 function pickInitialScreen(){
-  const order=['contracts','dashboard','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','collector-reports','reassign','reassign-curator','lookups'];
+  const order=['contracts','dashboard','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','collector-reports','reassign','reassign-curator','lookups','company-debts'];
   return order.find(screenAllowed)||null;
 }
 
@@ -469,6 +473,7 @@ const SCREEN_DEPS={
   curators:['curators'],
   'collector-reports':['collector_reports','collectors'],
   lookups:['lookup_types','lookup_values'],
+  'company-debts':['company_debts','company_debt_ops'],
   customers:['customers'],
   contracts:['contracts','customers','salespeople','collectors','curators','paymentSums','lookup_types','lookup_values'],
   payments:['contracts','customers','collectors','paymentSums','lookup_types','lookup_values'],
@@ -542,6 +547,7 @@ async function renderScreen(){
     case 'curators': return renderSimpleList('curators');
     case 'collector-reports': return renderCollectorReports();
     case 'lookups': return renderLookups();
+    case 'company-debts': return renderCompanyDebts();
     case 'customers': return renderCustomers();
     case 'contracts': return renderContracts();
     case 'payments': return renderPayments();
@@ -1016,6 +1022,217 @@ async function deleteLookup(col,id){
   try{ await apiDelete(col,id); }catch(err){ alert(err.message); return; }
   if(col==='lookup_types') lkSel=null;
   await lkReload(); renderLookups();
+}
+
+/* ============ ŞİRKƏTİN BORCLARI (şirkətin özü borcludur) ============
+   Qalıq = başlanğıc + artım − ödəniş; faizli borcda "Faiz ödənişi" qalığı azaltmır (əsas borc "Əsas borcun qaytarılması" ilə azalır).
+   Kreditdə ümumi məbləğ faiz daxil qalıqdır — aylıq ödəniş qalıqdan düşür. Vəziyyəti (aktiv/bağlı) server qalığa görə yazır.
+   Bu ay: kredit/faizli borcda aylıq məbləğ ödənməyibsə və ödəniş günü keçibsə — qırmızı. Yoxlamalar serverdədir (company-debts.php). */
+const CD_TYPES={birdefelik:'Birdəfəlik', kredit:'Kredit', faizli:'Faizli'};
+const CD_TYPE_TAG={birdefelik:'tag-gray', kredit:'tag-blue', faizli:'tag-purple'};
+function cdOpLabel(nov, tip){ return nov==='faiz'?'Faiz ödənişi':(nov==='artim'?'Borc artımı':(tip==='faizli'?'Əsas borcun qaytarılması':'Ödəniş')); }
+let cdFilters={tip:'', veziyyet:'aktiv', unpaid:''};
+function cdCalc(d){
+  const ops=(state.company_debt_ops||[]).filter(o=>o.debtId===d.id);
+  const ym=bakuDateIso().slice(0,7), day=Number(bakuDateIso().slice(8,10));
+  let artim=0, odenis=0, faiz=0, month=0;
+  for(const o of ops){
+    const m=Number(o.meblag)||0;
+    if(o.nov==='artim') artim+=m; else if(o.nov==='faiz') faiz+=m; else odenis+=m;
+    if((o.tarix||'').slice(0,7)===ym && ((d.tip==='faizli' && o.nov==='faiz') || (d.tip!=='faizli' && o.nov==='odenis'))) month+=m;
+  }
+  const start=Number(d.meblag)||0, borc=start+artim, qaliq=Math.round((borc-odenis)*100)/100, ayliq=Number(d.ayliq)||0;
+  const active=d.veziyyet!=='bagli';
+  let due='none';                                       // none | paid | waiting | late
+  if(active && ayliq>0 && d.tip!=='birdefelik'){
+    if(month>=ayliq-0.009) due='paid';
+    else if(d.odenisGunu && day>=Number(d.odenisGunu)) due='late';
+    else due='waiting';
+  }
+  return {ops, start, artim, borc, odenis, faiz, qaliq, ayliq, month, due, rest:Math.max(0,ayliq-month), active};
+}
+function cdDueHtml(c, d){
+  if(c.due==='paid') return `<span class="tag tag-green">Ödənilib</span>`;
+  if(c.due==='late') return `<span class="tag tag-red">Ödənməyib — ${fmtMoney(c.rest)}</span>`;
+  if(c.due==='waiting') return `<span class="tag tag-amber">Gözlənilir${d.odenisGunu?' ('+d.odenisGunu+'-i)':''} — ${fmtMoney(c.rest)}</span>`;
+  return '<span class="muted">—</span>';
+}
+function cdDueText(c){ return c.due==='paid'?'Ödənilib':(c.due==='late'?'Ödənməyib':(c.due==='waiting'?'Gözlənilir':'')); }
+function cdRows(){
+  const f=cdFilters;
+  return (state.company_debts||[]).map(d=>Object.assign({d}, cdCalc(d)))
+    .filter(r=>(!f.tip || r.d.tip===f.tip) && (!f.veziyyet || (f.veziyyet==='bagli'?!r.active:r.active)) && (!f.unpaid || (r.due==='late' || r.due==='waiting')))
+    .sort((a,b)=>(a.due==='late'?0:1)-(b.due==='late'?0:1) || b.qaliq-a.qaliq || String(a.d.ad).localeCompare(String(b.d.ad),'az'));
+}
+function cdTotals(rows){ return rows.reduce((t,r)=>({borc:t.borc+r.borc, odenis:t.odenis+r.odenis, qaliq:t.qaliq+r.qaliq, ayliq:t.ayliq+(r.active?r.ayliq:0), faiz:t.faiz+r.faiz, month:t.month+r.month}),{borc:0,odenis:0,qaliq:0,ayliq:0,faiz:0,month:0}); }
+// Sütunların tək elanı (ekran + Excel)
+const CD_COLUMNS=[
+  {th:'<th>Kimə / hara</th>', xl:'Kimə / hara', type:'text', width:32, td:r=>`<td><strong>${esc(r.d.ad)}</strong>${r.d.qeyd?`<div class="muted" style="font-size:12px;">${esc(r.d.qeyd)}</div>`:''}</td>`, val:r=>r.d.ad},
+  {th:'<th>Tip</th>', xl:'Tip', type:'text', width:12, td:r=>`<td><span class="tag ${CD_TYPE_TAG[r.d.tip]||'tag-gray'}">${CD_TYPES[r.d.tip]||r.d.tip}</span></td>`, val:r=>CD_TYPES[r.d.tip]||r.d.tip},
+  {th:null, xl:'Başlanma tarixi', type:'date', width:14, td:null, val:r=>r.d.baslama},
+  {th:null, xl:'Başlanğıc borc', type:'money', width:16, td:null, val:r=>r.start},
+  {th:null, xl:'Borc artımı', type:'money', width:14, td:null, val:r=>r.artim},
+  {th:'<th class="num">Borc</th>', xl:'Borc (başlanğıc + artım)', type:'money', width:18, td:r=>`<td class="num">${fmtMoney(r.borc)}</td>`, val:r=>r.borc},
+  {th:'<th class="num">Ödənilib</th>', xl:'Ödənilib (əsas)', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.odenis)}</td>`, val:r=>r.odenis},
+  {th:'<th class="num">Qalıq</th>', xl:'Qalıq', type:'money', width:16, td:r=>`<td class="num"><strong>${fmtMoney(r.qaliq)}</strong></td>`, val:r=>r.qaliq},
+  {th:'<th class="num">Aylıq</th>', xl:'Aylıq ödəniş', type:'money', width:14, td:r=>`<td class="num">${r.ayliq?fmtMoney(r.ayliq):'<span class="muted">—</span>'}</td>`, val:r=>r.ayliq||null},
+  {th:'<th class="num">Ödəniş<br>günü</th>', xl:'Ödəniş günü', type:'int', width:11, td:r=>`<td class="num">${r.d.odenisGunu||'<span class="muted">—</span>'}</td>`, val:r=>r.d.odenisGunu?Number(r.d.odenisGunu):null},
+  {th:'<th>Bu ay</th>', xl:'Bu ay', type:'text', width:14, td:r=>`<td>${cdDueHtml(r,r.d)}</td>`, val:r=>cdDueText(r)},
+  {th:null, xl:'Bu ay ödənilib', type:'money', width:14, td:null, val:r=>r.month},
+  {th:'<th class="num">Cəmi faiz</th>', xl:'Cəmi faiz ödənilib', type:'money', width:16, td:r=>`<td class="num">${r.d.tip==='faizli'?fmtMoney(r.faiz):'<span class="muted">—</span>'}</td>`, val:r=>r.d.tip==='faizli'?r.faiz:null},
+  {th:'<th>Vəziyyət</th>', xl:'Vəziyyət', type:'text', width:11, td:r=>`<td>${r.active?'<span class="tag tag-green">aktiv</span>':'<span class="tag tag-gray">bağlı</span>'}</td>`, val:r=>r.active?'Aktiv':'Bağlı'},
+];
+const CD_SCREEN_COLUMNS=CD_COLUMNS.filter(c=>c.td);
+const CD_OP_COLUMNS=[
+  {xl:'Kimə / hara', type:'text', width:30, val:o=>(byId(state.company_debts,o.debtId)||{}).ad||''},
+  {xl:'Tarix', type:'date', width:13, val:o=>o.tarix},
+  {xl:'Növ', type:'text', width:24, val:o=>cdOpLabel(o.nov,(byId(state.company_debts,o.debtId)||{}).tip)},
+  {xl:'Məbləğ', type:'money', width:14, val:o=>Number(o.meblag)||0},
+  {xl:'Qeyd', type:'text', width:30, val:o=>o.qeyd||''},
+];
+function cdFilterDescription(){
+  const f=cdFilters, out=[];
+  out.push({l:'Vəziyyət', v:f.veziyyet==='bagli'?'Bağlı':(f.veziyyet?'Aktiv':'Hamısı')});
+  if(f.tip) out.push({l:'Tip', v:CD_TYPES[f.tip]});
+  if(f.unpaid) out.push({l:'Bu ay', v:'Ödənməyənlər'});
+  return out;
+}
+function refreshCompanyDebts(){
+  const tbody=document.getElementById('cd-tbody'); if(!tbody) return;
+  const rows=cdRows(), t=cdTotals(rows), acts=can('company-debts',2)||can('company-debts',3);
+  const late=rows.filter(r=>r.due==='late').length;
+  document.getElementById('cd-summary').innerHTML=`<strong>${rows.length}</strong> borc &nbsp;·&nbsp; Qalıq: <strong>${fmtMoney(t.qaliq)}</strong> &nbsp;·&nbsp; Aylıq ödəniş (aktiv): <strong>${fmtMoney(t.ayliq)}</strong> &nbsp;·&nbsp; Bu ay ödənilib: <strong>${fmtMoney(t.month)}</strong>${late?` &nbsp;·&nbsp; <span style="color:var(--red);font-weight:600;">Bu ay ödənməyən: ${late}</span>`:''}`;
+  tbody.innerHTML=rows.length?rows.map(r=>`<tr class="clickable${r.due==='late'?' cd-late':''}" data-action="cd-open" data-id="${r.d.id}">${CD_SCREEN_COLUMNS.map(c=>c.td(r)).join('')}
+      <td style="white-space:nowrap;"><div class="rowactions">
+        ${can('company-debts',2)?`<button class="iconbtn" data-action="cd-edit" data-id="${r.d.id}" title="Redaktə et">${ICONS.edit}</button>`:''}
+        ${can('company-debts',3)&&!r.ops.length?`<button class="iconbtn" data-action="cd-delete" data-id="${r.d.id}" title="Sil">${ICONS.trash}</button>`:''}
+      </div></td></tr>`).join('')
+      +`<tr class="total-row"><td>Cəmi</td><td></td><td class="num">${fmtMoney(t.borc)}</td><td class="num">${fmtMoney(t.odenis)}</td><td class="num">${fmtMoney(t.qaliq)}</td><td class="num">${fmtMoney(t.ayliq)}</td><td></td><td></td><td class="num">${fmtMoney(t.faiz)}</td><td></td><td></td></tr>`
+    :`<tr><td colspan="${CD_SCREEN_COLUMNS.length+1}" class="empty" style="padding:40px;">${(state.company_debts||[]).length?'Filtrə uyğun borc yoxdur':'Hələ borc yoxdur'}</td></tr>`;
+  const eb=document.getElementById('export-btn');
+  if(eb){ eb.disabled=!rows.length; eb.textContent=rows.length?('Excelə yüklə — '+rows.length+' sətir'):'Excelə yüklə'; }
+}
+function renderCompanyDebts(){
+  const f=cdFilters, o=(v,l,sel)=>`<option value="${v}"${sel===v?' selected':''}>${l}</option>`;
+  const empty=!(state.company_debts||[]).length;
+  setContent(`
+    <div class="topbar">
+      <div><h1>Şirkətin borcları</h1><div class="sub">Şirkətin borclu olduğu yerlər: birdəfəlik borclar, kreditlər və faizli borclar</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-ghost" id="export-btn" data-action="export-report" data-report="company-debts" disabled>Excelə yüklə</button>`:''}
+        ${can('company-debts',2)?`<button class="btn btn-primary" data-action="cd-add">${ICONS.plus}&nbsp; Yeni borc</button>`:''}
+      </div>
+    </div>
+    ${empty&&isAdmin()?`<div class="card" style="padding:16px 18px;margin-bottom:14px;"><div style="margin-bottom:10px;">Siyahı boşdur. Faylınızdakı (<strong>borclar_1.xlsx</strong>) 17 borcu ilkin məlumat kimi yükləmək olar — bir dəfə, loga yazılır.</div>
+      <button class="btn btn-primary" data-action="cd-seed">Fayldan ilkin məlumatı yüklə (17 borc)</button><div class="field-err" id="cd-seed-err"></div></div>`:''}
+    <div class="card" style="padding:12px 16px;margin-bottom:12px;"><div class="filters">
+      <div class="field"><label>Vəziyyət</label><select data-cdfilter="veziyyet">${o('aktiv','Aktiv',f.veziyyet)}${o('bagli','Bağlı',f.veziyyet)}${o('','Hamısı',f.veziyyet)}</select></div>
+      <div class="field"><label>Tip</label><select data-cdfilter="tip">${o('','Hamısı',f.tip)}${Object.entries(CD_TYPES).map(([k,l])=>o(k,l,f.tip)).join('')}</select></div>
+      <div class="field"><label style="visibility:hidden;">.</label><label class="check"><input type="checkbox" data-cdfilter="unpaid" value="1"${f.unpaid?' checked':''}> Yalnız bu ay ödənməyənlər</label></div>
+    </div></div>
+    <div id="cd-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div class="card"><div class="table-scroll"><table class="table-compact" id="cd-table">
+      <thead><tr>${CD_SCREEN_COLUMNS.map(c=>c.th).join('')}<th></th></tr></thead><tbody id="cd-tbody"></tbody></table></div>
+      <div class="muted" style="font-size:12px;padding:8px 14px 12px;">Sətrə basın — borcun əməliyyatları (ödəniş, faiz, borc artımı).</div></div>
+  `);
+  refreshCompanyDebts();
+}
+async function cdReload(){ const [d,o]=await Promise.all([apiList('company_debts'),apiList('company_debt_ops')]); state.company_debts=d; state.company_debt_ops=o; }
+function openCdForm(id){
+  const rec=id?byId(state.company_debts,id):null;
+  const hasOps=rec && (state.company_debt_ops||[]).some(o=>o.debtId===rec.id);
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>${rec?'Borcu redaktə et':'Yeni borc'}</h2>
+    <form id="cd-form" data-id="${id||''}">
+      <div class="field"><label>Kimə / hara</label><input type="text" name="ad" required maxlength="150" value="${esc(rec?.ad||'')}"></div>
+      <div class="grid2">
+        <div class="field"><label>Tip</label><select name="tip"${hasOps?' disabled title="Əməliyyatı olan borcun tipi dəyişmir"':''}>${Object.entries(CD_TYPES).map(([k,l])=>`<option value="${k}"${(rec?.tip||'birdefelik')===k?' selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Başlanma tarixi</label><input type="date" name="baslama" required value="${esc(rec?.baslama||todayIso())}"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Borcun məbləği (₼)</label><input type="number" step="0.01" min="0" name="meblag" required value="${esc(rec?.meblag??'')}"></div>
+        <div class="field"><label>Aylıq ödəniş (₼)</label><input type="number" step="0.01" min="0" name="ayliq" value="${esc(Number(rec?.ayliq)>0?rec.ayliq:'')}"></div>
+        <div class="field"><label>Ödəniş günü (1–31)</label><input type="number" step="1" min="1" max="31" name="odenisGunu" value="${esc(Number(rec?.odenisGunu)>0?rec.odenisGunu:'')}"></div>
+      </div>
+      <div class="muted" style="font-size:12px;margin:-4px 0 10px;">Kredit: məbləğ faiz daxil ödəniləcək qalıqdır, aylıq ödəniş ondan düşür. Faizli: aylıq ödəniş faizdir, əsas borcdan çıxılmır.</div>
+      <div class="field"><label>Qeyd</label><textarea name="qeyd" rows="2">${esc(rec?.qeyd||'')}</textarea></div>
+      <div class="field-err" id="cd-err"></div>
+      <div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button><button type="submit" class="btn btn-primary">Yadda saxla</button></div>
+    </form>`;
+  openModal();
+}
+async function submitCdForm(form){
+  const id=form.dataset.id, fd=new FormData(form), rec=id?byId(state.company_debts,id):null;
+  const data={ad:(fd.get('ad')||'').trim(), tip:fd.get('tip')||(rec?rec.tip:''), baslama:fd.get('baslama')||'', meblag:fd.get('meblag')||'', ayliq:fd.get('ayliq')||'', odenisGunu:fd.get('odenisGunu')||'', qeyd:fd.get('qeyd')||''};
+  const err=document.getElementById('cd-err');
+  try{ id?await apiUpdate('company_debts',id,data):await apiAdd('company_debts',data); await cdReload(); }
+  catch(e){ err.textContent=e.message; err.style.display='block'; return; }
+  closeModal(); renderCompanyDebts();
+}
+async function deleteCd(id){
+  const d=byId(state.company_debts,id); if(!d || !confirm('Borc silinsin? «'+d.ad+'»')) return;
+  try{ await apiDelete('company_debts',id); await cdReload(); }catch(e){ alert(e.message); return; }
+  renderCompanyDebts();
+}
+let cdOpen=null, cdEditOp=null;
+function openCdDetail(id){
+  cdOpen=id; cdEditOp=null;
+  const d=byId(state.company_debts,id); if(!d) return;
+  const c=cdCalc(d);
+  const ops=c.ops.slice().sort((a,b)=>(b.tarix||'').localeCompare(a.tarix||'') || String(b.createdAt).localeCompare(String(a.createdAt)));
+  const novs=d.tip==='faizli'?['faiz','odenis','artim']:['odenis','artim'];
+  const kv=(l,v)=>`<div class="card kpi" style="padding:8px 12px;"><div class="lbl" style="margin-bottom:2px;">${l}</div><div class="val" style="font-size:16px;">${v}</div></div>`;
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>${esc(d.ad)} <span class="tag ${CD_TYPE_TAG[d.tip]}" style="font-size:12px;vertical-align:middle;">${CD_TYPES[d.tip]}</span> ${c.active?'':'<span class="tag tag-gray" style="font-size:12px;vertical-align:middle;">bağlı</span>'}</h2>
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
+      ${kv('Borc', fmtMoney(c.borc))}${kv('Ödənilib', fmtMoney(c.odenis))}${kv('Qalıq', `<span style="color:${c.qaliq>0?'var(--red)':'var(--green)'}">${fmtMoney(c.qaliq)}</span>`)}
+      ${kv('Aylıq ödəniş', c.ayliq?fmtMoney(c.ayliq):'—')}${kv('Bu ay', cdDueHtml(c,d))}${kv(d.tip==='faizli'?'Cəmi faiz ödənilib':'Ödəniş günü', d.tip==='faizli'?fmtMoney(c.faiz):(d.odenisGunu||'—'))}
+    </div>
+    <div style="max-height:230px;overflow-y:auto;margin-bottom:12px;"><table class="table-compact" id="cd-ops">
+      <thead><tr><th>Tarix</th><th>Növ</th><th class="num">Məbləğ</th><th>Qeyd</th><th></th></tr></thead><tbody>${ops.length?ops.map(o=>`<tr>
+        <td>${fmtDate(o.tarix)}</td><td><span class="tag ${o.nov==='artim'?'tag-red':(o.nov==='faiz'?'tag-purple':'tag-green')}">${cdOpLabel(o.nov,d.tip)}</span></td>
+        <td class="num">${fmtMoney(o.meblag)}</td><td class="muted" style="font-size:12px;">${esc(o.qeyd||'')}</td>
+        <td style="white-space:nowrap;">${can('company-debts',2)?`<button class="iconbtn" data-action="cd-op-edit" data-id="${o.id}" title="Dəyiş">${ICONS.edit}</button>`:''}${can('company-debts',3)?`<button class="iconbtn" data-action="cd-op-delete" data-id="${o.id}" title="Sil">${ICONS.trash}</button>`:''}</td></tr>`).join('')
+        :'<tr><td colspan="5" class="empty">Hələ əməliyyat yoxdur</td></tr>'}</tbody></table></div>
+    ${can('company-debts',2)?`<form id="cd-op-form" data-debt="${d.id}" data-op="">
+      <div style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:6px;" id="cd-op-title">Yeni əməliyyat</div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="field" style="margin:0;max-width:150px;"><label>Tarix</label><input type="date" name="tarix" value="${todayIso()}" max="${bakuDateIso()}"></div>
+        <div class="field" style="margin:0;min-width:200px;"><label>Növ</label><select name="nov">${novs.map(n=>`<option value="${n}">${cdOpLabel(n,d.tip)}</option>`).join('')}</select></div>
+        <div class="field" style="margin:0;max-width:130px;"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" name="meblag" value="${c.ayliq&&c.active?c.ayliq:''}"></div>
+        <div class="field" style="margin:0;flex:1;min-width:140px;"><label>Qeyd</label><input type="text" name="qeyd"></div>
+        <button type="submit" class="btn btn-primary">Yadda saxla</button>
+      </div><div class="field-err" id="cd-op-err"></div></form>`:''}
+    <div class="modal-actions"><button type="button" class="btn btn-ghost admin-only" data-action="show-history" data-kind="company_debts" data-id="${d.id}" data-title="${esc(d.ad)}">Tarixçə</button><button type="button" class="btn btn-ghost" data-action="close-modal">Bağla</button></div>`;
+  document.getElementById('modal-panel').classList.add('wide');
+  openModal();
+}
+function cdFillOpForm(opId){
+  const o=byId(state.company_debt_ops,opId), f=document.getElementById('cd-op-form'); if(!o||!f) return;
+  f.dataset.op=o.id; f.tarix.value=o.tarix; f.nov.value=o.nov; f.meblag.value=o.meblag; f.qeyd.value=o.qeyd||'';
+  document.getElementById('cd-op-title').textContent='Əməliyyatı dəyiş ('+fmtDate(o.tarix)+')';
+}
+async function submitCdOp(form){
+  const fd=new FormData(form), opId=form.dataset.op, err=document.getElementById('cd-op-err');
+  const data={tarix:fd.get('tarix')||'', nov:fd.get('nov')||'', meblag:fd.get('meblag')||'', qeyd:fd.get('qeyd')||''};
+  if(!(Number(data.meblag)>0)){ err.textContent='Məbləği daxil edin.'; err.style.display='block'; return; }
+  try{ opId?await apiUpdate('company_debt_ops',opId,data):await apiAdd('company_debt_ops',Object.assign({debtId:form.dataset.debt},data)); await cdReload(); }
+  catch(e){ err.textContent=e.message; err.style.display='block'; return; }
+  openCdDetail(form.dataset.debt); refreshCompanyDebts();
+}
+async function deleteCdOp(opId){
+  const o=byId(state.company_debt_ops,opId); if(!o || !confirm('Əməliyyat silinsin? '+fmtMoney(o.meblag)+', '+fmtDate(o.tarix))) return;
+  try{ await apiDelete('company_debt_ops',opId); await cdReload(); }catch(e){ alert(e.message); return; }
+  openCdDetail(o.debtId); refreshCompanyDebts();
+}
+async function seedCompanyDebts(){
+  const err=document.getElementById('cd-seed-err');
+  try{
+    const r=await fetch('company-debts-seed.php',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    await cdReload();
+  }catch(e){ if(err){ err.textContent=e.message; err.style.display='block'; } return; }
+  renderCompanyDebts();
 }
 
 /* ============ CONTRACTS ============ */
@@ -3211,6 +3428,17 @@ const REPORT_EXPORTS={
     filters:()=>csFilterDescription(),
     totals:(rows)=>{ const t=csTotals(rows); return [['Cəmi satış',t.sale],['Cəmi ödənilib',t.paid],['Cəmi qalıq borc',t.debt]]; },
   },
+  'company-debts':{
+    title:'Şirkətin borcları', file:'Sirketin_borclari',
+    rows:()=>cdRows(),
+    filters:()=>cdFilterDescription(),
+    totals:(rows)=>{ const t=cdTotals(rows); return [['Cəmi borc',t.borc],['Cəmi ödənilib',t.odenis],['Cəmi qalıq',t.qaliq],['Aylıq ödəniş (aktiv)',t.ayliq],['Bu ay ödənilib',t.month],['Cəmi faiz ödənilib',t.faiz]]; },
+    sheets:(rows)=>{
+      const ids=new Set(rows.map(r=>r.d.id));
+      const ops=(state.company_debt_ops||[]).filter(o=>ids.has(o.debtId)).sort((a,b)=>(a.tarix||'').localeCompare(b.tarix||''));
+      return [{name:'Borclar', columns:CD_COLUMNS, rows}, {name:'Əməliyyatlar', columns:CD_OP_COLUMNS, rows:ops}];
+    },
+  },
   'monthly-plan':{
     title:'Cari ay təhsilat planı', file:'Cari_ay_tehsilat_plani',
     rows:()=>mpResultRows(),
@@ -3299,7 +3527,7 @@ const AUDIT_ACTIONS={
   USER_DELETE:['İstifadəçi silindi','tag-red'], EXPORT:['Excel export','tag-accent'],
   USER_PERMISSIONS:['Səlahiyyət dəyişdi','tag-amber'], ACCESS_DENIED:['İcazə verilmədi','tag-red'],
 };
-const AUDIT_ENTITIES={contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
+const AUDIT_ENTITIES={company_debts:'Şirkət borcu',company_debt_ops:'Şirkət borcu əməliyyatı',lookup_types:'Köməkçi məlumat tipi',lookup_values:'Köməkçi məlumat dəyəri',contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
 
 // Log vaxtları serverdə UTC saxlanılır; burada Bakı vaxtı ilə göstərilir
 const _bakuFmt=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Baku',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
@@ -3862,6 +4090,13 @@ document.addEventListener('click', async (e)=>{
   if(action==='coll-reset'){ resetCollFilters(); renderReportCollections(); return; }
   if(action==='cs-reset'){ resetCsFilters(); renderReportContracts(); return; }
   if(action==='ds-reset'){ resetDsFilters(); renderReportDebtorSales(); return; }
+  if(action==='cd-add'){ openCdForm(); return; }
+  if(action==='cd-edit'){ openCdForm(id); return; }
+  if(action==='cd-delete'){ await withButtonLoading(btn, ()=>deleteCd(id)); return; }
+  if(action==='cd-open'){ openCdDetail(id); return; }
+  if(action==='cd-op-edit'){ cdFillOpForm(id); return; }
+  if(action==='cd-op-delete'){ await withButtonLoading(btn, ()=>deleteCdOp(id)); return; }
+  if(action==='cd-seed'){ await withButtonLoading(btn, ()=>seedCompanyDebts()); return; }
   if(action==='lk-select'){ lkSel=id; renderLookups(); return; }
   if(action==='lk-add-type'){ openLookupTypeForm(); return; }
   if(action==='lk-edit-type'){ openLookupTypeForm(id); return; }
@@ -3926,6 +4161,8 @@ document.addEventListener('submit', async (e)=>{
   if(e.target.id==='customer-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCustomerForm(e.target)); }
   if(e.target.id==='contract-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitContractForm(e.target)); }
   if(e.target.id==='court-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCourtForm(e.target)); }
+  if(e.target.id==='cd-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCdForm(e.target)); }
+  if(e.target.id==='cd-op-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCdOp(e.target)); }
   if(e.target.id==='lk-type-form' || e.target.id==='lk-value-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitLookupForm(e.target)); }
   if(e.target.id==='password-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitChangePassword(e.target)); }
   if(e.target.id==='creport-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCollectorReportForm(e.target)); }
@@ -3940,6 +4177,7 @@ document.addEventListener('change', (e)=>{
   if(ds.cfilter){ collFilters[ds.cfilter]=t.value; updateReportDirty('collections'); return; }
   if(ds.dsfilter){ dsFilters[ds.dsfilter]=t.value; updateReportDirty('debtor-sales'); return; }
   if(ds.mpfilter){ mpFilters[ds.mpfilter]=t.value; updateReportDirty('monthly-plan'); return; }
+  if(ds.cdfilter){ cdFilters[ds.cdfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; refreshCompanyDebts(); return; }   // siyahı ekranı — dərhal
   if(ds.crfilter){ crFilters[ds.crfilter]=t.value; updateReportDirty('collector-reports'); return; }
   if(ds.csfilter){ csFilters[ds.csfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; updateReportDirty('contracts'); return; }   // Müqavilə axtarışı: yalnız «Axtar» ilə   // Təhsilat hesabatı filtrləri: yalnız «Axtar» ilə tətbiq olunur
   if(ds.uaScreen && ua.draft){ uaSetLevel(ds.uaScreen, Number(ds.lv), t.checked); return; }

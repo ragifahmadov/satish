@@ -235,6 +235,10 @@ try {
                 [$err, $body] = lookup_prepare($pdo, $col, $body, null);
                 if ($err !== '') { fail(400, $err); }
             }
+            if ($col === 'company_debts' || $col === 'company_debt_ops') {
+                [$err, $body] = cd_prepare($pdo, $col, $body, null);
+                if ($err !== '') { fail(400, $err); }
+            }
 
             $newId = ($clientId !== '') ? strtolower($clientId) : make_uuid();
             $now = date('Y-m-d H:i:s');
@@ -280,6 +284,7 @@ try {
                 $rowOut = row_out($sel->fetch(), $schema);
                 audit_log_create($pdo, $col, $schema, $rowOut);
                 if ($col === 'lookup_values') { lookup_after_write($pdo, $rowOut); }
+                if ($col === 'company_debt_ops') { cd_recalc_state($pdo, $rowOut['debtId']); }
                 // Ödənişdən sonra müqavilə statusu (Gecikmə→Normal, →Bağlı, Bağlı→geri) — eyni əməliyyatda, loga "Avtomatik"
                 $stChanged = ($col === 'payments') ? contract_status_auto($pdo, $rowOut['contractId'] ?? '', 'ödəniş') : null;
                 $pdo->commit();
@@ -361,6 +366,14 @@ try {
                 [$err, $body] = lookup_prepare($pdo, $col, $body, row_out($oRow, $schema));
                 if ($err !== '') { fail(400, $err); }
             }
+            if ($col === 'company_debts' || $col === 'company_debt_ops') {
+                $o = $pdo->prepare("SELECT * FROM `$col` WHERE id = ?");
+                $o->execute([$id]);
+                $oRow = $o->fetch();
+                if (!$oRow) { fail(404, 'Qeyd tapılmadı'); }
+                [$err, $body] = cd_prepare($pdo, $col, $body, row_out($oRow, $schema));
+                if ($err !== '') { fail(400, $err); }
+            }
 
             $sets = [];
             $params = [':id' => $id];
@@ -404,6 +417,8 @@ try {
                 $newOut = row_out($sel2->fetch(), $schema);
                 audit_log_update($pdo, $col, $schema, $oldOut, $newOut);  // dəyişiklik yoxdursa heç nə yazmır
                 if ($col === 'lookup_values') { lookup_after_write($pdo, $newOut); }
+                if ($col === 'company_debt_ops') { cd_recalc_state($pdo, $newOut['debtId']); }
+                if ($col === 'company_debts') { cd_recalc_state($pdo, $newOut['id']); }
                 $stChanged = ($col === 'payments') ? contract_status_auto($pdo, $newOut['contractId'] ?? '', 'ödəniş dəyişdirildi') : null;
                 $pdo->commit();
             } catch (Throwable $e) {
@@ -425,6 +440,10 @@ try {
                 if ($why !== '') { fail(400, $why); }
             }
             if ($col === 'contracts' && contract_is_closed($pdo, $id)) { fail(409, CONTRACT_CLOSED_MSG); }
+            if ($col === 'company_debts' || $col === 'company_debt_ops') {
+                $why = cd_delete_denied($pdo, $col, $id);
+                if ($why !== '') { fail(400, $why); }
+            }
             if ($col === 'payments') {
                 $pc0 = $pdo->prepare("SELECT contractId FROM payments WHERE id = ?");
                 $pc0->execute([(string) $id]);
@@ -442,6 +461,7 @@ try {
                     $pdo->prepare("DELETE FROM `$col` WHERE id = :id")->execute([':id' => $id]);
                     audit_log_delete($pdo, $col, $schema, $oldOut);
                     if ($col === 'payments') { $stChanged = contract_status_auto($pdo, $oldOut['contractId'] ?? '', 'ödəniş silindi'); }
+                    if ($col === 'company_debt_ops') { cd_recalc_state($pdo, $oldOut['debtId'] ?? ''); }
                 }
                 $pdo->commit();
             } catch (Throwable $e) {

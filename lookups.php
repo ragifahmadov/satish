@@ -211,7 +211,7 @@ function contract_status_bootstrap($pdo) {
 /* ---------- Köməkçi məlumatlar ekranı: yazma qaydaları (api.php çağırır) ---------- */
 
 // Ad müqayisəsi (Azərbaycan hərfləri: İ→i, I→ı) — böyük/kiçik hərf fərqi nəzərə alınmır
-function lk_norm($s) { return mb_strtolower(str_replace(['İ', 'I'], ['i', 'ı'], trim((string) $s))); }
+function lk_norm($s) { return str_replace('ı', 'i', mb_strtolower(str_replace(['İ', 'I'], 'i', trim(preg_replace('/\s+/u', ' ', (string) $s))))); }   // I/İ/ı/i eyni sayılır (UNIBANK = unibank)
 
 // [xəta | '', təmizlənmiş body]. $old — redaktədə mövcud sətir (row_out), əlavədə null.
 function lookup_prepare($pdo, $col, $body, $old) {

@@ -9,7 +9,7 @@
 //  * Yeni ekran/hesabat əlavə edəndə perm_screens() və perm_screen_needs()-də elan edin.
 
 // Struktur dəyişəndə artırın — db.php strukturu yenidən yoxlasın
-const SCOPE_SCHEMA_VERSION = 'scope-v4';   // v2: payments.odemeTarixi indeksi; v4: contracts.statusId, lookup_values.typeId indeksləri
+const SCOPE_SCHEMA_VERSION = 'scope-v5';   // v2: payments.odemeTarixi indeksi; v4: contracts.statusId, lookup_values.typeId indeksləri
 const USERS_SCHEMA_VERSION = 'users-v3';   // v3: users.collectorId (istifadəçi ↔ təhsilatçı bağlantısı)
 
 /* ---------- reyestr ---------- */
@@ -22,6 +22,7 @@ function perm_screens() {
         'curators' => 'Kuratorlar',
         'collector-reports' => 'Təhsilatçı hesabatları',
         'lookups' => 'Köməkçi məlumatlar',
+        'company-debts' => 'Şirkətin borcları',
         'customers' => 'Müştərilər',
         'contracts' => 'Müqavilələr',
         'payments' => 'Ödənişlər',
@@ -66,6 +67,8 @@ function perm_screen_needs() {
         'collector-reports' => ['collector_reports' => 'full', 'collectors' => 'ref'],
         // Köməkçi məlumatlar (tiplər və dəyərlər) — müqaviləyə bağlı deyil, əhatə yoxdur
         'lookups' => ['lookup_types' => 'full', 'lookup_values' => 'full'],
+        // Şirkətin borcları — müqaviləyə bağlı deyil, əhatə yoxdur
+        'company-debts' => ['company_debts' => 'full', 'company_debt_ops' => 'full'],
         'customers' => ['customers' => 'full'],
         'contracts' => ['contracts' => 'full', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@cpay' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         'payments' => ['contracts' => 'ref', 'customers' => 'ref', 'collectors' => 'ref', 'payments' => 'full', '@sums' => 1, '@cpay' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
@@ -372,6 +375,7 @@ function authz_write_needs($col, $method, $body) {
     }
     if ($col === 'collector_reports') { $needs[] = ['screen' => 'collector-reports', 'level' => $lvl]; return $needs; }
     if ($col === 'lookup_types' || $col === 'lookup_values') { $needs[] = ['screen' => 'lookups', 'level' => $lvl]; return $needs; }
+    if ($col === 'company_debts' || $col === 'company_debt_ops') { $needs[] = ['screen' => 'company-debts', 'level' => $lvl]; return $needs; }
     $needs[] = ['screen' => $col, 'level' => $lvl];   // customers, salespeople, collectors, curators
     return $needs;
 }
@@ -443,6 +447,7 @@ function authz_scope_write_denied($pdo, $ctx, $col, $method, $id, $body) {
         }
         return '';
     }
+    if ($col === 'company_debts' || $col === 'company_debt_ops') return '';   // şirkətin borcları — əhatə yoxdur
     if ($col === 'lookup_types' || $col === 'lookup_values') return '';   // köməkçi məlumatlar müqaviləyə bağlı deyil — əhatə yoxdur
     if ($col === 'collector_reports') return '';   // müqaviləyə bağlı deyil — əhatə yoxdur (Satıcılar/Müştərilər kimi yalnız ekran hüququ)
     // salespeople, collectors, curators: əhatəli istifadəçi yenisini yarada bilməz, yalnız öz əhatəsindəkini dəyişə bilər
@@ -496,6 +501,7 @@ function ensure_scope_columns($pdo) {
     add_index_if_missing($pdo, 'collector_reports', 'collectorId');   // təhsilatçı + gün yoxlaması
     add_index_if_missing($pdo, 'contracts', 'statusId');   // statussuz müqavilə yoxlaması (hər girişdə), status filtri
     add_index_if_missing($pdo, 'lookup_values', 'typeId');
+    add_index_if_missing($pdo, 'company_debt_ops', 'debtId');
     backfill_current_assignees($pdo);
 }
 
@@ -621,3 +627,4 @@ function collector_report_prepare($pdo, $body, $old, $id) {
 }
 
 require_once __DIR__ . '/lookups.php';   // köməkçi məlumatlar + müqavilə statusu qaydaları
+require_once __DIR__ . '/company-debts.php';   // şirkətin borcları

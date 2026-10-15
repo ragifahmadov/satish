@@ -96,6 +96,7 @@ function audit_entity_name($col) {
         'customers' => 'Müştəri', 'contracts' => 'Müqavilə', 'payments' => 'Ödəniş', 'users' => 'İstifadəçi', 'reports' => 'Hesabat',
         'collector_reports' => 'Təhsilatçı hesabatı',
         'lookup_types' => 'Köməkçi məlumat tipi', 'lookup_values' => 'Köməkçi məlumat dəyəri',
+        'company_debts' => 'Şirkət borcu', 'company_debt_ops' => 'Şirkət borcu əməliyyatı',
     ];
     return $m[$col] ?? $col;
 }
@@ -115,6 +116,8 @@ function audit_field_label($col, $field) {
         'tehsilatMeblegi' => 'Təhsilat məbləği', 'benzinXerci' => 'Benzin xərci', 'digerXerc' => 'Digər xərc',
         'senedSayi' => 'Sənəd sayı', 'gonderilenMebleg' => 'Göndərilən məbləğ',
         'statusId' => 'Status', 'statusTarix' => 'Status tarixi',
+        'tip' => 'Tip', 'baslama' => 'Başlanma tarixi', 'ayliq' => 'Aylıq ödəniş', 'odenisGunu' => 'Ödəniş günü', 'veziyyet' => 'Vəziyyət',
+        'debtId' => 'Borc', 'nov' => 'Növ',
         'typeId' => 'Tip', 'sira' => 'Sıra', 'reng' => 'Rəng', 'defolt' => 'Defolt', 'aktiv' => 'Aktiv', 'sistem' => 'Sistem',
         'qrafikAyIndex' => 'Qrafik ayı (№)', 'qrafikAyLabel' => 'Qrafik ayı', 'emeliyyatNovu' => 'Əməliyyat növü',
     ];
@@ -182,7 +185,12 @@ function audit_entity_label($pdo, $col, $rowOut) {
     if ($col === 'payments') {
         return audit_cut('Müqavilə ' . audit_contract_label($pdo, $rowOut['contractId'] ?? ''), 250);
     }
-    if ($col === 'lookup_types') { return audit_cut(audit_str($rowOut['ad'] ?? ''), 250); }
+    if ($col === 'lookup_types' || $col === 'company_debts') { return audit_cut(audit_str($rowOut['ad'] ?? ''), 250); }
+    if ($col === 'company_debt_ops') {
+        $st = $pdo->prepare("SELECT ad FROM company_debts WHERE id = ?");
+        $st->execute([(string) ($rowOut['debtId'] ?? '')]);
+        return audit_cut(audit_str($st->fetchColumn() ?: '?') . ' — ' . audit_date($rowOut['tarix'] ?? ''), 250);
+    }
     if ($col === 'lookup_values') {
         return audit_cut(audit_ref_label($pdo, 'lookup_types', $rowOut['typeId'] ?? '') . ': ' . audit_str($rowOut['ad'] ?? ''), 250);
     }
@@ -238,6 +246,14 @@ function audit_display($pdo, $col, $field, $type, $value) {
     if ($field === 'contractId') return audit_ref_label($pdo, 'contracts', $value);
     if ($field === 'statusId') return audit_ref_label($pdo, 'lookup_values', $value);
     if ($field === 'typeId') return audit_ref_label($pdo, 'lookup_types', $value);
+    if ($col === 'company_debts' && $field === 'tip') return CD_TYPES[$value] ?? (string) $value;
+    if ($col === 'company_debts' && $field === 'veziyyet') return $value === 'bagli' ? 'Bağlı' : 'Aktiv';
+    if ($col === 'company_debt_ops' && $field === 'nov') return CD_OPS[$value] ?? (string) $value;
+    if ($col === 'company_debt_ops' && $field === 'debtId') {
+        $st = $pdo->prepare("SELECT ad FROM company_debts WHERE id = ?");
+        $st->execute([(string) $value]);
+        return audit_str($st->fetchColumn() ?: '(tapılmadı)');
+    }
     if (in_array($field, ['defolt', 'aktiv', 'sistem'], true) && in_array($col, ['lookup_types', 'lookup_values'], true)) return ((int) $value) ? 'bəli' : 'xeyr';
     if ($type === 'number') return audit_money($value);
     if ($type === 'date') return audit_date($value);

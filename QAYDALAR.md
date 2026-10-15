@@ -113,3 +113,9 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    ("fayldakı = sistemdəki ad"; sağ tərəf boş — dəyişmir; boş xana — dəyişmir). Ada görə uyğunlaşdırma (hərf fərqləri nəzərə alınmır);
    tapılmayan/təkrar ad — xəta, tətbiq bloklanır. Əvvəl önizləmə (bazaya yazılmır), sonra təsdiq: bir əməliyyat, hər müqavilə loga (bir opId) + IMPORT xülasəsi.
    Təhsilatçı "Təhsilatçı dəyişikliyi" qaydası ilə. Önizləmə tokeni 1 saat, bir dəfəlik, yalnız onu yaradan admin üçün.
+23. **Şirkətin borcları** (`company-debts.php`; cədvəllər `company_debts`, `company_debt_ops` — $SCHEMA-da; ekran `company-debts`, menyu
+   «Maliyyə»). Tip: birdefelik | kredit | faizli. Qalıq = başlanğıc + artım − ödəniş; "faiz" (yalnız faizli borcda) qalığı azaltmır;
+   kreditdə məbləğ faiz daxil qalıqdır. Server yoxlayır: ad unikal, məbləğ > 0, tarix gələcək deyil, ödəniş/artımın silinməsi qalığı mənfi
+   etməz, əməliyyatı olan borcun tipi dəyişmir və borc silinmir, ödəniş günü 1–31. Vəziyyəti (aktiv/bağlı) server qalığa görə yazır (loga
+   "Avtomatik"). Bu ay: kredit/faizli + aylıq ödəniş var + ödəniş günü keçib + bu ay ödənməyib → qırmızı. Ekran hüququ, Excel (Borclar +
+   Əməliyyatlar) + log. İlkin məlumat: `company-debts-seed.php` (yalnız admin, yalnız boş cədvəldə, bir dəfə; 17 borc — borclar_1.xlsx).

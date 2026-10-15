@@ -128,3 +128,7 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    `schedule_grace_start()` (permissions.php), brauzerdə `scheduleMonths()` (app.html və tehsilat.php — mətn EYNİ). Təsir edir: qrafik üzrə
    borc, statusların avtomatikası, Cari ay planı, ödəniş/mobil qrafik. Gecikmiş müqavilələr və Borclu satışlarda ödənişi olmayan
    müqavilədə gecikmə müqavilə tarixi + 40 gündən sayılır. Köhnə müqavilələrə də tətbiq olunur; ödənişlərdə yazılmış "qrafik ayı" dəyişmir.
+26. **Menyu və ilk ekran:** girişdə ilk ekran İdarə paneli (hüququ yoxdursa — `pickInitialScreen()` sırası ilə icazəli ilk ekran, onun qrupu açıq).
+   Menyu qrupları girişdə / F5-də bağlıdır; açılan qrup yalnız səhifə yenilənənə qədər açıq qalır (brauzerdə saxlanmır). Xidməti alətlər
+   (`status-import.php`, `fix-qrafik.php`, `reset.php`) menyudan çıxarılıb — səhifələr qalır (yalnız admin, ünvanla). `fix-qrafik.php`
+   40 gün güzəşti NƏZƏRƏ ALMIR — işlətməyin.

@@ -249,9 +249,7 @@
         <button class="navbtn navsub" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
         <a href="admin.php" class="navbtn navsub" style="text-decoration:none;"><span>İstifadəçilər</span></a>
         <a href="import-ledger.php" class="navbtn navsub" style="text-decoration:none;"><span>İdxal</span></a>
-        <a href="status-import.php" class="navbtn navsub" style="text-decoration:none;"><span>Status/təhsilatçı idxalı</span></a>
-        <a href="fix-qrafik.php" class="navbtn navsub" style="text-decoration:none;"><span>Qrafik ayını düzəlt</span></a>
-        <a href="reset.php" class="navbtn navsub" style="text-decoration:none;"><span>Bazanı təmizlə</span></a>
+        <!-- status-import.php, fix-qrafik.php, reset.php menyudan çıxarılıb (səhifələr qalır, yalnız admin, ünvanla) -->
       </div>
     </div>
     <button class="navbtn" id="nav-password" data-action="nav" data-screen="change-password">
@@ -350,7 +348,7 @@ function screenAllowed(id){
   return can(id,1);
 }
 function pickInitialScreen(){
-  const order=['contracts','dashboard','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','collector-reports','reassign','reassign-curator','lookups','company-debts'];
+  const order=['dashboard','contracts','customers','payments','debt-inquiry','reports','salespeople','collectors','curators','collector-reports','reassign','reassign-curator','lookups','company-debts'];
   return order.find(screenAllowed)||null;
 }
 
@@ -426,9 +424,10 @@ function activeCuratorForContract(contract){ return activeAssigneeId(contract,'c
 
 /* ============ RENDER SHELL ============ */
 // Açıq qruplar brauzerdə yadda saxlanır (yalnız rahatlıq); açıq ekranın qrupu həmişə açıqdır
+// Açıq qruplar yalnız səhifə yenilənənə qədər yadda qalır: girişdə / F5-də hamısı bağlıdır
 let navOpen=new Set();
-try{ navOpen=new Set(JSON.parse(localStorage.getItem('navOpen')||'[]')); }catch(e){}
-function saveNavOpen(){ try{ localStorage.setItem('navOpen', JSON.stringify([...navOpen])); }catch(e){} }
+try{ localStorage.removeItem('navOpen'); }catch(e){}   // köhnə versiyanın yadda saxladığı vəziyyət
+function saveNavOpen(){}
 function navChildAllowed(ch){ return ch.href?can(ch.id,1):screenAllowed(ch.id); }
 function navGroupOf(id){ const g=SCREENS.find(s=>s.group && (s.id===id || (s.children||[]).some(ch=>ch.id===id))); return g?g.group:null; }
 const NAV_CHEV='<svg class="navchev" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';

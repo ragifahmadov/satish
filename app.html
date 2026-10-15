@@ -368,11 +368,13 @@ function collectorName(id){ const c=byId(state.collectors,id); return c?fullName
 function curatorName(id){ const c=byId(state.curators,id); return c?fullName(c):'—'; }
 function currentYm(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 
+// Ödəniş qrafiki: müştəriyə ödənişə başlamaq üçün 40 gün güzəşt verilir — 1-ci taksitin AYI = müqavilə tarixi + 40 gün
+// düşən ay, sonrakılar hər növbəti ay (gün vacib deyil, taksit ay ərzində ödənilir). Serverdəki schedule_due_count() ilə EYNİ qayda.
 function scheduleMonths(contract){
   const out=[]; if(!contract.tarix||!contract.muddet) return out;
-  const start=new Date(contract.tarix+'T00:00:00');
+  const start=new Date(contract.tarix+'T00:00:00'); start.setDate(start.getDate()+40);
   for(let i=1;i<=Number(contract.muddet);i++){
-    const d=new Date(start.getFullYear(), start.getMonth()+i, 1);
+    const d=new Date(start.getFullYear(), start.getMonth()+i-1, 1);
     out.push({index:i,label:'Ay '+i+' — '+AZ_MONTHS[d.getMonth()]+' '+d.getFullYear(),date:d});
   }
   return out;
@@ -2352,6 +2354,13 @@ function resetOverdueFilters(){
 }
 resetOverdueFilters();
 
+// Güzəştin bitdiyi gün (müqavilə tarixi + 40 gün) — ödənişi olmayan müqavilədə gecikmə buradan sayılır
+function graceStartIso(tarix){
+  if(!tarix) return '';
+  const d=new Date(tarix+'T00:00:00'); if(isNaN(d)) return '';
+  d.setDate(d.getDate()+40);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function monthsSince(iso, today){
   const f=new Date(iso+'T00:00:00');
   if(isNaN(f)) return 0;
@@ -2370,7 +2379,7 @@ function buildOverdueBase(){
     if(isClosed(c)) continue;   // bağlı müqavilələr hesabatda iştirak etmir
     const debt=contractDebt(c);
     if(debt<=0.009) continue;
-    const lastIso=paymentLast[c.id]||c.tarix;
+    const lastIso=paymentLast[c.id]||graceStartIso(c.tarix);   // ödəniş yoxdursa — 40 günlük güzəşt bitəndən
     if(!lastIso) continue;
     const months=monthsSince(lastIso,today);
     if(months<OVERDUE_MIN_MONTHS) continue;

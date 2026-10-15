@@ -324,7 +324,7 @@ if ($report === 'debtor-sales') {
                 if ($oldest === '' || (string) $o['tarix'] < $oldest) { $oldest = (string) $o['tarix']; }
             }
             if ($cnt === 0 || $prior < $minBorc - 0.0001) continue;
-            $months = $monthsBetween($last !== '' ? $last : $oldest, $nd);
+            $months = $monthsBetween($last !== '' ? $last : schedule_grace_start($oldest), $nd);   // ödəniş yoxdursa — güzəşt bitəndən
             if ($ayMin !== null && $months < $ayMin) continue;
             $after = $prior + (float) $n['meblag'] - (float) $n['ilkinOdenis'];
             $rows[] = [
@@ -343,7 +343,7 @@ if ($report === 'debtor-sales') {
 }
 
 /* ---------- Cari ay üzrə təhsilat planı ----------
-   Yalnız CARİ ay (Bakı vaxtı). Taksit hər ayın 1-də ödənilməli sayılır (schedule_due_count — brauzerdəki scheduleDueCount ilə eyni).
+   Yalnız CARİ ay (Bakı vaxtı). Taksit öz ayında ödənilməli sayılır; 1-ci taksitin ayı = müqavilə tarixi + 40 gün (schedule_due_count — brauzerlə eyni).
    Müqavilə üzrə: aylıq = (satış − qaytarma − ilkin) / müddət; ayın 1-dək ödənilib = ayın 1-dən ƏVVƏLKİ ödənişlər.
      Plan            = max(0, min(aylıq × (bu ay daxil çatmış taksit sayı) − ayın 1-dək ödənilib, ayın 1-dəki qalıq borc))
      Keçmiş gecikmə  = max(0, min(aylıq × (keçən ayın sonunadək çatmış taksit sayı) − ayın 1-dək ödənilib, Plan))

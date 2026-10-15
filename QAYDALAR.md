@@ -123,3 +123,8 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    əməliyyatları (tarix intervalı məcburi; filtrlər: borc yeri, tip, növ). Ümumiləşdirilmiş: borc yeri üzrə əsas borc ödənişi, faiz,
    cəmi ödənilib (= əsas + faiz), borc artımı (ayrıca); Detallı: hər əməliyyat. «Axtar», ayrıca hüquq (ekran hüququ kifayət deyil),
    Excel 2 vərəq + log. Əhatə yoxdur; bağlı təhsilatçının girişi yoxdur.
+25. **40 gün güzəşt (ödəniş qrafiki):** müştəri ödənişə müqavilədən 40 gün sonra başlayır. 1-ci taksitin AYI = müqavilə tarixi + 40 gün
+   düşən ay, sonrakılar hər növbəti ay (gün vacib deyil — taksit öz ayında ödənilir). Bir qayda: serverdə `schedule_due_count()` /
+   `schedule_grace_start()` (permissions.php), brauzerdə `scheduleMonths()` (app.html və tehsilat.php — mətn EYNİ). Təsir edir: qrafik üzrə
+   borc, statusların avtomatikası, Cari ay planı, ödəniş/mobil qrafik. Gecikmiş müqavilələr və Borclu satışlarda ödənişi olmayan
+   müqavilədə gecikmə müqavilə tarixi + 40 gündən sayılır. Köhnə müqavilələrə də tətbiq olunur; ödənişlərdə yazılmış "qrafik ayı" dəyişmir.

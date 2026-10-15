@@ -72,11 +72,13 @@ header('Content-Type: text/html; charset=utf-8');
 const CAN_PAY=<?= $canPay ? 'true' : 'false' ?>;
 /* ---- app.html ilə EYNİ hesablama funksiyaları (dəyişəndə ikisini də dəyişin; testlər mətnin eyniliyini yoxlayır) ---- */
 const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust','Sentyabr','Oktyabr','Noyabr','Dekabr'];
+// Ödəniş qrafiki: müştəriyə ödənişə başlamaq üçün 40 gün güzəşt verilir — 1-ci taksitin AYI = müqavilə tarixi + 40 gün
+// düşən ay, sonrakılar hər növbəti ay (gün vacib deyil, taksit ay ərzində ödənilir). Serverdəki schedule_due_count() ilə EYNİ qayda.
 function scheduleMonths(contract){
   const out=[]; if(!contract.tarix||!contract.muddet) return out;
-  const start=new Date(contract.tarix+'T00:00:00');
+  const start=new Date(contract.tarix+'T00:00:00'); start.setDate(start.getDate()+40);
   for(let i=1;i<=Number(contract.muddet);i++){
-    const d=new Date(start.getFullYear(), start.getMonth()+i, 1);
+    const d=new Date(start.getFullYear(), start.getMonth()+i-1, 1);
     out.push({index:i,label:'Ay '+i+' — '+AZ_MONTHS[d.getMonth()]+' '+d.getFullYear(),date:d});
   }
   return out;

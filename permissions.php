@@ -579,14 +579,21 @@ function authz_collector_payment_denied($ctx, $body) {
     return '';
 }
 
-// Qrafik üzrə keçmiş ayların sayı — brauzerdəki scheduleDueCount() ilə EYNİ qayda: i-ci ay = müqavilə ayından
-// i ay sonrakı ayın 1-i; bu tarix bu gündən (Bakı) gec deyilsə ay keçmiş sayılır.
+// Ödəniş başlamazdan əvvəl güzəşt (gün): 1-ci taksitin AYI = müqavilə tarixi + 40 gün düşən ay.
+const SCHEDULE_GRACE_DAYS = 40;
+function schedule_grace_start($tarix) {
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})/', (string) $tarix, $m) || !checkdate((int) $m[2], (int) $m[3], (int) $m[1])) return '';
+    return (new DateTime($m[1] . '-' . $m[2] . '-' . $m[3]))->modify('+' . SCHEDULE_GRACE_DAYS . ' days')->format('Y-m-d');
+}
+// Qrafik üzrə keçmiş ayların sayı — brauzerdəki scheduleDueCount() ilə EYNİ qayda: 1-ci ay = (müqavilə tarixi + 40 gün) ayı,
+// i-ci ay ondan i−1 ay sonra; ayın 1-i bu gündən (Bakı) gec deyilsə ay keçmiş (taksit çatmış) sayılır.
 function schedule_due_count($tarix, $muddet, $today) {
-    if (!preg_match('/^(\d{4})-(\d{2})/', (string) $tarix, $m) || (int) $muddet <= 0) return 0;
-    $y = (int) $m[1]; $mo = (int) $m[2];
+    $g = schedule_grace_start($tarix);
+    if ($g === '' || (int) $muddet <= 0) return 0;
+    $y = (int) substr($g, 0, 4); $mo = (int) substr($g, 5, 2);
     $due = 0;
     for ($i = 1; $i <= (int) $muddet; $i++) {
-        $t = $y * 12 + ($mo - 1) + $i;
+        $t = $y * 12 + ($mo - 1) + ($i - 1);
         $d = sprintf('%04d-%02d-01', intdiv($t, 12), $t % 12 + 1);
         if ($d <= $today) { $due = $i; } else { break; }
     }

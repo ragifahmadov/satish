@@ -148,7 +148,8 @@ t('Bağlı təhsilatçı: yalnız bugünkü tarix, yalnız müsbət ödəniş, t
 t('Bağlı olmayan istifadəçiyə bu məhdudiyyət tətbiq olunmur', authz_collector_payment_denied(mk(['payments' => 2]), ['odemeTarixi' => '2000-01-01', 'meblag' => 5]) === '');
 
 t('Müqavilə axtarışı: hüquq açarı və filtr siyahıları (adlar)', authz_can(mk(['report-contracts' => 1]), 'report-contracts', 1) && authz_read_tier(mk(['report-contracts' => 1]), 'curators') === 'ref' && authz_read_tier(mk(['report-contracts' => 1]), 'contracts') === null);
-t('Qrafik üzrə keçmiş aylar (brauzerlə eyni qayda)', schedule_due_count('2026-01-15', 10, '2026-03-01') === 2 && schedule_due_count('2026-01-15', 10, '2026-01-31') === 0 && schedule_due_count('2026-01-15', 10, '2026-02-28') === 1 && schedule_due_count('2025-12-31', 3, '2027-01-01') === 3 && schedule_due_count('', 10, '2026-01-01') === 0);
+t('Qrafik üzrə keçmiş aylar (brauzerlə eyni qayda)', schedule_due_count('2026-01-15', 10, '2026-03-01') === 2 && schedule_due_count('2026-01-15', 10, '2026-01-31') === 0 && schedule_due_count('2026-01-15', 10, '2026-02-28') === 1 && schedule_due_count('2025-12-31', 3, '2027-01-01') === 3 && schedule_due_count('', 10, '2026-01-01') === 0
+    && schedule_due_count('2026-01-25', 10, '2026-02-28') === 0 && schedule_due_count('2026-01-25', 10, '2026-03-01') === 1 && schedule_grace_start('2026-09-25') === '2026-11-04');   // 40 gün güzəşt: 25.01 → 1-ci taksit mart
 
 $crV = mk(['collector-reports' => 1]); $crE = mk(['collector-reports' => 2]); $crD = mk(['collector-reports' => 3]);
 t('Təhsilatçı hesabatları: Baxış oxuyur (tam), yaza bilmir; Dəyişiklik yazır, silə bilmir; Silmə silir',

@@ -33,6 +33,7 @@ $REPORT_SCREENS = [
     'contracts' => 'report-contracts',
     'debtor-sales' => 'report-debtor-sales',
     'monthly-plan' => 'report-monthly-plan',
+    'debt-payments' => 'report-debt-payments',
 ];
 
 $report = (string) ($_GET['report'] ?? '');
@@ -418,6 +419,44 @@ if ($report === 'monthly-plan') {
     }
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
     echo json_encode(['rows' => $rows, 'month' => substr($today, 0, 7), 'today' => $today], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+/* ---------- Borc ödənişləri (şirkətin borcları üzrə əməliyyatlar) ----------
+   Sətir = əməliyyat (company_debt_ops) seçilmiş tarix intervalında: ödəniş (əsas borc), faiz ödənişi, borc artımı.
+   Filtrlər: tarix (məcburi), borc yeri, tip, növ. Müqaviləyə bağlı deyil — əhatə tətbiq olunmur (yalnız hesabat hüququ). */
+if ($report === 'debt-payments') {
+    $from = report_date_param('from');
+    $to = report_date_param('to');
+    if ($from > $to) { fail(400, 'Başlanğıc tarixi son tarixdən böyük ola bilməz.'); }
+    $where = ['o.tarix >= :dfrom', 'o.tarix <= :dto'];
+    $params = [':dfrom' => $from, ':dto' => $to];
+    $debt = (string) ($_GET['debt'] ?? '');
+    if ($debt !== '') {
+        if (!preg_match('/^[0-9a-fA-F-]{36}$/', $debt)) { fail(400, 'Borc düzgün deyil'); }
+        $where[] = 'o.debtId = :debt'; $params[':debt'] = $debt;
+    }
+    $tip = (string) ($_GET['tip'] ?? '');
+    if ($tip !== '') {
+        if (!isset(CD_TYPES[$tip])) { fail(400, 'Tip düzgün deyil'); }
+        $where[] = 'd.tip = :tip'; $params[':tip'] = $tip;
+    }
+    $nov = (string) ($_GET['nov'] ?? '');
+    if ($nov !== '') {
+        if (!isset(CD_OPS[$nov])) { fail(400, 'Növ düzgün deyil'); }
+        $where[] = 'o.nov = :nov'; $params[':nov'] = $nov;
+    }
+    $st = $pdo->prepare("SELECT o.id, o.debtId, o.tarix, o.meblag, o.nov, o.qeyd, d.ad, d.tip
+        FROM company_debt_ops o JOIN company_debts d ON d.id = o.debtId
+        WHERE " . implode(' AND ', $where) . " ORDER BY o.tarix ASC, o.createdAt ASC");
+    $st->execute($params);
+    $rows = [];
+    foreach ($st->fetchAll() as $r) {
+        $rows[] = ['id' => $r['id'], 'debt' => $r['debtId'], 'ad' => (string) $r['ad'], 'tip' => (string) $r['tip'], 'nov' => (string) $r['nov'],
+            'amt' => round((float) $r['meblag'], 2), 'date' => (string) $r['tarix'], 'qeyd' => (string) ($r['qeyd'] ?? '')];
+    }
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['rows' => $rows, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 

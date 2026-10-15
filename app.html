@@ -323,7 +323,7 @@ const SCREENS=[
     {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'}]},
   {group:'reports',id:'reports',label:'Hesabatlar',icon:'reports',children:[
     {id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},
-    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'}]},
+    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'},{id:'report-debt-payments',label:'Borc ödənişləri'}]},
   {group:'catalog',label:'Məlumat kitabçası',icon:'sales',children:[
     {id:'salespeople',label:'Satıcılar',icon:'sales'},
     {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
@@ -338,7 +338,7 @@ let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
 const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
 const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
 const OPEN_SCREENS=['change-password'];   // hər daxil olmuş istifadəçiyə açıq (hüquq tələb olunmur; server: password-api.php yalnız öz hesabı)
-const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
+const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan','report-debt-payments'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
 function isAdmin(){ return me.role==='admin'; }
 function permKey(id){ return SCREEN_PERM[id]||id; }
 function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(id)]||0)>=level; }   // 1 baxış, 2 dəyişiklik, 3 silmə
@@ -486,7 +486,8 @@ const SCREEN_DEPS={
   'report-collections':['collectors','lookup_types','lookup_values'],   // sətirlər report-api.php-dən (server əhatəni tətbiq edir)
   'report-contracts':['salespeople','collectors','curators','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən
   'report-debtor-sales':['salespeople','collectors','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən
-  'report-monthly-plan':['collectors','lookup_types','lookup_values'],   // təhsilatçı siyahısı; sətirlər report-api.php-dən
+  'report-monthly-plan':['collectors','lookup_types','lookup_values'],
+  'report-debt-payments':['company_debts'],   // borc yerləri (filtr); sətirlər report-api.php-dən   // təhsilatçı siyahısı; sətirlər report-api.php-dən
   'audit-log':[],
   'user-access':[],
 };
@@ -561,6 +562,7 @@ async function renderScreen(){
     case 'report-contracts': return renderReportContracts();
     case 'report-debtor-sales': return renderReportDebtorSales();
     case 'report-monthly-plan': return renderReportMonthlyPlan();
+    case 'report-debt-payments': return renderReportDebtPayments();
     case 'audit-log': return renderAuditLog();
     case 'user-access': return renderUserAccess();
   }
@@ -634,7 +636,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -2295,6 +2297,10 @@ function renderReports(){
         <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Cari ay təhsilat planı</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">Bu ay təhsil edilməli məbləğ (gecikmə daxil), yığılan, qalıq və icra faizi — təhsilatçılar üzrə</div>
       </div>`:''}
+      ${can('report-debt-payments',1)?`<div class="card" data-action="nav" data-screen="report-debt-payments" style="padding:18px 20px;cursor:pointer;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Borc ödənişləri</div>
+        <div class="muted" style="font-size:13px;line-height:1.5;">Şirkətin borcları üzrə seçilmiş dövrdə ödənişlər, faizlər və borc artımları — borc yerləri üzrə</div>
+      </div>`:''}
     </div>
   `);
 }
@@ -3235,6 +3241,125 @@ async function submitChangePassword(form){
   }catch(err){ show(false,err.message); }
 }
 
+/* ---- Hesabat 6: Borc ödənişləri (şirkətin borcları) ----
+   Sətirlər serverdən (report-api.php?report=debt-payments): seçilmiş dövrün əməliyyatları — əsas borc ödənişi, faiz, borc artımı.
+   Ümumiləşdirilmiş: borc yeri üzrə cəmlər; Detallı: hər əməliyyat. «Axtar» qaydası. Cəmi ödənilib = əsas borc ödənişi + faiz. */
+const DP_PAGE_SIZE=50;
+let dpFilters={};
+let dpR={tab:'summary', applied:null, rows:[], loading:false, err:'', req:0};
+function resetDpFilters(){ const t=bakuDateIso(); dpFilters={from:t.slice(0,8)+'01', to:t, debt:'', tip:'', nov:''}; }
+resetDpFilters();
+const DP_NOV_LABEL={odenis:'Əsas borc ödənişi', faiz:'Faiz ödənişi', artim:'Borc artımı'};
+const DP_NOV_TAG={odenis:'tag-green', faiz:'tag-purple', artim:'tag-red'};
+function dpSummaryRows(rows){
+  const m=new Map();
+  for(const r of rows){
+    let g=m.get(r.debt);
+    if(!g){ g={debt:r.debt, ad:r.ad, tip:r.tip, cnt:0, odenis:0, faiz:0, artim:0}; m.set(r.debt,g); }
+    g.cnt++; g[r.nov]+=r.amt;
+  }
+  return [...m.values()].map(g=>Object.assign(g,{paid:g.odenis+g.faiz})).sort((a,b)=>b.paid-a.paid || a.ad.localeCompare(b.ad,'az'));
+}
+function dpTotals(groups){ return groups.reduce((t,g)=>({cnt:t.cnt+g.cnt, odenis:t.odenis+g.odenis, faiz:t.faiz+g.faiz, artim:t.artim+g.artim, paid:t.paid+g.paid}),{cnt:0,odenis:0,faiz:0,artim:0,paid:0}); }
+const DP_SUMMARY_COLUMNS=[
+  {th:'<th>Kimə / hara</th>', xl:'Kimə / hara', type:'text', width:32, td:g=>`<td><strong>${esc(g.ad)}</strong></td>`, val:g=>g.ad},
+  {th:'<th>Tip</th>', xl:'Tip', type:'text', width:12, td:g=>`<td><span class="tag ${CD_TYPE_TAG[g.tip]||'tag-gray'}">${CD_TYPES[g.tip]||g.tip}</span></td>`, val:g=>CD_TYPES[g.tip]||g.tip},
+  {th:'<th class="num">Əməliyyat</th>', xl:'Əməliyyat sayı', type:'int', width:12, td:g=>`<td class="num">${g.cnt}</td>`, val:g=>g.cnt},
+  {th:'<th class="num">Əsas borc<br>ödənişi</th>', xl:'Əsas borc ödənişi', type:'money', width:18, td:g=>`<td class="num">${fmtMoney(g.odenis)}</td>`, val:g=>g.odenis},
+  {th:'<th class="num">Faiz</th>', xl:'Faiz ödənişi', type:'money', width:16, td:g=>`<td class="num">${fmtMoney(g.faiz)}</td>`, val:g=>g.faiz},
+  {th:'<th class="num">Cəmi<br>ödənilib</th>', xl:'Cəmi ödənilib', type:'money', width:16, td:g=>`<td class="num"><strong>${fmtMoney(g.paid)}</strong></td>`, val:g=>g.paid},
+  {th:'<th class="num">Borc<br>artımı</th>', xl:'Borc artımı', type:'money', width:16, td:g=>`<td class="num"${g.artim?' style="color:var(--red);"':''}>${fmtMoney(g.artim)}</td>`, val:g=>g.artim},
+];
+const DP_DETAIL_COLUMNS=[
+  {th:'<th>Tarix</th>', xl:'Tarix', type:'date', width:13, td:r=>`<td>${fmtDate(r.date)}</td>`, val:r=>r.date},
+  {th:'<th>Kimə / hara</th>', xl:'Kimə / hara', type:'text', width:32, td:r=>`<td>${esc(r.ad)}</td>`, val:r=>r.ad},
+  {th:'<th>Tip</th>', xl:'Tip', type:'text', width:12, td:r=>`<td><span class="tag ${CD_TYPE_TAG[r.tip]||'tag-gray'}">${CD_TYPES[r.tip]||r.tip}</span></td>`, val:r=>CD_TYPES[r.tip]||r.tip},
+  {th:'<th>Növ</th>', xl:'Növ', type:'text', width:20, td:r=>`<td><span class="tag ${DP_NOV_TAG[r.nov]||'tag-gray'}">${DP_NOV_LABEL[r.nov]||r.nov}</span></td>`, val:r=>DP_NOV_LABEL[r.nov]||r.nov},
+  {th:'<th class="num">Məbləğ</th>', xl:'Məbləğ', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.amt)}</td>`, val:r=>r.amt},
+  {th:'<th>Qeyd</th>', xl:'Qeyd', type:'text', width:30, td:r=>`<td class="muted" style="font-size:12px;">${esc(r.qeyd||'')}</td>`, val:r=>r.qeyd||''},
+];
+function dpFilterDescription(f){
+  f=f||dpR.applied||dpFilters;
+  const out=[{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)}];
+  if(f.debt) out.push({l:'Kimə / hara',v:(byId(state.company_debts||[],f.debt)||{}).ad||f.debt});
+  if(f.tip) out.push({l:'Tip',v:CD_TYPES[f.tip]});
+  if(f.nov) out.push({l:'Növ',v:DP_NOV_LABEL[f.nov]});
+  return out;
+}
+async function searchDebtPayments(){
+  const f=dpFilters;
+  if(!f.from || !f.to){ dpR.err='Hər iki tarixi seçin.'; dpR.applied=null; refreshDp(); return; }
+  if(f.from>f.to){ dpR.err='Başlanğıc tarixi son tarixdən böyük ola bilməz.'; dpR.applied=null; refreshDp(); return; }
+  dpR.applied=JSON.parse(JSON.stringify(f));
+  const qs=Object.entries(dpR.applied).filter(([k,v])=>v!=='').map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  const my=++dpR.req; dpR.loading=true; dpR.err=''; pageNum['report-debt-payments']=1; refreshDp();
+  try{
+    const r=await fetch('report-api.php?report=debt-payments&'+qs);
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json();
+    if(my!==dpR.req) return;
+    dpR.rows=j.rows||[];
+  }catch(err){ if(my!==dpR.req) return; dpR.rows=[]; dpR.err='Məlumat yüklənmədi: '+err.message; dpR.applied=null; }
+  finally{ if(my===dpR.req) dpR.loading=false; }
+  if(currentScreen==='report-debt-payments') refreshDp();
+}
+function dpResultRows(){ return (dpR.applied && !dpR.loading && !dpR.err)?dpR.rows:[]; }
+function refreshDp(){
+  const box=document.getElementById('dp-body'); if(!box) return;
+  const eb=document.getElementById('export-btn'), sumEl=document.getElementById('dp-summary');
+  const rows=dpResultRows();
+  if(eb){ eb.disabled=!rows.length; eb.textContent=rows.length?('Excelə yüklə — '+rows.length+' sətir'):'Excelə yüklə'; }
+  if(dpR.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(dpR.err)}</div>`; return; }
+  if(!dpR.applied){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
+  if(dpR.loading){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Yüklənir…</div>`; return; }
+  const sum=dpSummaryRows(rows), t=dpTotals(sum);
+  sumEl.innerHTML=`${fmtDate(dpR.applied.from)} — ${fmtDate(dpR.applied.to)} &nbsp;·&nbsp; <strong>${t.cnt}</strong> əməliyyat &nbsp;·&nbsp; Cəmi ödənilib: <strong>${fmtMoney(t.paid)}</strong> (əsas borc ${fmtMoney(t.odenis)} + faiz ${fmtMoney(t.faiz)})${t.artim?` &nbsp;·&nbsp; Borc artımı: <strong style="color:var(--red);">${fmtMoney(t.artim)}</strong>`:''}`;
+  if(dpR.tab==='summary'){
+    box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="dp-table">
+      <thead><tr>${DP_SUMMARY_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${sum.length
+        ? sum.map(g=>`<tr>${DP_SUMMARY_COLUMNS.map(c=>c.td(g)).join('')}</tr>`).join('')
+          +`<tr class="total-row"><td>Cəmi</td><td></td><td class="num">${t.cnt}</td><td class="num">${fmtMoney(t.odenis)}</td><td class="num">${fmtMoney(t.faiz)}</td><td class="num">${fmtMoney(t.paid)}</td><td class="num">${fmtMoney(t.artim)}</td></tr>`
+        : `<tr><td colspan="${DP_SUMMARY_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə əməliyyat yoxdur</td></tr>`}</tbody></table></div></div>`;
+    return;
+  }
+  const {pageRows, totalPages, total}=paginateArr(rows,'report-debt-payments',DP_PAGE_SIZE);
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="dp-table">
+    <thead><tr>${DP_DETAIL_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${pageRows.length
+      ? pageRows.map(r=>`<tr>${DP_DETAIL_COLUMNS.map(c=>c.td(r)).join('')}</tr>`).join('')
+      : `<tr><td colspan="${DP_DETAIL_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə əməliyyat yoxdur</td></tr>`}</tbody></table></div>
+    <div id="pagination-report-debt-payments" style="padding:0 14px 14px;">${paginationHtml('report-debt-payments',totalPages,total)}</div></div>`;
+}
+function renderReportDebtPayments(){
+  dpR.applied=null; dpR.rows=[]; dpR.err=''; dpR.loading=false; dpR.req++;
+  const f=dpFilters, o=(v,l,sel)=>`<option value="${esc(v)}"${sel===v?' selected':''}>${esc(l)}</option>`;
+  const debts=(state.company_debts||[]).slice().sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'az'));
+  const tab=(id,label)=>`<button type="button" class="tab${dpR.tab===id?' active':''}" data-action="dp-tab" data-tab="${id}">${label}</button>`;
+  setContent(`
+    <div class="topbar">
+      <div><h1>Borc ödənişləri</h1><div class="sub">Şirkətin borcları üzrə seçilmiş dövrdə edilmiş ödənişlər, faizlər və borc artımları</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="debt-payments" disabled>Excelə yüklə</button>`:''}
+        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      </div>
+    </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:14px;">
+      <div class="filters">
+        <div class="field"><label>Tarixdən</label><input type="date" data-dpfilter="from" value="${esc(f.from)}"></div>
+        <div class="field"><label>Tarixədək</label><input type="date" data-dpfilter="to" value="${esc(f.to)}"></div>
+        <div class="field"><label>Kimə / hara</label><select data-dpfilter="debt">${o('','Hamısı',f.debt)}${debts.map(d=>o(d.id,d.ad,f.debt)).join('')}</select></div>
+        <div class="field"><label>Tip</label><select data-dpfilter="tip">${o('','Hamısı',f.tip)}${Object.entries(CD_TYPES).map(([k,l])=>o(k,l,f.tip)).join('')}</select></div>
+        <div class="field"><label>Növ</label><select data-dpfilter="nov">${o('','Hamısı',f.nov)}${Object.entries(DP_NOV_LABEL).map(([k,l])=>o(k,l,f.nov)).join('')}</select></div>
+      </div>
+      ${reportFilterButtonsHtml('debt-payments','dp-reset')}
+    </div>
+    ${reportDirtyHtml('debt-payments')}
+    <div class="tabs">${tab('summary','Ümumiləşdirilmiş')}${tab('detail','Detallı')}</div>
+    <div id="dp-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="dp-body"></div>
+  `);
+  refreshDp();
+}
+
 /* ============ EXCEL (.xlsx) EXPORT — brauzerdə, kənar kitabxanasız ============
    Qaydalar (QAYDALAR.md): hər hesabat REPORT_EXPORTS-da elan olunur və export düyməsini avtomatik alır;
    fayl yaradılmazdan ƏVVƏL export loga yazılır — loga yazılmasa fayl yaradılmır. */
@@ -3428,6 +3553,20 @@ const REPORT_EXPORTS={
     filters:()=>csFilterDescription(),
     totals:(rows)=>{ const t=csTotals(rows); return [['Cəmi satış',t.sale],['Cəmi ödənilib',t.paid],['Cəmi qalıq borc',t.debt]]; },
   },
+  'debt-payments':{
+    title:'Borc ödənişləri', file:'Borc_odenisleri',
+    rows:()=>dpResultRows(),
+    filters:()=>dpFilterDescription(),
+    totals:(rows)=>{ const t=dpTotals(dpSummaryRows(rows)); return [['Əsas borc ödənişi',t.odenis],['Faiz ödənişi',t.faiz],['Cəmi ödənilib',t.paid],['Borc artımı',t.artim]]; },
+    sheets:(rows)=>{
+      const sum=dpSummaryRows(rows), t=dpTotals(sum);
+      return [
+        {name:'Ümumiləşdirilmiş', columns:DP_SUMMARY_COLUMNS, rows:sum, filter:false,
+          extraRows:[[{v:'Cəmi',s:5},'',{v:t.cnt,t:'int'},{v:t.odenis,t:'money'},{v:t.faiz,t:'money'},{v:t.paid,t:'money'},{v:t.artim,t:'money'}]]},
+        {name:'Detallı', columns:DP_DETAIL_COLUMNS, rows},
+      ];
+    },
+  },
   'company-debts':{
     title:'Şirkətin borcları', file:'Sirketin_borclari',
     rows:()=>cdRows(),
@@ -3478,6 +3617,7 @@ const REPORT_SEARCH={
   'collector-reports':{filters:()=>crFilters, applied:()=>crApplied, search:searchCollectorReports},
   'debtor-sales':{filters:()=>dsFilters, applied:()=>dsR.applied, search:searchDebtorSales},
   'monthly-plan':{filters:()=>mpFilters, applied:()=>mpR.applied, search:searchMonthlyPlan},
+  'debt-payments':{filters:()=>dpFilters, applied:()=>dpR.applied, search:searchDebtPayments},
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -3778,7 +3918,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək','contract-status':'müqavilənin statusunu əllə dəyişmək (Normal, Gecikmə, Məhkəmə, İcra…); ödəniş zamanı avtomatik dəyişiklik bu hüquqdan asılı deyil'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
@@ -4052,6 +4192,7 @@ document.addEventListener('click', async (e)=>{
     if(key==='report-contracts'){ refreshCs(); return; }
     if(key==='report-debtor-sales'){ refreshDs(); return; }
     if(key==='report-monthly-plan'){ refreshMp(); return; }
+    if(key==='report-debt-payments'){ refreshDp(); return; }
     if(key==='collector-reports-f'){ refreshCrFilter(); return; }
     if(key==='collector-reports'){ const sv=document.getElementById('search-collector-reports'); const q=sv&&sv.value.length>=3?sv.value:''; const {pageRows,totalPages,total}=paginateArr(crListFiltered(q),key);
       document.getElementById('tbody-collector-reports').innerHTML=crRowsHtml(pageRows); document.getElementById('pagination-collector-reports').innerHTML=paginationHtml(key,totalPages,total); return; }
@@ -4104,6 +4245,9 @@ document.addEventListener('click', async (e)=>{
   if(action==='lk-add-value'){ openLookupValueForm(); return; }
   if(action==='lk-edit-value'){ openLookupValueForm(id); return; }
   if(action==='lk-delete-value'){ await withButtonLoading(btn, ()=>deleteLookup('lookup_values', id)); return; }
+  if(action==='dp-reset'){ resetDpFilters(); renderReportDebtPayments(); return; }
+  if(action==='dp-tab'){ dpR.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-debt-payments']=1;
+    document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===dpR.tab)); refreshDp(); return; }
   if(action==='mp-reset'){ resetMpFilters(); renderReportMonthlyPlan(); return; }
   if(action==='mp-tab'){ mpR.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-monthly-plan']=1;
     document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===mpR.tab)); refreshMp(); return; }
@@ -4177,6 +4321,7 @@ document.addEventListener('change', (e)=>{
   if(ds.cfilter){ collFilters[ds.cfilter]=t.value; updateReportDirty('collections'); return; }
   if(ds.dsfilter){ dsFilters[ds.dsfilter]=t.value; updateReportDirty('debtor-sales'); return; }
   if(ds.mpfilter){ mpFilters[ds.mpfilter]=t.value; updateReportDirty('monthly-plan'); return; }
+  if(ds.dpfilter){ dpFilters[ds.dpfilter]=t.value; updateReportDirty('debt-payments'); return; }
   if(ds.cdfilter){ cdFilters[ds.cdfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; refreshCompanyDebts(); return; }   // siyahı ekranı — dərhal
   if(ds.crfilter){ crFilters[ds.crfilter]=t.value; updateReportDirty('collector-reports'); return; }
   if(ds.csfilter){ csFilters[ds.csfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; updateReportDirty('contracts'); return; }   // Müqavilə axtarışı: yalnız «Axtar» ilə   // Təhsilat hesabatı filtrləri: yalnız «Axtar» ilə tətbiq olunur
@@ -4190,9 +4335,10 @@ document.addEventListener('change', (e)=>{
 document.addEventListener('keydown', (e)=>{
   if(e.key!=='Enter') return;
   const ds=(e.target && e.target.dataset)||{};
-  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':null)))));
+  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':(ds.dpfilter!==undefined?'debt-payments':null))))));
   if(!key) return;
   e.preventDefault();
+  if(ds.dpfilter!==undefined) dpFilters[ds.dpfilter]=e.target.value;
   if(ds.cfilter!==undefined) collFilters[ds.cfilter]=e.target.value;   // tarix sahəsi "change" verməmiş ola bilər
   if(ds.csfilter!==undefined && e.target.type!=='checkbox' && e.target.type!=='radio') csFilters[ds.csfilter]=e.target.value;
   const b=document.getElementById('report-search-'+key);

@@ -35,6 +35,7 @@ function perm_screens() {
         'report-contracts' => 'Hesabat: Müqavilə axtarışı',
         'report-debtor-sales' => 'Hesabat: Borclu müştərilərə satışlar',
         'report-monthly-plan' => 'Hesabat: Cari ay təhsilat planı',
+        'report-debt-payments' => 'Hesabat: Borc ödənişləri',
     ];
 }
 
@@ -86,6 +87,8 @@ function perm_screen_needs() {
         'report-debtor-sales' => ['salespeople' => 'ref', 'collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Cari ay təhsilat planı: sətirlər report-api.php-dən; burada yalnız təhsilatçı siyahısı
         'report-monthly-plan' => ['collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
+        // Borc ödənişləri (şirkətin borcları): sətirlər report-api.php-dən; burada yalnız borc yerləri (filtr siyahısı)
+        'report-debt-payments' => ['company_debts' => 'ref'],
     ];
 }
 

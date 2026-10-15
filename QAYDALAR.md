@@ -119,3 +119,7 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    etməz, əməliyyatı olan borcun tipi dəyişmir və borc silinmir, ödəniş günü 1–31. Vəziyyəti (aktiv/bağlı) server qalığa görə yazır (loga
    "Avtomatik"). Bu ay: kredit/faizli + aylıq ödəniş var + ödəniş günü keçib + bu ay ödənməyib → qırmızı. Ekran hüququ, Excel (Borclar +
    Əməliyyatlar) + log. İlkin məlumat: `company-debts-seed.php` (yalnız admin, yalnız boş cədvəldə, bir dəfə; 17 borc — borclar_1.xlsx).
+24. **Borc ödənişləri** (`report-api.php?report=debt-payments`, ekran `report-debt-payments`): şirkətin borcları üzrə seçilmiş dövrün
+   əməliyyatları (tarix intervalı məcburi; filtrlər: borc yeri, tip, növ). Ümumiləşdirilmiş: borc yeri üzrə əsas borc ödənişi, faiz,
+   cəmi ödənilib (= əsas + faiz), borc artımı (ayrıca); Detallı: hər əməliyyat. «Axtar», ayrıca hüquq (ekran hüququ kifayət deyil),
+   Excel 2 vərəq + log. Əhatə yoxdur; bağlı təhsilatçının girişi yoxdur.

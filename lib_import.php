@@ -135,6 +135,15 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
         $c['muddet'] = import_muddet($c, $opts['months'] ?? []);
     }
     unset($c);
+    // Müddət faylındakı «Təhsilatçı» sütunu (varsa) müqavilənin təhsilatçı dəyərini əvəz edir (sonra eyni mapping ilə tapılır)
+    $monthCollectorSet = 0;
+    if (!empty($opts['monthCollectors'])) {
+        foreach ($contracts as $sened => &$c) {
+            $mc = $opts['monthCollectors'][(string) $c['invno']] ?? '';
+            if ($mc !== '') { $c['tehsilatci'] = $mc; $monthCollectorSet++; }
+        }
+        unset($c);
+    }
     // Bütün satışlar üzrə (bağlılar da daxil) müddət — qaytarma bölgüsündən asılı deyil (fix-muddet.php üçün)
     $muddetAll = []; $invCount = [];
     foreach ($contracts as $c) $invCount[(string) $c['invno']] = ($invCount[(string) $c['invno']] ?? 0) + 1;
@@ -229,6 +238,9 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
         }
         $monthNotes[] = "Müddət faylı: $inFile müqaviləyə tətbiq olundu ($diff-də müddət 10 aydan fərqlidir); faylda olub idxal olunmayan (bağlı və ya tapılmayan): " . (count($opts['months']) - count($seen));
     }
+    if (!empty($opts['monthCollectors'])) {
+        $monthNotes[] = "Müddət faylından təhsilatçı dəyəri götürülən müqavilə: $monthCollectorSet (mapping-ə görə təyin olunan: {$collectorStats['assigned']}, qeydə yazılan: {$collectorStats['noted']})";
+    }
     if (!empty($opts['includeClosed'])) {
         $monthNotes[] = "Bağlı (qalığı 0) müqavilə də idxal olundu: $closedImported" . ($overpaidImported ? " (o cümlədən artıq ödənişli, qalığı mənfi: $overpaidImported)" : '');
     }
@@ -261,25 +273,52 @@ function parse_return_links($text, array &$errors) {
     return $out;
 }
 
-// Müddət faylı: A = müqavilə № (НФНФ-000056 / 56), B = "ay" (satış ÷ real aylıq ödəniş, kəsr ola bilər).
-// Bütün vərəqlər axınla oxunur (fayllarda milyonlarla boş sətir ola bilər). Qaytarır: [№ => ay]
-function read_months_file($path, array &$errors) {
-    $errors = []; $out = [];
+// Müddət faylı. Başlıq sətri varsa (ilk 5 sətirdə): «No» (müqavilə №), «Təhsilatçı», «Ay» sütunları ADLARINA görə tapılır
+// (sıra əhəmiyyətli deyil). Başlıq yoxdursa köhnə format: A = müqavilə №, B = «ay». «Ay» = satış ÷ real aylıq ödəniş (kəsr ola bilər).
+// Bütün vərəqlər axınla oxunur (fayllarda milyonlarla boş sətir ola bilər).
+// Qaytarır: ['months' => [№ => ay], 'collectors' => [№ => təhsilatçı dəyəri (böyük hərf)], 'hasCollectorCol' => bool]
+function read_months_file_ex($path, array &$errors) {
+    $errors = []; $months = []; $collectors = []; $hasCol = false;
     $sheets = onec_sheet_paths($path);
     $sst = onec_shared_strings($path);
     foreach ($sheets as $name => $sp) {
-        onec_stream_rows($path, $sp, $sst, function ($r, $l, $cells) use (&$out, &$errors, $name) {
-            $a = trim((string) ($cells[0] ?? '')); $b = trim((string) ($cells[1] ?? ''));
-            if ($a === '' && $b === '') return true;
+        $map = ['no' => 0, 'ay' => 1, 'teh' => null]; $hdr = false;
+        onec_stream_rows($path, $sp, $sst, function ($r, $l, $cells) use (&$months, &$collectors, &$hasCol, &$errors, &$map, &$hdr, $name) {
+            if (!$hdr && $r <= 5) {
+                $m = ['no' => null, 'ay' => null, 'teh' => null];
+                foreach ($cells as $ci => $v) {
+                    $k = import_name_key($v);
+                    if ($m['no'] === null && in_array($k, ['no', 'nomre', 'muqavile', 'muqavile no', 'muqavile nomresi', '№'], true)) $m['no'] = $ci;
+                    elseif ($m['teh'] === null && in_array($k, ['tehsilatci', 'tehsilat'], true)) $m['teh'] = $ci;
+                    elseif ($m['ay'] === null && in_array($k, ['ay', 'ay sayi', 'muddet'], true)) $m['ay'] = $ci;
+                }
+                if ($m['no'] !== null) {
+                    if ($m['ay'] === null) { $errors[] = "$name: başlıqda «Ay» sütunu tapılmadı"; }
+                    $map = $m; $hdr = true; return true;
+                }
+            }
+            $a = trim((string) ($cells[$map['no']] ?? '')); $b = $map['ay'] === null ? '' : trim((string) ($cells[$map['ay']] ?? ''));
+            if ($a === '') return true;
             $no = preg_replace('/^(?:НФНФ-)?0*/u', '', $a);
             if (!preg_match('/^\d+$/', $no)) return true;            // başlıq və s.
-            $v = (float) str_replace(',', '.', $b);
-            if ($v <= 0) { $errors[] = "$name, sətir $r: №$a — ay dəyəri səhvdir («{$b}»)"; return true; }
-            $out[$no] = $v;
+            if ($map['teh'] !== null) {
+                $hasCol = true;
+                $t = mb_strtoupper(preg_replace('/\s+/u', ' ', trim((string) ($cells[$map['teh']] ?? ''))));
+                if ($t !== '') $collectors[$no] = $t;
+            }
+            if ($b !== '') {
+                $v = (float) str_replace(',', '.', $b);
+                if ($v <= 0) { $errors[] = "$name, sətir $r: №$a — ay dəyəri səhvdir («{$b}»)"; return true; }
+                $months[$no] = $v;
+            }
             return true;
         });
     }
-    return $out;
+    return ['months' => $months, 'collectors' => $collectors, 'hasCollectorCol' => $hasCol];
+}
+// Köhnə çağırışlar (fix-muddet.php) üçün: yalnız [№ => ay]
+function read_months_file($path, array &$errors) {
+    return read_months_file_ex($path, $errors)['months'];
 }
 
 // Müqavilənin müddəti (ay): fayldakı "ay" = satış ÷ aylıq → aylıq = satış ÷ ay; müddət = ⌈(satış − ilkin) ÷ aylıq⌉.

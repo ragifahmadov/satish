@@ -65,7 +65,9 @@ require_admin(false);
       </div>
       <p class="hint">Bağlı müqavilələr girişdən sonra avtomatik «Bağlı» statusu alır və gecikmiş/plan hesabatlarında görünmür. Şirkətin tam adı «Soyad» sahəsinə yazılır.</p>
 
-      <button type="submit" id="submit-btn">İdxal et</button>
+      <button type="button" id="check-btn" style="background:#fff;border:1px solid #B8863B;color:#8A6530;">1) Əvvəlcədən yoxla</button>
+      <button type="submit" id="submit-btn">2) İdxal et</button>
+      <p class="hint" style="margin-top:10px;">«Əvvəlcədən yoxla» bazaya heç nə yazmır — yalnız saylar və qeydləri göstərir. Faylları və ya seçimləri dəyişsəniz yenidən yoxlayın.</p>
     </form>
 
     <div class="progress-wrap" id="progress-wrap">
@@ -128,26 +130,87 @@ async function runSteps(jobId, totals, skippedClosed, notes){
   }
 }
 
+const checkBtn = document.getElementById('check-btn');
+let checked = null; // {fp, data}
+
+function fingerprint(){
+  const parts = [];
+  for (const el of form.elements){
+    if (el.type === 'file') parts.push(el.name + ':' + Array.from(el.files).map(f => f.name + '|' + f.size + '|' + f.lastModified).join(','));
+    else if (el.type === 'checkbox') parts.push(el.name + ':' + el.checked);
+    else if (el.name) parts.push(el.name + ':' + el.value);
+  }
+  return parts.join(';');
+}
+const fmt = n => Number(n).toLocaleString('az', {minimumFractionDigits:2, maximumFractionDigits:2});
+function previewText(d){
+  const s = d.summary || {};
+  const L = [];
+  L.push('ƏVVƏLCƏDƏN YOXLAMA (bazaya heç nə yazılmayıb)');
+  L.push('');
+  L.push('Müştəri: ' + d.totals.customers + '   Müqavilə: ' + d.totals.contracts + '   Ödəniş: ' + d.totals.payments);
+  L.push('Açıq müqavilə: ' + s.open + '   Bağlı (qalıq 0): ' + s.closed + (s.overpaid ? ' (o cümlədən artıq ödənişli: ' + s.overpaid + ')' : '') + '   Keçilən: ' + (d.skippedClosed||0));
+  L.push('Cəmi qalıq: ' + fmt(s.balance) + ' ₼');
+  L.push('Telefonu olan müştəri: ' + s.withPhone + '   Ünvanı olan: ' + s.withAddress);
+  L.push('Müddət: 10 ay — ' + s.muddet10 + ' müqavilə; fərqli — ' + s.muddetOther + ' müqavilə');
+  if (s.byMuddet) L.push('  bölgü: ' + Object.entries(s.byMuddet).map(([k,v]) => k + ' ay: ' + v).join(' · '));
+  L.push('Təhsilatçı təyin olunan müqavilə: ' + s.collectorsAssigned + (s.monthsCollectorRows ? '   (müddət faylında təhsilatçı sətri: ' + s.monthsCollectorRows + ')' : ''));
+  const nt = Object.entries(s.collectorNoted || {});
+  if (nt.length) { L.push('Mapping-də olmayan təhsilatçı dəyəri (qeydə yazılacaq):'); nt.forEach(([k,v]) => L.push('  ' + k + ' — ' + v)); }
+  if (d.notes && d.notes.length) { L.push(''); L.push('Qeydlər:'); d.notes.forEach(n => L.push('• ' + n)); }
+  L.push('');
+  L.push('Hər şey qaydasındadırsa «2) İdxal et» düyməsini basın (fayllar yenidən oxunmayacaq).');
+  return L.join('\n');
+}
+
+async function startJob(){
+  const fd = new FormData(form);
+  const r = await fetch('import-start.php', {method:'POST', body:fd});
+  const data = await r.json();
+  if(!r.ok || data.error){ throw new Error(data.error || 'Fayllar oxunarkən xəta baş verdi'); }
+  return data;
+}
+
+checkBtn.addEventListener('click', async ()=>{
+  if(!form.reportValidity()) return;
+  checkBtn.disabled = true; submitBtn.disabled = true;
+  checkBtn.textContent = 'Fayllar oxunur… (1–2 dəqiqə çəkə bilər)';
+  resultWrap.style.display='none';
+  try{
+    const data = await startJob();
+    checked = {fp: fingerprint(), data};
+    showResult(previewText(data));
+  }catch(err){
+    checked = null;
+    showResult('❌ XƏTA: ' + err.message);
+  }finally{
+    checkBtn.disabled = false; submitBtn.disabled = false;
+    checkBtn.textContent = '1) Əvvəlcədən yoxla';
+  }
+});
+
 form.addEventListener('submit', async (e)=>{
   e.preventDefault();
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Fayllar oxunur… (böyük 1C faylında 1–2 dəqiqə çəkə bilər)';
+  submitBtn.disabled = true; checkBtn.disabled = true;
   resultWrap.style.display='none';
 
   try{
-    const fd = new FormData(form);
-    const r = await fetch('import-start.php', {method:'POST', body:fd});
-    const data = await r.json();
-    if(!r.ok || data.error){ throw new Error(data.error || 'Fayllar oxunarkən xəta baş verdi'); }
-
+    let data;
+    if (checked && checked.fp === fingerprint()) {
+      data = checked.data;          // əvvəlcədən yoxlanmış, dəyişməyib — fayllar yenidən oxunmur
+    } else {
+      submitBtn.textContent = 'Fayllar oxunur… (böyük 1C faylında 1–2 dəqiqə çəkə bilər)';
+      data = await startJob();
+    }
+    checked = null;                 // bir iş yalnız bir dəfə icra olunur
     submitBtn.textContent = 'İdxal olunur…';
     progressWrap.style.display='block';
     await runSteps(data.jobId, data.totals, data.skippedClosed||0, data.notes||[]);
   }catch(err){
     showResult('❌ XƏTA: ' + err.message);
   }finally{
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'İdxal et';
+    submitBtn.disabled = false; checkBtn.disabled = false;
+    submitBtn.textContent = '2) İdxal et';
   }
 });
 </script>

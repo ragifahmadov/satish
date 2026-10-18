@@ -142,7 +142,7 @@ function onec_read_ledger($path, &$stats, array $opts = []) {
     $docs = [];      // açar => ['cust','doc','type','docdate','sold','paidRows'=>[[tarix,məbləğ]], 'firstDate']
     $order = [];
     $companies = [];
-    onec_stream_rows($path, reset($sheets), $sst, function ($r, $l, $cells) use (&$lvl, &$hdrOk, &$docs, &$order, &$companies, &$stats) {
+    onec_stream_rows($path, reset($sheets), $sst, function ($r, $l, $cells) use (&$lvl, &$hdrOk, &$docs, &$order, &$companies, &$stats, $opts) {
         $a = trim(preg_replace('/\s+/u', ' ', (string) ($cells[0] ?? '')));
         if ($r <= 5) {
             if ($r === 1 && $a === 'Контрагент') $hdrOk = true;
@@ -156,7 +156,7 @@ function onec_read_ledger($path, &$stats, array $opts = []) {
         if ($l !== 4) return true;
 
         $cust = $lvl[0];
-        if ($cust === '' || isset($companies[$cust])) return true;
+        if ($cust === '' || (isset($companies[$cust]) && empty($opts['includeCompanies']))) return true;
         $sold = onec_num($cells[4] ?? null);
         $paid = onec_num($cells[5] ?? null);
         $preIn = onec_num($cells[6] ?? null);
@@ -242,6 +242,8 @@ function onec_build_contracts(array $docs, array $order, array &$stats, array $o
 
         $w = preg_split('/\s+/u', $d['cust']);
         $nm = $d['names'] ?? [$w[0] ?? '', $w[1] ?? '', implode(' ', array_slice($w, 2))];
+        // Şirkət (adında dırnaq): ad hissələrə bölünmür — soyad sahəsinə tam ad yazılır
+        if (strpos($d['cust'], '"') !== false) $nm = [$d['cust'], '', ''];
         $contracts[$key] = [
             'customer' => $d['cust'], 'soyad' => $nm[0], 'ad' => $nm[1], 'ataadi' => $nm[2],
             'tehsilatci' => $d['tehsilatci'] ?? '', 'sale_date' => $d['saleDate'] ?: $d['docdate'],
@@ -366,7 +368,7 @@ function std_read_ledger(array $rows, $headerIdx, array $c, &$stats, array $opts
         if ($idx <= $headerIdx) continue;
         $cust = $cell($cells, 'musteri');
         if ($cust === '') continue;
-        if (strpos($cust, '"') !== false) { $companies[$cust] = true; continue; }
+        if (strpos($cust, '"') !== false) { $companies[$cust] = true; if (empty($opts['includeCompanies'])) continue; }
         $nov = $cell($cells, 'nov');
         $sened = $cell($cells, 'sened');
         $date = $c['tarix'] !== null ? xlsx_to_date($cells[$c['tarix']] ?? null) : null;

@@ -59,6 +59,12 @@ require_admin(false);
       </div>
       <p class="hint">Hər sətirdə «qaytarma № = satış №» — 1C qaytarmanı satışa bağlamadığı üçün bunu siz göstərirsiniz. «İdxal düzəlişi»ndə tətbiq etdiyiniz bağlamaları yenidən idxalda da buraya yazın.</p>
 
+      <div class="field">
+        <label><input type="checkbox" name="include_closed" value="1" checked> Bağlı (qalığı 0) və artıq ödənişli müqavilələri də idxal et</label>
+        <label><input type="checkbox" name="include_companies" value="1" checked> Şirkətləri də idxal et (adında dırnaq olan müştərilər)</label>
+      </div>
+      <p class="hint">Bağlı müqavilələr girişdən sonra avtomatik «Bağlı» statusu alır və gecikmiş/plan hesabatlarında görünmür. Şirkətin tam adı «Soyad» sahəsinə yazılır.</p>
+
       <button type="submit" id="submit-btn">İdxal et</button>
     </form>
 
@@ -115,7 +121,7 @@ async function runSteps(jobId, totals, skippedClosed, notes){
     if(!r.ok || data.error){ throw new Error(data.error || 'Naməlum xəta'); }
     updateProgress(data);
     if(data.finished){
-      showResult('✅ İDXAL UĞURLA TAMAMLANDI.\n\nMüştəri: '+totals.customers+'\nMüqavilə: '+totals.contracts+'\nÖdəniş: '+totals.payments+'\n\nBağlanmış (qalığı 0 olan) və ona görə keçilən müqavilə: '+skippedClosed
+      showResult('✅ İDXAL UĞURLA TAMAMLANDI.\n\nMüştəri: '+totals.customers+'\nMüqavilə: '+totals.contracts+'\nÖdəniş: '+totals.payments+'\n\nBağlı olduğu üçün keçilən müqavilə: '+skippedClosed
         +((notes&&notes.length)?'\n\n'+notes.map(n=>'• '+n).join('\n'):''));
       break;
     }

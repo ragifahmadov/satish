@@ -141,13 +141,19 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
     foreach ($contracts as $c) if ($invCount[(string) $c['invno']] === 1) $muddetAll[(string) $c['invno']] = $c['muddet'];
 
     // Bağlanmış (qalıq borcu 0 olan) müqavilələri idxaldan çıxarırıq.
-    $skippedClosed = 0;
+    // opts['includeClosed'] = true → bağlı (qalığı ≤ 0) və artıq ödənişli müqavilələr də idxal olunur.
+    $skippedClosed = 0; $closedImported = 0; $overpaidImported = 0;
     foreach ($contracts as $sened => $c) {
         $paidRest = array_sum(array_column($c['payments'], 'meblag'));
         $remaining = $c['meblag'] - $c['ilkinOdenis'] - $paidRest;
         if ($remaining <= 0.01) {
-            unset($contracts[$sened]);
-            $skippedClosed++;
+            if (!empty($opts['includeClosed'])) {
+                $closedImported++;
+                if ($remaining < -0.01) $overpaidImported++;
+            } else {
+                unset($contracts[$sened]);
+                $skippedClosed++;
+            }
         }
     }
 
@@ -222,6 +228,9 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
             if ((int) $co['muddet'] !== 10) $diff++;
         }
         $monthNotes[] = "Müddət faylı: $inFile müqaviləyə tətbiq olundu ($diff-də müddət 10 aydan fərqlidir); faylda olub idxal olunmayan (bağlı və ya tapılmayan): " . (count($opts['months']) - count($seen));
+    }
+    if (!empty($opts['includeClosed'])) {
+        $monthNotes[] = "Bağlı (qalığı 0) müqavilə də idxal olundu: $closedImported" . ($overpaidImported ? " (o cümlədən artıq ödənişli, qalığı mənfi: $overpaidImported)" : '');
     }
     return [
         'customers' => $customersOut, 'contracts' => $contractsOut, 'payments' => $paymentsOut,

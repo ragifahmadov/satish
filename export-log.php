@@ -37,6 +37,7 @@ $REPORTS = [
     'debt-payments' => ['Borc ödənişləri', 'report-debt-payments'],
     'calls' => ['Zənglər', 'calls'],
     'report-calls' => ['Zəng hesabatı', 'report-calls'],
+    'closing' => ['Bağlanan müqavilələr', 'report-closing'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

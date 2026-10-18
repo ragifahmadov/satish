@@ -140,3 +140,9 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    danışığın nəticəsi, «Söz verdi»/«Qismən»də vəd məbləği+tarixi məcburidir. Vəd: zəng günündən vəd tarixinədək real ödənişlər ≥ vəd
    → yerinə yetirilib; tarix keçib → pozulub; əks halda gözlənilir. «Bu gün zəng ediləcəklər» = SON zəngin növbəti zəng tarixi çatıb /
    vədi pozulub / vəd tarixi bu gündür. Oxuma yalnız `calls-api.php` və `report-api.php?report=calls` ilə (api.php siyahı vermir).
+28. **Bağlanan müqavilələr (hesabat):** qaydalar `closing.php`-də; bir sorğu iki siyahı qaytarır. «Bağlanmasına az qalanlar» —
+   bağlı olmayan, qalan taksit = ⌈qalıq ÷ aylıq taksit⌉ ≤ N (N 1–24, defolt 2). «Yaxın vaxtda bağlananlar» — borcu ödənişlərlə tam
+   bağlanmış, bağlanma tarixi (borcu sıfıra endirən ödəniş) son N ay içində; «Bağlı» statuslu, amma borcu qalan müqavilə göstərilmir.
+   Bu hesabat «Bağlı xaric» qaydasına istisnadır. «Problemsiz»: status Normal və qrafik borcu yoxdur (1-ci siyahı) + müqavilə boyu
+   heç bir TAM ayın sonunda qrafik üzrə gecikmə 2 aylıq taksitə çatmayıb (əvvəlcədən ödəyib ara verən problemli sayılmır).
+   «Digər açıq borc» — müştərinin əhatədəki digər bağlı olmayan, borclu müqavilələri (cəm, say, gecikmə var/yox).

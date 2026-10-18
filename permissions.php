@@ -38,6 +38,7 @@ function perm_screens() {
         'report-monthly-plan' => 'Hesabat: Cari ay təhsilat planı',
         'report-debt-payments' => 'Hesabat: Borc ödənişləri',
         'report-calls' => 'Hesabat: Zənglər',
+        'report-closing' => 'Hesabat: Bağlanan müqavilələr',
     ];
 }
 
@@ -94,6 +95,8 @@ function perm_screen_needs() {
         // Borc ödənişləri (şirkətin borcları): sətirlər report-api.php-dən; burada yalnız borc yerləri (filtr siyahısı)
         'report-debt-payments' => ['company_debts' => 'ref'],
         'report-calls' => ['lookup_types' => 'ref', 'lookup_values' => 'ref'],
+        // Bağlanan müqavilələr: sətirlər report-api.php-dən; burada yalnız filtr siyahıları
+        'report-closing' => ['salespeople' => 'ref', 'collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
     ];
 }
 
@@ -654,4 +657,5 @@ function collector_report_prepare($pdo, $body, $old, $id) {
 
 require_once __DIR__ . '/lookups.php';   // köməkçi məlumatlar + müqavilə statusu qaydaları
 require_once __DIR__ . '/company-debts.php';   // şirkətin borcları
-require_once __DIR__ . '/calls.php';   // zənglər (ofis əməkdaşının müştəriyə zəngləri)
+require_once __DIR__ . '/calls.php';
+require_once __DIR__ . '/closing.php';   // «Bağlanan müqavilələr» hesabatının qaydaları   // zənglər (ofis əməkdaşının müştəriyə zəngləri)

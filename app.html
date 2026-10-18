@@ -324,7 +324,7 @@ const SCREENS=[
     {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'}]},
   {group:'reports',id:'reports',label:'Hesabatlar',icon:'reports',children:[
     {id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},
-    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'},{id:'report-debt-payments',label:'Borc ödənişləri'},{id:'report-calls',label:'Zənglər'}]},
+    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'},{id:'report-debt-payments',label:'Borc ödənişləri'},{id:'report-calls',label:'Zənglər'},{id:'report-closing',label:'Bağlanan müqavilələr'}]},
   {group:'catalog',label:'Məlumat kitabçası',icon:'sales',children:[
     {id:'salespeople',label:'Satıcılar',icon:'sales'},
     {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
@@ -339,7 +339,7 @@ let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
 const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
 const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
 const OPEN_SCREENS=['change-password'];   // hər daxil olmuş istifadəçiyə açıq (hüquq tələb olunmur; server: password-api.php yalnız öz hesabı)
-const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan','report-debt-payments','report-calls'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
+const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan','report-debt-payments','report-calls','report-closing'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
 function isAdmin(){ return me.role==='admin'; }
 function permKey(id){ return SCREEN_PERM[id]||id; }
 function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(id)]||0)>=level; }   // 1 baxış, 2 dəyişiklik, 3 silmə
@@ -493,7 +493,8 @@ const SCREEN_DEPS={
   'report-monthly-plan':['collectors','lookup_types','lookup_values'],
   'report-debt-payments':['company_debts'],
   calls:['collectors','curators','lookup_types','lookup_values'],   // siyahılar və kart calls-api.php-dən (əhatə serverdə)
-  'report-calls':['lookup_types','lookup_values'],   // borc yerləri (filtr); sətirlər report-api.php-dən   // təhsilatçı siyahısı; sətirlər report-api.php-dən
+  'report-calls':['lookup_types','lookup_values'],
+  'report-closing':['salespeople','collectors','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən   // borc yerləri (filtr); sətirlər report-api.php-dən   // təhsilatçı siyahısı; sətirlər report-api.php-dən
   'audit-log':[],
   'user-access':[],
 };
@@ -571,6 +572,7 @@ async function renderScreen(){
     case 'report-debt-payments': return renderReportDebtPayments();
     case 'calls': return renderCalls();
     case 'report-calls': return renderReportCalls();
+    case 'report-closing': return renderReportClosing();
     case 'audit-log': return renderAuditLog();
     case 'user-access': return renderUserAccess();
   }
@@ -644,7 +646,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'calls':1,'report-calls':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'calls':1,'report-calls':1,'report-closing':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -2319,6 +2321,10 @@ function renderReports(){
         <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Zənglər</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">Əməkdaşlar üzrə zəng sayı, danışığın nəticələri, vədlər və onların icrası</div>
       </div>`:''}
+      ${can('report-closing',1)?`<div class="card" data-action="nav" data-screen="report-closing" style="padding:18px 20px;cursor:pointer;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Bağlanan müqavilələr</div>
+        <div class="muted" style="font-size:13px;line-height:1.5;">Borcunun bağlanmasına N ay qalan və son N ayda borcunu bağlamış problemsiz müştərilər</div>
+      </div>`:''}
     </div>
   `);
 }
@@ -3701,6 +3707,120 @@ async function renderReportCalls(){
   refreshRc();
 }
 
+/* ---- Hesabat: Bağlanan müqavilələr (report-api.php?report=closing; qaydalar closing.php) ----
+   Tab 1 «Bağlanmasına az qalanlar»: qalan taksit (⌈qalıq ÷ aylıq⌉) ≤ N; Tab 2 «Yaxın vaxtda bağlananlar»: borcu son N ayda tam bağlanıb.
+   «Problemsiz»: status Normal və qrafik borcu yoxdur (tab 1); heç bir ayın sonunda gecikmə 2 taksitə çatmayıb (hər ikisi).
+   Bir «Axtar» hər iki siyahını gətirir; tab keçidi yerli. Excel: 2 vərəq + Məlumat. */
+let bcFilters={};
+let bcR={tab:'soon', applied:null, soon:[], closed:[], since:'', loading:false, err:'', req:0};
+function resetBcFilters(){ bcFilters={months:'2', satici:'', tehsilatci:'', problemsiz:'1', diger:''}; }
+resetBcFilters();
+const BC_DIGER={'':'Hamısı', none:'Digər açıq borcu olmayanlar', nooverdue:'Digər müqavilələrində gecikmə olmayanlar'};
+const bcCell={
+  no:{th:'<th>№</th>', xl:'Müqavilə №', type:'text', width:13, td:r=>`<td>${can('calls',1)?`<a href="#" class="cl-link" data-action="cl-open" data-id="${r.cid}" title="Zəng kartı">${esc(r.no)}</a>`:esc(r.no)}</td>`, val:r=>r.no},
+  st:{th:'<th>Status</th>', xl:'Status', type:'text', width:12, td:r=>`<td>${statusTagHtml(r.st)}</td>`, val:r=>statusName(r.st)},
+  cust:{th:'<th>Müştəri / telefon</th>', xl:'Müştəri', type:'text', width:32, td:r=>`<td>${clCust(r)}</td>`, val:r=>r.cust},
+  tel:{th:'', xl:'Telefon', type:'text', width:24, td:()=>'', val:r=>(r.tel||[]).join(', ')},
+  sp:{th:'<th>Satıcı</th>', xl:'Satıcı', type:'text', width:22, td:r=>`<td class="muted">${esc(r.sp?salespersonName(r.sp):'—')}</td>`, val:r=>r.sp?salespersonName(r.sp):''},
+  col:{th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:22, td:r=>`<td class="muted">${esc(r.col?collectorName(r.col):'—')}</td>`, val:r=>r.col?collectorName(r.col):''},
+  tarix:{th:'<th>Müqavilə<br>tarixi</th>', xl:'Müqavilə tarixi', type:'date', width:13, td:r=>`<td>${fmtDate(r.tarix)}</td>`, val:r=>r.tarix},
+  sale:{th:'<th class="num">Satış</th>', xl:'Satış məbləği', type:'money', width:14, td:r=>`<td class="num">${fmtMoney(r.sale)}</td>`, val:r=>r.sale},
+  muddet:{th:'<th class="num">Müddət</th>', xl:'Müddət (ay)', type:'int', width:10, td:r=>`<td class="num">${r.muddet}</td>`, val:r=>r.muddet},
+  aylik:{th:'<th class="num">Aylıq<br>taksit</th>', xl:'Aylıq taksit', type:'money', width:13, td:r=>`<td class="num">${fmtMoney(r.aylik)}</td>`, val:r=>r.aylik},
+  paid:{th:'<th class="num">Ödənilib</th>', xl:'Ödənilib', type:'money', width:14, td:r=>`<td class="num">${fmtMoney(r.paid)}</td>`, val:r=>r.paid},
+  qaliq:{th:'<th class="num">Qalıq</th>', xl:'Qalıq borc', type:'money', width:14, td:r=>`<td class="num"><strong>${fmtMoney(r.qaliq)}</strong></td>`, val:r=>r.qaliq},
+  left:{th:'<th class="num">Qalan<br>taksit</th>', xl:'Qalan taksit', type:'int', width:11, td:r=>`<td class="num"><span class="tag tag-green">${r.left}</span></td>`, val:r=>r.left},
+  last:{th:'<th>Son<br>ödəniş</th>', xl:'Son ödəniş', type:'date', width:13, td:r=>`<td>${fmtDate(r.last)}</td>`, val:r=>r.last},
+  closeDate:{th:'<th>Bağlanma<br>tarixi</th>', xl:'Bağlanma tarixi', type:'date', width:14, td:r=>`<td><span class="tag tag-green">${fmtDate(r.closeDate)}</span></td>`, val:r=>r.closeDate},
+  maxArr:{th:'<th class="num">Maks.<br>gecikmə</th>', xl:'Maks. gecikmə (taksit)', type:'money', width:14, td:r=>`<td class="num"${r.problem?' style="color:var(--red);"':''}>${String(r.maxArr).replace('.',',')}${r.problem?' <span class="tag tag-red">problemli</span>':''}</td>`, val:r=>r.maxArr},
+  problem:{th:'', xl:'Qiymət', type:'text', width:12, td:()=>'', val:r=>r.problem?'Problemli':'Problemsiz'},
+  oSum:{th:'<th class="num">Digər açıq<br>borc</th>', xl:'Digər açıq borc', type:'money', width:15, td:r=>`<td class="num">${r.oCnt?`${fmtMoney(r.oSum)} <span class="muted" style="font-size:11px;">(${r.oCnt})</span>${r.oLate?' <span class="tag tag-red">gecikmə</span>':''}`:'<span class="muted">—</span>'}</td>`, val:r=>r.oSum},
+  oCnt:{th:'', xl:'Digər açıq müqavilə', type:'int', width:12, td:()=>'', val:r=>r.oCnt},
+  oLate:{th:'', xl:'Digərində gecikmə', type:'text', width:12, td:()=>'', val:r=>r.oLate?'bəli':''},
+};
+const BC_COLS={
+  soon:['no','st','cust','tel','sp','col','tarix','sale','muddet','aylik','paid','qaliq','left','last','maxArr','problem','oSum','oCnt','oLate'].map(k=>bcCell[k]),
+  closed:['no','st','cust','tel','sp','col','tarix','sale','muddet','aylik','paid','closeDate','last','maxArr','problem','oSum','oCnt','oLate'].map(k=>bcCell[k]),
+};
+function bcFilterDescription(f){
+  f=f||bcR.applied||bcFilters;
+  const nm=(id,fn)=>id==='__none__'?'Təyin olunmayıb':fn(id);
+  const out=[{l:'Ay sayı (N)',v:String(f.months)},{l:'Problemsiz',v:f.problemsiz==='0'?'Hamısı (problemlilər də)':'Yalnız problemsiz'}];
+  if(f.satici) out.push({l:'Satıcı',v:nm(f.satici,salespersonName)});
+  if(f.tehsilatci) out.push({l:'Təhsilatçı',v:nm(f.tehsilatci,collectorName)});
+  if(f.diger) out.push({l:'Digər açıq borc',v:BC_DIGER[f.diger]});
+  return out;
+}
+async function searchClosingReport(){
+  const f=bcFilters, n=Number(f.months);
+  if(!Number.isInteger(n) || n<1 || n>24){ bcR.err='Ay sayı 1–24 arasında tam ədəd olmalıdır.'; bcR.applied=null; refreshBc(); return; }
+  bcR.applied=JSON.parse(JSON.stringify(f));
+  const qs=Object.entries(bcR.applied).filter(([k,v])=>v!=='').map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  const my=++bcR.req; bcR.loading=true; bcR.err=''; pageNum['report-closing']=1; refreshBc();
+  try{
+    const r=await fetch('report-api.php?report=closing&'+qs);
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json();
+    if(my!==bcR.req) return;
+    bcR.soon=j.soon||[]; bcR.closed=j.closed||[]; bcR.since=j.since||'';
+  }catch(err){ if(my!==bcR.req) return; bcR.soon=[]; bcR.closed=[]; bcR.err='Məlumat yüklənmədi: '+err.message; bcR.applied=null; }
+  finally{ if(my===bcR.req) bcR.loading=false; }
+  if(currentScreen==='report-closing') refreshBc();
+}
+function bcResultRows(tab){ return (bcR.applied && !bcR.loading && !bcR.err)?bcR[tab||bcR.tab]:[]; }
+function refreshBc(){
+  const box=document.getElementById('bc-body'); if(!box) return;
+  const eb=document.getElementById('export-btn'), sumEl=document.getElementById('bc-summary');
+  const all=bcResultRows('soon').length+bcResultRows('closed').length;
+  if(eb){ eb.disabled=!all; eb.textContent=all?('Excelə yüklə — '+all+' sətir'):'Excelə yüklə'; }
+  document.querySelectorAll('[data-action="bc-tab"]').forEach(b=>{ b.classList.toggle('active',b.dataset.tab===bcR.tab);
+    const c=b.querySelector('.cnt'); if(c) c.textContent=bcR.applied&&!bcR.loading&&!bcR.err?' ('+bcR[b.dataset.tab].length+')':''; });
+  if(bcR.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(bcR.err)}</div>`; return; }
+  if(!bcR.applied){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
+  if(bcR.loading){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Hesablanır…</div>`; return; }
+  const rows=bcR[bcR.tab], n=bcR.applied.months;
+  sumEl.innerHTML=bcR.tab==='soon'
+    ?`Bağlanmasına <strong>${n}</strong> və daha az taksit qalan: <strong>${rows.length}</strong> müqavilə &nbsp;·&nbsp; cəmi qalıq: <strong>${fmtMoney(rows.reduce((a,r)=>a+r.qaliq,0))}</strong>`
+    :`${fmtDate(bcR.since)} — bu gün bağlanan: <strong>${rows.length}</strong> müqavilə &nbsp;·&nbsp; cəmi satış: <strong>${fmtMoney(rows.reduce((a,r)=>a+r.sale,0))}</strong>`;
+  const cols=BC_COLS[bcR.tab].filter(c=>c.th);
+  const {pageRows, totalPages, total}=paginateArr(rows,'report-closing',50);
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="bc-table" style="min-width:1500px;">
+    <thead><tr>${cols.map(c=>c.th).join('')}</tr></thead><tbody>${pageRows.length?pageRows.map(r=>`<tr>${cols.map(c=>c.td(r)).join('')}</tr>`).join('')
+      :`<tr><td colspan="${cols.length}" class="empty" style="padding:40px;">Şərtə uyğun müqavilə yoxdur</td></tr>`}</tbody></table></div>
+    <div id="pagination-report-closing" style="padding:0 14px 14px;">${paginationHtml('report-closing',totalPages,total)}</div></div>`;
+}
+function renderReportClosing(){
+  bcR.applied=null; bcR.soon=[]; bcR.closed=[]; bcR.err=''; bcR.loading=false; bcR.req++;
+  const f=bcFilters, o=(v,label,sel)=>`<option value="${v}"${sel===v?' selected':''}>${esc(label)}</option>`;
+  const people=(arr,sel)=>o('','Hamısı',sel)+arr.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az')).map(x=>o(x.id,fullName(x),sel)).join('')+o('__none__','Təyin olunmayıb',sel);
+  const tab=(id,label)=>`<button type="button" class="tab${bcR.tab===id?' active':''}" data-action="bc-tab" data-tab="${id}">${label}<span class="cnt"></span></button>`;
+  setContent(`
+    <div class="topbar">
+      <div><h1>Bağlanan müqavilələr</h1><div class="sub">Borcunun bağlanmasına az qalan və son aylarda borcunu bağlamış problemsiz müştərilər</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="closing" disabled>Excelə yüklə</button>`:''}
+        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      </div>
+    </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:14px;">
+      <div class="filters">
+        <div class="field"><label>Ay sayı (N)</label><input type="number" min="1" max="24" step="1" data-bcfilter="months" value="${esc(f.months)}"></div>
+        <div class="field"><label>Müştərilər</label><select data-bcfilter="problemsiz">${o('1','Yalnız problemsiz',f.problemsiz)}${o('0','Hamısı (problemlilər də)',f.problemsiz)}</select></div>
+        <div class="field"><label>Satıcı</label><select data-bcfilter="satici">${people(state.salespeople,f.satici)}</select></div>
+        <div class="field"><label>Təhsilatçı</label><select data-bcfilter="tehsilatci">${people(state.collectors,f.tehsilatci)}</select></div>
+        <div class="field"><label>Digər açıq borc</label><select data-bcfilter="diger">${Object.entries(BC_DIGER).map(([k,l])=>o(k,l,f.diger)).join('')}</select></div>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.5;">Problemsiz: status Normal, qrafik borcu yoxdur və müqavilə boyu heç bir ayın sonunda gecikmə 2 aylıq taksitə çatmayıb. Bağlanma tarixi — borcu sıfıra endirən ödənişin tarixi.</div>
+      ${reportFilterButtonsHtml('closing','bc-reset')}
+    </div>
+    ${reportDirtyHtml('closing')}
+    <div class="tabs">${tab('soon','Bağlanmasına az qalanlar')}${tab('closed','Yaxın vaxtda bağlananlar')}</div>
+    <div id="bc-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="bc-body"></div>
+  `);
+  refreshBc();
+}
+
 /* ---- Şifrəni dəyiş (hər istifadəçi öz şifrəsini; hüquq tələb olunmur) ----
    Yoxlama və log serverdədir (password-api.php): hazırkı şifrə, ≥6 simvol, təkrar eyni, hazırkı ilə fərqli. */
 function renderChangePassword(){
@@ -4064,6 +4184,13 @@ const REPORT_EXPORTS={
       :[['Cəmi qalıq borc',rows.reduce((a,r)=>a+r.qaliq,0)],['Cəmi qrafik borcu',rows.reduce((a,r)=>a+r.qrafik,0)]],
     sheets:(rows)=>[{name:{today:'Bu gün',overdue:'Gecikmiş müqavilələr',history:'Zəng tarixçəsi'}[clTab], columns:clColumns(clTab), rows}],
   },
+  closing:{
+    title:'Bağlanan müqavilələr', file:'Baglanan_muqavileler',
+    rows:()=>bcResultRows('soon').concat(bcResultRows('closed')),
+    filters:()=>bcFilterDescription(),
+    totals:()=>{ const s=bcResultRows('soon'), c=bcResultRows('closed'); return [['Bağlanmasına az qalan (müqavilə)',s.length],['Onların cəmi qalığı',s.reduce((a,r)=>a+r.qaliq,0)],['Yaxın vaxtda bağlanan (müqavilə)',c.length]]; },
+    sheets:()=>[{name:'Bağlanmasına az qalanlar', columns:BC_COLS.soon, rows:bcResultRows('soon')},{name:'Yaxın vaxtda bağlananlar', columns:BC_COLS.closed, rows:bcResultRows('closed')}],
+  },
   'report-calls':{
     title:'Zəng hesabatı', file:'Zeng_hesabati',
     rows:()=>rcResultRows(),
@@ -4133,6 +4260,7 @@ const REPORT_SEARCH={
   'calls-overdue':{filters:()=>clOF, applied:()=>clR.overdue.applied, search:()=>clSearch('overdue')},
   'calls-history':{filters:()=>clHF, applied:()=>clR.history.applied, search:()=>clSearch('history')},
   'report-calls':{filters:()=>rcFilters, applied:()=>rcR.applied, search:searchCallsReport},
+  closing:{filters:()=>bcFilters, applied:()=>bcR.applied, search:searchClosingReport},
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -4433,7 +4561,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'report-closing':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək','contract-status':'müqavilənin statusunu əllə dəyişmək (Normal, Gecikmə, Məhkəmə, İcra…); ödəniş zamanı avtomatik dəyişiklik bu hüquqdan asılı deyil'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
@@ -4686,6 +4814,8 @@ document.addEventListener('click', async (e)=>{
   if(action==='cl-o-reset'){ resetClOF(); renderCalls(); return; }
   if(action==='cl-h-reset'){ resetClHF(); renderCalls(); return; }
   if(action==='rc-reset'){ resetRcFilters(); renderReportCalls(); return; }
+  if(action==='bc-reset'){ resetBcFilters(); renderReportClosing(); return; }
+  if(action==='bc-tab'){ bcR.tab=btn.dataset.tab==='closed'?'closed':'soon'; pageNum['report-closing']=1; refreshBc(); return; }
   if(action==='rc-tab'){ rcR.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-calls']=1;
     document.querySelectorAll('[data-action="rc-tab"]').forEach(b=>b.classList.toggle('active',b.dataset.tab===rcR.tab)); refreshRc(); return; }
   if(action==='add-salespeople'){ openSimpleForm('salespeople'); return; }
@@ -4720,6 +4850,7 @@ document.addEventListener('click', async (e)=>{
     if(key==='report-debt-payments'){ refreshDp(); return; }
     if(key==='calls'){ refreshCl(); return; }
     if(key==='report-calls'){ refreshRc(); return; }
+    if(key==='report-closing'){ refreshBc(); return; }
     if(key==='collector-reports-f'){ refreshCrFilter(); return; }
     if(key==='collector-reports'){ const sv=document.getElementById('search-collector-reports'); const q=sv&&sv.value.length>=3?sv.value:''; const {pageRows,totalPages,total}=paginateArr(crListFiltered(q),key);
       document.getElementById('tbody-collector-reports').innerHTML=crRowsHtml(pageRows); document.getElementById('pagination-collector-reports').innerHTML=paginationHtml(key,totalPages,total); return; }
@@ -4853,6 +4984,7 @@ document.addEventListener('change', (e)=>{
   if(ds.clofilter){ clOF[ds.clofilter]=t.value; updateReportDirty('calls-overdue'); return; }
   if(ds.clhfilter){ clHF[ds.clhfilter]=t.value; updateReportDirty('calls-history'); return; }
   if(ds.rcfilter){ rcFilters[ds.rcfilter]=t.value; updateReportDirty('report-calls'); return; }
+  if(ds.bcfilter){ bcFilters[ds.bcfilter]=t.value; updateReportDirty('closing'); return; }
   if(t.form && t.form.id==='call-form' && (t.name==='elaqeNeticeId' || t.name==='danisiqNeticeId')){ clFormSync(t.form, true); return; }
   if(ds.cdfilter){ cdFilters[ds.cdfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; refreshCompanyDebts(); return; }   // siyahı ekranı — dərhal
   if(ds.crfilter){ crFilters[ds.crfilter]=t.value; updateReportDirty('collector-reports'); return; }
@@ -4872,13 +5004,14 @@ document.addEventListener('click', (e)=>{
 document.addEventListener('keydown', (e)=>{
   if(e.key!=='Enter') return;
   const ds=(e.target && e.target.dataset)||{};
-  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':(ds.dpfilter!==undefined?'debt-payments':(ds.clofilter!==undefined?'calls-overdue':(ds.clhfilter!==undefined?'calls-history':(ds.rcfilter!==undefined?'report-calls':null)))))))));
+  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':(ds.dpfilter!==undefined?'debt-payments':(ds.clofilter!==undefined?'calls-overdue':(ds.clhfilter!==undefined?'calls-history':(ds.rcfilter!==undefined?'report-calls':(ds.bcfilter!==undefined?'closing':null))))))))));
   if(!key) return;
   e.preventDefault();
   if(ds.dpfilter!==undefined) dpFilters[ds.dpfilter]=e.target.value;
   if(ds.clofilter!==undefined) clOF[ds.clofilter]=e.target.value;
   if(ds.clhfilter!==undefined) clHF[ds.clhfilter]=e.target.value;
   if(ds.rcfilter!==undefined) rcFilters[ds.rcfilter]=e.target.value;
+  if(ds.bcfilter!==undefined) bcFilters[ds.bcfilter]=e.target.value;
   if(ds.cfilter!==undefined) collFilters[ds.cfilter]=e.target.value;   // tarix sahəsi "change" verməmiş ola bilər
   if(ds.csfilter!==undefined && e.target.type!=='checkbox' && e.target.type!=='radio') csFilters[ds.csfilter]=e.target.value;
   const b=document.getElementById('report-search-'+key);
@@ -4889,6 +5022,7 @@ document.addEventListener('input', (e)=>{
   const dsf=e.target && e.target.dataset ? e.target.dataset.dsfilter : null;
   if(dsf){ dsFilters[dsf]=e.target.value; updateReportDirty('debtor-sales'); return; }
   if(e.target && e.target.id==='cl-find'){ const v=e.target.value; clearTimeout(clFindTimer); clFindTimer=setTimeout(()=>clFindRun(v),250); return; }
+  if(e.target && e.target.dataset && e.target.dataset.bcfilter){ bcFilters[e.target.dataset.bcfilter]=e.target.value; updateReportDirty('closing'); return; }
   if(e.target && e.target.dataset && e.target.dataset.clofilter){ clOF[e.target.dataset.clofilter]=e.target.value; updateReportDirty('calls-overdue'); return; }
   const crf=e.target && e.target.dataset ? e.target.dataset.crfilter : null;
   if(crf){ crFilters[crf]=e.target.value; updateReportDirty('collector-reports'); return; }

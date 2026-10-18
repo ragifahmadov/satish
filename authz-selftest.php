@@ -272,6 +272,16 @@ t('Zəng qeydini dəyişmək: yalnız yazan və yalnız həmin gün; admin — h
     && call_edit_denied($me, ['userId' => 'u2', 'zengVaxti' => baku_today() . ' 09:00:00']) !== '' && call_edit_denied($me, ['userId' => 'u1', 'zengVaxti' => '2020-01-01 09:00:00']) !== ''
     && call_edit_denied(['id' => 'a', 'role' => 'admin'], ['userId' => 'u2', 'zengVaxti' => '2020-01-01 09:00:00']) === '');
 
+/* ---------- Bağlanan müqavilələr (closing.php) ---------- */
+$mp = function ($y, $m0, $m1, $d = '05', $amt = 90) { $o = []; for ($m = $m0; $m <= $m1; $m++) { $o[] = [sprintf('%04d-%02d-', $y + intdiv($m - 1, 12), ($m - 1) % 12 + 1) . $d, $amt]; } return $o; };
+t('Bağlanan: vaxtında ödəyən — maks. gecikmə 0', closing_max_arrears('2026-01-01', 10, 90, $mp(2026, 2, 9), '2026-10-18') == 0);
+t('Bağlanan: əvvəlcədən ödəyib ara verən problemli deyil (gecikmə 0)', closing_max_arrears('2026-01-01', 10, 90, [['2026-02-15', 810]], '2026-10-18') == 0);
+t('Bağlanan: 2 ay ödəməyib, sonra ödəyib — maks. gecikmə 2 (problemli)', closing_max_arrears('2026-01-01', 10, 90, array_merge([['2026-04-15', 270]], $mp(2026, 5, 9, '15')), '2026-10-18') == 2);
+t('Bağlanan: cari ay yoxlanmır (ay hələ bitməyib)', closing_max_arrears('2026-08-01', 10, 90, [], '2026-09-30') == 0 && closing_max_arrears('2026-08-01', 10, 90, [], '2026-10-01') == 1);
+t('Bağlanma tarixi: borcu sıfıra endirən ödəniş; çatmayıbsa boş; ödəniş tələb olunmursa müqavilə tarixi',
+    closing_date('2026-01-01', 180, [['2026-03-01', 100], ['2026-02-01', 50], ['2026-04-01', 30]]) === '2026-04-01' && closing_date('2026-01-01', 180, [['2026-03-01', 100]]) === '' && closing_date('2026-01-01', 0, []) === '2026-01-01');
+t('Bağlanan: hesabat reyestrdə', isset(perm_screens()['report-closing']));
+
 /* ---------- nəticə ---------- */
 $fail = 0;
 foreach ($results as $r) { if (!$r[1]) $fail++; }

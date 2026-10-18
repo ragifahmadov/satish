@@ -35,6 +35,7 @@ $REPORT_SCREENS = [
     'monthly-plan' => 'report-monthly-plan',
     'debt-payments' => 'report-debt-payments',
     'calls' => 'report-calls',
+    'closing' => 'report-closing',
 ];
 
 $report = (string) ($_GET['report'] ?? '');
@@ -478,6 +479,106 @@ if ($report === 'calls') {
     $rows = call_history_rows($pdo, $ctx, ['from' => $from, 'to' => $to, 'user' => $user], baku_today());
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
     echo json_encode(['rows' => $rows, 'users' => $users, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+/* ---------- Bağlanan müqavilələr ----------
+   İki siyahı bir sorğuda (tablar brauzerdə): "soon" — bağlanmasına ≤ N taksit qalanlar, "closed" — son N ayda bağlananlar.
+   Qaydalar closing.php-dədir. Əhatə: authz_contract_scope; «Bağlı xaric» qaydasına istisna (2-ci siyahı bağlılardır).
+   Filtrlər: months (1–24, defolt 2), satici, tehsilatci (boş | __none__ | id), problemsiz (1 | 0, defolt 1), diger ('' | none | nooverdue). */
+if ($report === 'closing') {
+    $g = function ($k) { return trim((string) ($_GET[$k] ?? '')); };
+    $mRaw = $g('months');
+    if ($mRaw === '') $mRaw = '2';
+    if (!ctype_digit($mRaw) || (int) $mRaw < 1 || (int) $mRaw > 24) { fail(400, 'Ay sayı 1–24 arasında olmalıdır.'); }
+    $N = (int) $mRaw;
+    foreach (['satici', 'tehsilatci'] as $k) {
+        $v = $g($k);
+        if ($v !== '' && $v !== '__none__' && !preg_match('/^[0-9a-fA-F-]{36}$/', $v)) { fail(400, 'Seçim düzgün deyil (' . $k . ')'); }
+    }
+    $sat = $g('satici'); $teh = $g('tehsilatci');
+    $probOnly = $g('problemsiz') !== '0';
+    $diger = $g('diger');
+    if (!in_array($diger, ['', 'none', 'nooverdue'], true)) { fail(400, 'Digər borc filtri düzgün deyil'); }
+    $today = baku_today();
+    $since = (new DateTime($today))->modify('-' . $N . ' month')->format('Y-m-d');
+    $ids = contract_status_ids($pdo);
+    $closedId = (string) ($ids['bagli'] ?? '');
+    $normalId = (string) ($ids['normal'] ?? '');
+
+    [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
+    $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.customerId, c.salespersonId, c.currentCollectorId, c.meblag, c.ilkinOdenis, c.muddet, c.statusId,
+            cu.soyad, cu.ad, cu.ataAdi, cu.elaqeNomre1, cu.elaqeNomre2
+        FROM contracts c LEFT JOIN customers cu ON cu.id = c.customerId WHERE $cSql");
+    $st->execute($params);
+    $contracts = $st->fetchAll();
+    $ps = $pdo->prepare("SELECT p.contractId, p.meblag, p.odemeTarixi, p.emeliyyatNovu FROM payments p WHERE p.contractId IN (SELECT c.id FROM contracts c WHERE $cSql)");
+    $ps->execute($params);
+    $pay = []; $ret = [];
+    foreach ($ps->fetchAll() as $p) {
+        $cid = (string) $p['contractId'];
+        if ($p['emeliyyatNovu'] === 'Geri qaytarma') { $ret[$cid] = ($ret[$cid] ?? 0) - (float) $p['meblag']; }
+        elseif ((float) $p['meblag'] > 0) { $pay[$cid][] = [(string) $p['odemeTarixi'], (float) $p['meblag']]; }
+    }
+    // hər müqavilə üçün göstəricilər
+    $info = [];
+    foreach ($contracts as $c) {
+        $cid = (string) $c['id'];
+        $list = $pay[$cid] ?? [];
+        $paid = 0.0; $last = '';
+        foreach ($list as [$d, $m]) { $paid += $m; if ($d > $last) $last = $d; }
+        $net = (float) $c['meblag'] - (float) ($ret[$cid] ?? 0);
+        $target = $net - (float) $c['ilkinOdenis'];
+        $mud = (int) $c['muddet'];
+        $monthly = $mud > 0 ? max(0, $target / $mud) : 0;
+        $qaliq = round($target - $paid, 2);
+        $sched = round(max(0, $monthly * schedule_due_count($c['tarix'], $mud, $today) - $paid), 2);
+        $info[$cid] = ['c' => $c, 'paid' => $paid, 'last' => $last, 'target' => $target, 'monthly' => $monthly, 'qaliq' => $qaliq, 'sched' => $sched,
+            'closed' => $closedId !== '' && (string) $c['statusId'] === $closedId];
+    }
+    // müştərinin digər (bağlı olmayan, borclu) müqavilələri
+    $byCust = [];
+    foreach ($info as $cid => $x) {
+        if ($x['closed'] || $x['qaliq'] <= 0.009) continue;
+        $byCust[(string) $x['c']['customerId']][] = $cid;
+    }
+    $rows = ['soon' => [], 'closed' => []];
+    foreach ($info as $cid => $x) {
+        $c = $x['c'];
+        if ($sat !== '' && ($sat === '__none__' ? (string) $c['salespersonId'] !== '' : (string) $c['salespersonId'] !== $sat)) continue;
+        if ($teh !== '' && ($teh === '__none__' ? (string) $c['currentCollectorId'] !== '' : (string) $c['currentCollectorId'] !== $teh)) continue;
+        $kind = null; $left = null; $closeDate = '';
+        if (!$x['closed'] && $x['qaliq'] > 0.009 && $x['monthly'] > 0.009) {
+            $left = (int) ceil(($x['qaliq'] - 0.009) / $x['monthly']);
+            if ($left <= $N) $kind = 'soon';
+        } elseif ($x['qaliq'] <= 0.009) {
+            $closeDate = closing_date($c['tarix'], $x['target'], $pay[$cid] ?? []);
+            if ($closeDate !== '' && $closeDate >= $since && $closeDate <= $today) $kind = 'closed';
+        }
+        if ($kind === null) continue;
+        $arr = closing_max_arrears($c['tarix'], $c['muddet'], $x['monthly'], $pay[$cid] ?? [], $kind === 'closed' ? $closeDate : $today);
+        $problem = $arr >= CLOSING_PROBLEM_ARREARS - 0.005 || ($kind === 'soon' && ((string) $c['statusId'] !== $normalId || $x['sched'] > 0.009));
+        if ($probOnly && $problem) continue;
+        $oSum = 0.0; $oCnt = 0; $oLate = false;
+        foreach ($byCust[(string) $c['customerId']] ?? [] as $oid) {
+            if ($oid === $cid) continue;
+            $oCnt++; $oSum += $info[$oid]['qaliq']; if ($info[$oid]['sched'] > 0.009) $oLate = true;
+        }
+        if ($diger === 'none' && $oCnt > 0) continue;
+        if ($diger === 'nooverdue' && $oLate) continue;
+        $rows[$kind][] = [
+            'cid' => $cid, 'no' => (string) $c['nomre'], 'tarix' => (string) $c['tarix'], 'st' => (string) ($c['statusId'] ?? ''),
+            'cust' => audit_full_name($c), 'tel' => array_values(array_filter([(string) $c['elaqeNomre1'], (string) $c['elaqeNomre2']])),
+            'sp' => (string) ($c['salespersonId'] ?? ''), 'col' => (string) ($c['currentCollectorId'] ?? ''),
+            'sale' => (float) $c['meblag'], 'muddet' => (int) $c['muddet'], 'aylik' => round($x['monthly'], 2), 'paid' => round($x['paid'], 2),
+            'qaliq' => max(0, $x['qaliq']), 'left' => $left, 'last' => $x['last'], 'closeDate' => $closeDate, 'maxArr' => $arr, 'problem' => $problem,
+            'oCnt' => $oCnt, 'oSum' => round($oSum, 2), 'oLate' => $oLate,
+        ];
+    }
+    usort($rows['soon'], function ($a, $b) { return ($a['left'] - $b['left']) ?: ($a['qaliq'] <=> $b['qaliq']) ?: strcmp($a['no'], $b['no']); });
+    usort($rows['closed'], function ($a, $b) { return strcmp($b['closeDate'], $a['closeDate']) ?: strcmp($a['no'], $b['no']); });
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['soon' => $rows['soon'], 'closed' => $rows['closed'], 'since' => $since, 'today' => $today, 'months' => $N], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 

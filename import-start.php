@@ -30,6 +30,7 @@ try {
             'returnLinks' => parse_return_links($_POST['links'] ?? '', $linkErrors),
             'months' => $mf['months'],
             'monthCollectors' => $mf['collectors'],
+            'monthsMode' => (($_POST['months_mode'] ?? 'amount') === 'months') ? 'months' : 'amount',
         ]);
         foreach ($monthErrors ?? [] as $e) $r['notes'][] = 'Müddət faylı — ' . $e;
         foreach ($linkErrors as $e) $r['notes'][] = 'Bağlama sətri oxunmadı — ' . $e;

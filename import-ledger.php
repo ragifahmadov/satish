@@ -51,7 +51,12 @@ require_admin(false);
         <label>3) Müddət faylı (istəyə görə, .xlsx)</label>
         <input type="file" name="months_file" accept=".xlsx">
       </div>
-      <p class="hint">A sütunu — müqavilə № (НФНФ-000056), B — «ay» (satış ÷ aylıq ödəniş). Müddət = (satış − ilkin) ÷ aylıq, yuxarı yuvarlaqlaşdırılır. Faylda olmayan müqavilə — 10 ay.</p>
+      <p class="hint">Başlıq sətri: «No» (müqavilə №, НФНФ-000056), «Təhsilatçı» (istəyə görə), «AY» — sütunlar adına görə tapılır, sıra əhəmiyyətli deyil. Başlıq yoxdursa: A — müqavilə №, B — «ay». Müddət = ⌈(satış − ilkin) ÷ aylıq⌉. Faylda olmayan müqavilə — 10 ay.</p>
+      <div class="field">
+        <label>Müddət faylındakı «AY» sütunu nəyi göstərir?</label>
+        <label style="color:#241F17;"><input type="radio" name="months_mode" value="amount" checked> Aylıq ödəniş məbləği (₼) — məs. 27 → müddət = (satış − ilkin) ÷ 27, yuxarı yuvarlaqlaşdırılır</label>
+        <label style="color:#241F17;"><input type="radio" name="months_mode" value="months"> Ay sayı (satış ÷ aylıq, kəsr ola bilər) — köhnə «aylar.xlsx» kimi</label>
+      </div>
 
       <div class="field">
         <label>4) Qaytarma bağlamaları (istəyə görə)</label>
@@ -137,7 +142,7 @@ function fingerprint(){
   const parts = [];
   for (const el of form.elements){
     if (el.type === 'file') parts.push(el.name + ':' + Array.from(el.files).map(f => f.name + '|' + f.size + '|' + f.lastModified).join(','));
-    else if (el.type === 'checkbox') parts.push(el.name + ':' + el.checked);
+    else if (el.type === 'checkbox' || el.type === 'radio') parts.push(el.name + ':' + el.value + ':' + el.checked);
     else if (el.name) parts.push(el.name + ':' + el.value);
   }
   return parts.join(';');

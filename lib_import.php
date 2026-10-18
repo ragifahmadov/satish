@@ -132,7 +132,7 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
             $c['ilkinOdenis'] = 0;
         }
         // Müddət faylı (istəyə görə): müddət = (satış − ilkin) ÷ real aylıq, yuxarı yuvarlaqlaşdırılmış
-        $c['muddet'] = import_muddet($c, $opts['months'] ?? []);
+        $c['muddet'] = import_muddet($c, $opts['months'] ?? [], $opts['monthsMode'] ?? 'months');
     }
     unset($c);
     // Müddət faylındakı «Təhsilatçı» sütunu (varsa) müqavilənin təhsilatçı dəyərini əvəz edir (sonra eyni mapping ilə tapılır)
@@ -236,7 +236,10 @@ function import_prepare($finFile, $ledgerFile, array $opts) {
             if (isset($opts['months'][preg_replace('/-\d+$/', '', (string) $co['nomre'])])) { $inFile++; $seen[preg_replace('/-\d+$/', '', (string) $co['nomre'])] = 1; }
             if ((int) $co['muddet'] !== 10) $diff++;
         }
+        $long = 0; foreach ($contractsOut as $co) if ((int) $co['muddet'] > 24) $long++;
+        $monthNotes[] = 'Müddət faylındakı dəyər: ' . (($opts['monthsMode'] ?? 'months') === 'amount' ? 'AYLIQ ÖDƏNİŞ MƏBLƏĞİ (₼)' : 'ay (satış ÷ aylıq)');
         $monthNotes[] = "Müddət faylı: $inFile müqaviləyə tətbiq olundu ($diff-də müddət 10 aydan fərqlidir); faylda olub idxal olunmayan (bağlı və ya tapılmayan): " . (count($opts['months']) - count($seen));
+        if ($long) $monthNotes[] = "DİQQƏT: $long müqavilədə müddət 24 aydan böyükdür — fayldakı dəyərin mənasını (aylıq məbləğ / ay sayı) yoxlayın.";
     }
     if (!empty($opts['monthCollectors'])) {
         $monthNotes[] = "Müddət faylından təhsilatçı dəyəri götürülən müqavilə: $monthCollectorSet (mapping-ə görə təyin olunan: {$collectorStats['assigned']}, qeydə yazılan: {$collectorStats['noted']})";
@@ -304,6 +307,7 @@ function read_months_file_ex($path, array &$errors) {
             if ($map['teh'] !== null) {
                 $hasCol = true;
                 $t = mb_strtoupper(preg_replace('/\s+/u', ' ', trim((string) ($cells[$map['teh']] ?? ''))));
+                if ($t !== '' && is_numeric($t)) $t = rtrim(rtrim(sprintf('%.8F', (float) $t), '0'), '.');   // 5.1100000000000003 → 5.11
                 if ($t !== '') $collectors[$no] = $t;
             }
             if ($b !== '') {
@@ -321,12 +325,21 @@ function read_months_file($path, array &$errors) {
     return read_months_file_ex($path, $errors)['months'];
 }
 
-// Müqavilənin müddəti (ay): fayldakı "ay" = satış ÷ aylıq → aylıq = satış ÷ ay; müddət = ⌈(satış − ilkin) ÷ aylıq⌉.
-// Faylda yoxdursa 10 (köhnə defolt). Satış = 1C-dəki ilkin satış məbləği (qaytarmadan əvvəl).
-function import_muddet(array $c, array $months) {
+// Müqavilənin müddəti (ay). Faylda yoxdursa 10 (köhnə defolt).
+//  rejim 'months' (köhnə «ay» faylı): fayldakı dəyər = satış ÷ aylıq → aylıq = satış ÷ ay; müddət = ⌈(satış − ilkin) ÷ aylıq⌉
+//    (satış = 1C-dəki ilkin satış məbləği, qaytarmadan əvvəl).
+//  rejim 'amount' (fayldakı dəyər = AYLIQ ÖDƏNİŞ MƏBLƏĞİ, ₼): müddət = ⌈(xalis satış − ilkin) ÷ aylıq⌉
+//    (xalis satış = qaytarmalardan sonra — sistemdəki aylıq düsturu ilə eyni).
+function import_muddet(array $c, array $months, $mode = 'months') {
     $m = $months[(string) $c['invno']] ?? null;
+    if (!$m || $m <= 0) return 10;
+    if ($mode === 'amount') {
+        $net = (float) $c['meblag'];
+        if ($net <= 0) return 10;
+        return max(1, (int) ceil(($net - (float) $c['ilkinOdenis']) / $m - 0.05));
+    }
     $sale = (float) ($c['saleOrig'] ?? $c['meblag']);
-    if (!$m || $sale <= 0) return 10;
+    if ($sale <= 0) return 10;
     $aylik = $sale / $m;
     $t = ($sale - (float) $c['ilkinOdenis']) / $aylik;
     return max(1, (int) ceil($t - 0.05));

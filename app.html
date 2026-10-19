@@ -487,7 +487,7 @@ const SCREEN_DEPS={
   reports:[],
   'change-password':[],
   'report-overdue':['salespeople','collectors','curators','lookup_types','lookup_values'],   // filtr siyahıları; müqavilə/ödəniş məlumatı «Axtar»-da yüklənir (OVERDUE_DATA)
-  'report-collections':['collectors','lookup_types','lookup_values'],   // sətirlər report-api.php-dən (server əhatəni tətbiq edir)
+  'report-collections':['collectors','salespeople','lookup_types','lookup_values'],   // sətirlər report-api.php-dən (server əhatəni tətbiq edir)
   'report-contracts':['salespeople','collectors','curators','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən
   'report-debtor-sales':['salespeople','collectors','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən
   'report-monthly-plan':['collectors','lookup_types','lookup_values'],
@@ -2641,13 +2641,15 @@ function renderReportOverdue(){
 const COLL_PAGE_SIZE=50;
 const COLL_NONE='__none__';
 let collFilters={};
-let coll={tab:'summary', rows:[], applied:null, loadedKey:'', loading:false, err:'', req:0};   // applied: «Axtar»-dakı filtrlər
+let coll={tab:'summary', rows:[], ilkin:[], applied:null, loadedKey:'', loading:false, err:'', req:0};   // applied: «Axtar»-dakı filtrlər
+const COLL_TABS=['summary','detail','isummary','idetail'];   // ödənişlər (2) + ilkin ödəniş / çatdırılma xidməti (2)
+// collector: seçilmiş təhsilatçılar (id və/və ya COLL_NONE); boş massiv = hamısı
 function resetCollFilters(){
   const today=bakuDateIso();
-  collFilters={from:today.slice(0,8)+'01', to:today, collector:''};
+  collFilters={from:today.slice(0,8)+'01', to:today, collector:[]};
 }
 resetCollFilters();
-function collKey(f){ f=f||coll.applied; return f?(f.from+'|'+f.to+'|'+f.collector):''; }
+function collKey(f){ f=f||coll.applied; return f?(f.from+'|'+f.to+'|'+(f.collector||[]).join(',')):''; }
 function collCollectorName(id){
   if(!id) return 'Təyin olunmayıb';
   const o=byId(state.collectors,id);
@@ -2666,15 +2668,16 @@ async function loadCollections(){
   const my=++coll.req;
   coll.loading=true; coll.err='';
   try{
-    const r=await fetch('report-api.php?report=collections&from='+encodeURIComponent(f.from)+'&to='+encodeURIComponent(f.to)+'&collector='+encodeURIComponent(f.collector));
+    const r=await fetch('report-api.php?report=collections&from='+encodeURIComponent(f.from)+'&to='+encodeURIComponent(f.to)+'&collector='+encodeURIComponent((f.collector||[]).join(',')));
     if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
     const j=await r.json();
     if(my!==coll.req) return;                       // arada filtr dəyişib — köhnə cavab atılır
     coll.rows=(j.rows||[]).map(x=>Object.assign({}, x, {colName:collCollectorName(x.col)}));
+    coll.ilkin=(j.ilkin||[]).map(x=>Object.assign({}, x, {colName:collCollectorName(x.col), spName:x.sp?salespersonName(x.sp):'Təyin olunmayıb'}));
     coll.loadedKey=key;
   }catch(err){
     if(my!==coll.req) return;
-    coll.rows=[]; coll.loadedKey=''; coll.err='Məlumat yüklənmədi: '+err.message;
+    coll.rows=[]; coll.ilkin=[]; coll.loadedKey=''; coll.err='Məlumat yüklənmədi: '+err.message;
   }finally{
     if(my===coll.req) coll.loading=false;
   }
@@ -2712,25 +2715,103 @@ const COLL_DETAIL_COLUMNS=[
   {th:'<th class="num">Geri<br>qaytarma</th>', xl:'Geri qaytarma', type:'money', width:16, td:r=>`<td class="num" style="color:var(--red);">${r.ret?fmtMoney(r.amt):''}</td>`, val:r=>r.ret?r.amt:null},
   {th:'<th>Tarix</th>', xl:'Tarix', type:'date', width:14, td:r=>`<td>${fmtDate(r.date)}</td>`, val:r=>r.date},
 ];
+// İlkin ödəniş / çatdırılma xidməti: müqavilə tarixi dövrdə olan müqavilələr; Ümumiləşdirilmiş — satıcı üzrə (pulu satış anında satıcı alır).
+// Təhsilatçı filtri müqavilənin hazırkı təhsilatçısına tətbiq olunur (server).
+function collIlkinSummaryRows(rows){
+  const m=new Map();
+  for(const r of rows){
+    let g=m.get(r.sp);
+    if(!g){ g={sp:r.sp, name:r.spName, cnt:0, sale:0, amt:0}; m.set(r.sp,g); }
+    g.cnt++; g.sale+=r.sale; g.amt+=r.amt;
+  }
+  return [...m.values()].sort((a,b)=>(a.sp?0:1)-(b.sp?0:1) || a.name.localeCompare(b.name,'az'));
+}
+function collIlkinTotals(g){ return g.reduce((t,x)=>({cnt:t.cnt+x.cnt, sale:t.sale+x.sale, amt:t.amt+x.amt}),{cnt:0,sale:0,amt:0}); }
+const COLL_ILKIN_SUMMARY_COLUMNS=[
+  {th:'<th>Satıcı</th>', xl:'Satıcı', type:'text', width:36, td:r=>`<td>${esc(r.name)}</td>`, val:r=>r.name},
+  {th:'<th class="num">Müqavilə sayı</th>', xl:'Müqavilə sayı', type:'int', width:14, td:r=>`<td class="num">${r.cnt}</td>`, val:r=>r.cnt},
+  {th:'<th class="num">Satış məbləği</th>', xl:'Satış məbləği', type:'money', width:18, td:r=>`<td class="num">${fmtMoney(r.sale)}</td>`, val:r=>r.sale},
+  {th:'<th class="num">İlkin ödəniş /<br>çatdırılma xidməti</th>', xl:'İlkin ödəniş / çatdırılma xidməti', type:'money', width:22, td:r=>`<td class="num"><strong>${fmtMoney(r.amt)}</strong></td>`, val:r=>r.amt},
+];
+const COLL_ILKIN_DETAIL_COLUMNS=[
+  {th:'<th>Müqavilə №</th>', xl:'Müqavilə №', type:'text', width:14, td:r=>`<td>${esc(r.nomre||'—')}</td>`, val:r=>r.nomre},
+  {th:'<th>Status</th>', xl:'Status', type:'text', width:13, td:r=>`<td>${statusTagHtml(r.st)}</td>`, val:r=>statusName(r.st)},
+  {th:'<th>Müştəri (SAA)</th>', xl:'Müştəri (SAA)', type:'text', width:36, td:r=>`<td>${esc(r.cust||'—')}</td>`, val:r=>r.cust},
+  {th:'<th>Müqavilə<br>tarixi</th>', xl:'Müqavilə tarixi', type:'date', width:14, td:r=>`<td>${fmtDate(r.date)}</td>`, val:r=>r.date},
+  {th:'<th>Satıcı</th>', xl:'Satıcı', type:'text', width:28, td:r=>`<td class="muted">${esc(r.spName)}</td>`, val:r=>r.spName},
+  {th:'<th>Təhsilatçı<br>(hazırkı)</th>', xl:'Təhsilatçı (hazırkı)', type:'text', width:28, td:r=>`<td class="muted">${esc(r.colName)}</td>`, val:r=>r.colName},
+  {th:'<th class="num">Satış<br>məbləği</th>', xl:'Satış məbləği', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.sale)}</td>`, val:r=>r.sale},
+  {th:'<th class="num">İlkin ödəniş /<br>çatdırılma</th>', xl:'İlkin ödəniş / çatdırılma xidməti', type:'money', width:20, td:r=>`<td class="num"><strong>${fmtMoney(r.amt)}</strong></td>`, val:r=>r.amt},
+];
+function collSelectedLabel(sel){
+  sel=sel||[];
+  if(!sel.length) return 'Hamısı';
+  if(sel.length===1) return collCollectorName(sel[0]===COLL_NONE?'':sel[0]);
+  return sel.length+' təhsilatçı seçilib';
+}
 function collFilterDescription(f){
   f=f||coll.applied||collFilters;
   const out=[{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)}];
-  if(f.collector) out.push({l:'Təhsilatçı',v:collCollectorName(f.collector===COLL_NONE?'':f.collector)});
+  const sel=f.collector||[];
+  if(sel.length) out.push({l:'Təhsilatçı ('+sel.length+')',v:sel.map(id=>collCollectorName(id===COLL_NONE?'':id)).join(', ')});
   return out;
+}
+/* Çoxseçimli siyahı (təhsilatçılar): düymə + açılan panel (axtarış, işarələr, «Seçimi təmizlə»). Boş seçim = hamısı. */
+function collMselHtml(sel){
+  const sorted=state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az'));
+  const opts=sorted.map(x=>({v:x.id,l:fullName(x)})).concat([{v:COLL_NONE,l:'Təyin olunmayıb'}]);
+  return `<div class="msel" id="coll-msel" style="position:relative;">
+    <button type="button" class="msel-btn" data-action="msel-toggle" id="coll-msel-btn" style="width:100%;text-align:left;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg-card);color:var(--text);font:inherit;cursor:pointer;display:flex;justify-content:space-between;gap:8px;">
+      <span id="coll-msel-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(collSelectedLabel(sel))}</span><span class="muted">▾</span></button>
+    <div class="msel-panel" id="coll-msel-panel" style="display:none;position:absolute;z-index:60;top:100%;left:0;min-width:280px;margin-top:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:8px;">
+      <input type="text" id="coll-msel-q" placeholder="Təhsilatçı axtar…" autocomplete="off" style="width:100%;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px;">
+        <span class="muted" id="coll-msel-count">${sel.length?sel.length+' seçilib':'Heç biri seçilməyib = hamısı'}</span>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="msel-clear">Seçimi təmizlə</button></div>
+      <div style="max-height:240px;overflow-y:auto;">${opts.map(o=>`<label class="msel-item" data-l="${esc(o.l.toLowerCase())}" style="display:flex;gap:8px;align-items:center;padding:5px 4px;font-size:13.5px;cursor:pointer;">
+        <input type="checkbox" data-msel-opt="collector" value="${o.v}"${sel.includes(o.v)?' checked':''}> ${esc(o.l)}</label>`).join('')}</div>
+    </div></div>`;
+}
+function collMselSync(){
+  const sel=collFilters.collector;
+  const lb=document.getElementById('coll-msel-label'); if(lb) lb.textContent=collSelectedLabel(sel);
+  const ct=document.getElementById('coll-msel-count'); if(ct) ct.textContent=sel.length?sel.length+' seçilib':'Heç biri seçilməyib = hamısı';
+  document.querySelectorAll('[data-msel-opt="collector"]').forEach(cb=>{ cb.checked=sel.includes(cb.value); });
+  updateReportDirty('collections');
 }
 function refreshCollections(){
   const box=document.getElementById('coll-body');
   if(!box) return;
   const eb=document.getElementById('export-btn');
   const ready=!!coll.applied && !coll.loading && !coll.err && coll.loadedKey===collKey();
-  if(eb){ eb.disabled=!(ready && coll.rows.length); eb.textContent=(ready && coll.rows.length)?('Excelə yüklə — '+coll.rows.length+' sətir'):'Excelə yüklə'; }
+  const nAll=coll.rows.length+coll.ilkin.length;
+  if(eb){ eb.disabled=!(ready && nAll); eb.textContent=(ready && nAll)?('Excelə yüklə — '+nAll+' sətir'):'Excelə yüklə'; }
   const sumEl=document.getElementById('coll-summary');
   if(coll.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(coll.err)}</div>`; return; }
   if(!coll.applied){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
   if(!ready){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Yüklənir…</div>`; return; }
   const sum=collSummaryRows(coll.rows), tot=collTotals(sum);
+  const isum=collIlkinSummaryRows(coll.ilkin), itot=collIlkinTotals(isum);
   sumEl.innerHTML=
-    `<strong>${tot.cnt}</strong> ödəniş &nbsp;·&nbsp; Toplanmış: <strong>${fmtMoney(tot.paid)}</strong> &nbsp;·&nbsp; Geri qaytarma: <strong>${fmtMoney(tot.ret)}</strong> &nbsp;·&nbsp; Xalis: <strong>${fmtMoney(tot.net)}</strong>`;
+    `<strong>${tot.cnt}</strong> ödəniş &nbsp;·&nbsp; Toplanmış: <strong>${fmtMoney(tot.paid)}</strong> &nbsp;·&nbsp; Geri qaytarma: <strong>${fmtMoney(tot.ret)}</strong> &nbsp;·&nbsp; Xalis: <strong>${fmtMoney(tot.net)}</strong>`
+    +` &nbsp;·&nbsp; İlkin ödəniş / çatdırılma: <strong>${fmtMoney(itot.amt)}</strong> (${itot.cnt} müqavilə) &nbsp;·&nbsp; Cəmi daxil olan: <strong>${fmtMoney(tot.net+itot.amt)}</strong>`;
+  if(coll.tab==='isummary'){
+    box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="coll-table">
+      <thead><tr>${COLL_ILKIN_SUMMARY_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${isum.length
+        ? isum.map(g=>`<tr>${COLL_ILKIN_SUMMARY_COLUMNS.map(c=>c.td(g)).join('')}</tr>`).join('')
+          +`<tr class="total-row"><td>Cəmi</td><td class="num">${itot.cnt}</td><td class="num">${fmtMoney(itot.sale)}</td><td class="num">${fmtMoney(itot.amt)}</td></tr>`
+        : `<tr><td colspan="${COLL_ILKIN_SUMMARY_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə ilkin ödəniş yoxdur</td></tr>`}</tbody></table></div></div>`;
+    return;
+  }
+  if(coll.tab==='idetail'){
+    const {pageRows, totalPages, total}=paginateArr(coll.ilkin,'report-collections',COLL_PAGE_SIZE);
+    box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="coll-table" style="min-width:1000px;">
+      <thead><tr>${COLL_ILKIN_DETAIL_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${pageRows.length
+        ? pageRows.map(r=>`<tr>${COLL_ILKIN_DETAIL_COLUMNS.map(c=>c.td(r)).join('')}</tr>`).join('')
+        : `<tr><td colspan="${COLL_ILKIN_DETAIL_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə ilkin ödəniş yoxdur</td></tr>`}</tbody></table></div>
+      <div id="pagination-report-collections" style="padding:0 14px 14px;">${paginationHtml('report-collections',totalPages,total)}</div></div>`;
+    return;
+  }
   if(coll.tab==='summary'){
     const body=sum.length
       ? sum.map(g=>`<tr>${COLL_SUMMARY_COLUMNS.map(c=>c.td(g)).join('')}</tr>`).join('')
@@ -2763,16 +2844,13 @@ async function reloadCollections(){
   if(currentScreen==='report-collections') refreshCollections();
 }
 async function renderReportCollections(){
-  coll.applied=null; coll.rows=[]; coll.loadedKey=''; coll.err=''; coll.req++; coll.loading=false;
+  coll.applied=null; coll.rows=[]; coll.ilkin=[]; coll.loadedKey=''; coll.err=''; coll.req++; coll.loading=false;
   const f=collFilters;
-  const sorted=state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az'));
-  const opts='<option value="">Hamısı</option>'
-    +sorted.map(x=>`<option value="${x.id}"${f.collector===x.id?' selected':''}>${esc(fullName(x))}</option>`).join('')
-    +`<option value="${COLL_NONE}"${f.collector===COLL_NONE?' selected':''}>Təyin olunmayıb</option>`;
+  if(!Array.isArray(f.collector)) f.collector=f.collector?[f.collector]:[];
   const tab=(id,label)=>`<button type="button" class="tab${coll.tab===id?' active':''}" data-action="coll-tab" data-tab="${id}">${label}</button>`;
   setContent(`
     <div class="topbar">
-      <div><h1>Təhsilat hesabatı</h1><div class="sub">Təhsilatçılar üzrə toplanmış məbləğlər (ilkin ödəniş daxil deyil)</div></div>
+      <div><h1>Təhsilat hesabatı</h1><div class="sub">Təhsilatçılar üzrə toplanmış məbləğlər; ilkin ödəniş / çatdırılma xidməti — ayrıca tablarda</div></div>
       <div style="display:flex;gap:8px;">
         ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="collections" disabled>Excelə yüklə</button>`:''}
         <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
@@ -2782,12 +2860,12 @@ async function renderReportCollections(){
       <div class="filters">
         <div class="field"><label>Tarixdən</label><input type="date" data-cfilter="from" value="${esc(f.from)}"></div>
         <div class="field"><label>Tarixədək</label><input type="date" data-cfilter="to" value="${esc(f.to)}"></div>
-        <div class="field"><label>Təhsilatçı</label><select data-cfilter="collector">${opts}</select></div>
+        <div class="field" style="min-width:260px;"><label>Təhsilatçı (bir və ya bir neçə)</label>${collMselHtml(f.collector)}</div>
       </div>
       ${reportFilterButtonsHtml('collections','coll-reset')}
     </div>
     ${reportDirtyHtml('collections')}
-    <div class="tabs">${tab('summary','Ümumiləşdirilmiş')}${tab('detail','Detallı')}</div>
+    <div class="tabs">${tab('summary','Ümumiləşdirilmiş')}${tab('detail','Detallı')}${tab('isummary','İlkin ödəniş — ümumiləşdirilmiş')}${tab('idetail','İlkin ödəniş — detallı')}</div>
     <div id="coll-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
     <div id="coll-body"></div>
   `);
@@ -4233,16 +4311,20 @@ const REPORT_EXPORTS={
   },
   collections:{
     title:'Təhsilat hesabatı', file:'Tehsilat_hesabati',
-    rows:()=>(coll.applied && coll.loadedKey===collKey() && !coll.loading && !coll.err)?coll.rows:[],   // ekrandakı (serverdən gələn) sətirlər
+    rows:()=>(coll.applied && coll.loadedKey===collKey() && !coll.loading && !coll.err)?coll.rows.concat(coll.ilkin):[],   // ödənişlər + ilkin ödənişlər (serverdən)
     filters:()=>collFilterDescription(),
-    totals:(rows)=>{ const t=collTotals(collSummaryRows(rows)); return [['Toplanmış məbləğ',t.paid],['Geri qaytarma',t.ret],['Xalis',t.net]]; },
-    // İki vərəq: hər tab ayrıca (sütunlar ekrandakı ilə eyni elandan)
-    sheets:(rows)=>{
-      const sum=collSummaryRows(rows), t=collTotals(sum);
+    totals:()=>{ const t=collTotals(collSummaryRows(coll.rows)), it=collIlkinTotals(collIlkinSummaryRows(coll.ilkin));
+      return [['Toplanmış məbləğ',t.paid],['Geri qaytarma',t.ret],['Xalis',t.net],['İlkin ödəniş / çatdırılma xidməti',it.amt],['Cəmi daxil olan (xalis + ilkin)',t.net+it.amt]]; },
+    // Dörd vərəq: hər tab ayrıca (sütunlar ekrandakı ilə eyni elandan)
+    sheets:()=>{
+      const sum=collSummaryRows(coll.rows), t=collTotals(sum), isum=collIlkinSummaryRows(coll.ilkin), it=collIlkinTotals(isum);
       return [
         {name:'Ümumiləşdirilmiş', columns:COLL_SUMMARY_COLUMNS, rows:sum, filter:false,
           extraRows:[[{v:'Cəmi',s:5},{v:t.cnt,t:'int'},{v:t.paid,t:'money'},{v:t.ret,t:'money'},{v:t.net,t:'money'}]]},
-        {name:'Detallı', columns:COLL_DETAIL_COLUMNS, rows},
+        {name:'Detallı', columns:COLL_DETAIL_COLUMNS, rows:coll.rows},
+        {name:'İlkin ödəniş — ümumi', columns:COLL_ILKIN_SUMMARY_COLUMNS, rows:isum, filter:false,
+          extraRows:[[{v:'Cəmi',s:5},{v:it.cnt,t:'int'},{v:it.sale,t:'money'},{v:it.amt,t:'money'}]]},
+        {name:'İlkin ödəniş — detallı', columns:COLL_ILKIN_DETAIL_COLUMNS, rows:coll.ilkin},
       ];
     },
   },
@@ -4887,6 +4969,8 @@ document.addEventListener('click', async (e)=>{
     document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab==='list')); refreshOverdueTable(); return; }
   if(action==='overdue-drill-clear'){ overdueDrill=null; pageNum['report-overdue']=1; refreshOverdueTable(); return; }
   if(action==='coll-reset'){ resetCollFilters(); renderReportCollections(); return; }
+  if(action==='msel-toggle'){ const pn=document.getElementById('coll-msel-panel'); if(pn){ const open=pn.style.display==='none'; pn.style.display=open?'block':'none'; if(open){ const qq=document.getElementById('coll-msel-q'); if(qq) qq.focus(); } } return; }
+  if(action==='msel-clear'){ collFilters.collector=[]; collMselSync(); return; }
   if(action==='cs-reset'){ resetCsFilters(); renderReportContracts(); return; }
   if(action==='ds-reset'){ resetDsFilters(); renderReportDebtorSales(); return; }
   if(action==='cd-add'){ openCdForm(); return; }
@@ -4917,7 +5001,7 @@ document.addEventListener('click', async (e)=>{
   if(action==='cs-open-contract'){ await csOpenContract(id, btn.dataset.nomre||''); return; }
   if(action==='cs-open-payments'){ await csOpenPayments(id); return; }
   if(action==='report-search'){ await withButtonLoading(btn, ()=>runReportSearch(btn.dataset.report)); return; }
-  if(action==='coll-tab'){ coll.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-collections']=1;
+  if(action==='coll-tab'){ coll.tab=COLL_TABS.includes(btn.dataset.tab)?btn.dataset.tab:'summary'; pageNum['report-collections']=1;
     document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===coll.tab)); refreshCollections(); return; }
   if(action==='export-report'){
     await withButtonLoading(btn, async()=>{ try{ await exportReport(btn.dataset.report); }catch(err){ alert(err.message); } });
@@ -4978,6 +5062,7 @@ document.addEventListener('change', (e)=>{
   if(t.id==='contracts-status-filter'){ contractStatusFilter=t.value; pageNum.contracts=1; const sv=document.getElementById('search-contracts'); renderContracts(sv?sv.value:''); return; }
   const ds=t.dataset||{};
   if(ds.cfilter){ collFilters[ds.cfilter]=t.value; updateReportDirty('collections'); return; }
+  if(ds.mselOpt==='collector'){ const v=t.value, sel=collFilters.collector.filter(x=>x!==v); if(t.checked) sel.push(v); collFilters.collector=sel; collMselSync(); return; }
   if(ds.dsfilter){ dsFilters[ds.dsfilter]=t.value; updateReportDirty('debtor-sales'); return; }
   if(ds.mpfilter){ mpFilters[ds.mpfilter]=t.value; updateReportDirty('monthly-plan'); return; }
   if(ds.dpfilter){ dpFilters[ds.dpfilter]=t.value; updateReportDirty('debt-payments'); return; }
@@ -4999,6 +5084,8 @@ document.addEventListener('change', (e)=>{
 document.addEventListener('click', (e)=>{
   const fr=document.getElementById('cl-find-results');
   if(fr && fr.style.display==='block' && !e.target.closest('#cl-find-results') && e.target.id!=='cl-find') fr.style.display='none';
+  const mp=document.getElementById('coll-msel-panel');   // təhsilatçı çoxseçimi: kənara basanda bağlanır
+  if(mp && mp.style.display==='block' && !e.target.closest('#coll-msel')) mp.style.display='none';
 });
 // Hesabat filtr sahəsində Enter = «Axtar»
 document.addEventListener('keydown', (e)=>{
@@ -5021,6 +5108,7 @@ document.addEventListener('input', (e)=>{
   if(e.target && e.target.dataset && e.target.dataset.crCalc){ crUpdateCalc(); return; }
   const dsf=e.target && e.target.dataset ? e.target.dataset.dsfilter : null;
   if(dsf){ dsFilters[dsf]=e.target.value; updateReportDirty('debtor-sales'); return; }
+  if(e.target && e.target.id==='coll-msel-q'){ const q=e.target.value.trim().toLowerCase(); document.querySelectorAll('#coll-msel-panel .msel-item').forEach(it=>{ it.style.display=!q||it.dataset.l.includes(q)?'flex':'none'; }); return; }
   if(e.target && e.target.id==='cl-find'){ const v=e.target.value; clearTimeout(clFindTimer); clFindTimer=setTimeout(()=>clFindRun(v),250); return; }
   if(e.target && e.target.dataset && e.target.dataset.bcfilter){ bcFilters[e.target.dataset.bcfilter]=e.target.value; updateReportDirty('closing'); return; }
   if(e.target && e.target.dataset && e.target.dataset.clofilter){ clOF[e.target.dataset.clofilter]=e.target.value; updateReportDirty('calls-overdue'); return; }

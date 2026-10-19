@@ -146,3 +146,8 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    Bu hesabat «Bağlı xaric» qaydasına istisnadır. «Problemsiz»: status Normal və qrafik borcu yoxdur (1-ci siyahı) + müqavilə boyu
    heç bir TAM ayın sonunda qrafik üzrə gecikmə 2 aylıq taksitə çatmayıb (əvvəlcədən ödəyib ara verən problemli sayılmır).
    «Digər açıq borc» — müştərinin əhatədəki digər bağlı olmayan, borclu müqavilələri (cəm, say, gecikmə var/yox).
+29. **Təhsilat hesabatı — çoxseçim və ilkin ödəniş:** təhsilatçı filtri çoxseçimlidir (`collector` = vergüllə id-lər və/və ya
+   `__none__`; boş = hamısı; aralarında VƏ YA). Ödəniş sətirlərində təhsilatçı = ödənişin özünə yazılmış təhsilatçı (əvvəlki kimi).
+   «İlkin ödəniş / çatdırılma xidməti» ayrıca iki tabda (ümumiləşdirilmiş — satıcı üzrə; detallı — müqavilə üzrə): müqavilə tarixi
+   dövrdə olan, ilkin ödənişi > 0 müqavilələr (bağlılar da); ödənişə yazılmış təhsilatçı olmadığı üçün təhsilatçı filtri müqavilənin
+   HAZIRKI təhsilatçısına tətbiq olunur; əhatə — müqavilə əhatəsi; mobil «Mənim ödənişlərim»də yoxdur. Excel 4 vərəq + Məlumat.

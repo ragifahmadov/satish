@@ -1,6 +1,6 @@
 <?php
 // Server tərəfli hesabat məlumatı (yalnız lazım olan interval/sətirlər, tam cədvəl yüklənmir).
-//   GET report-api.php?report=collections&from=YYYY-MM-DD&to=YYYY-MM-DD&collector=(boş|__none__|uuid)
+//   GET report-api.php?report=collections&from=YYYY-MM-DD&to=YYYY-MM-DD&collector=(boş | vergüllə siyahı: uuid və/və ya __none__)
 //
 // QAYDALAR (QAYDALAR.md):
 //  * Hüquq serverdə yoxlanılır (perm_screens açarı); icazəsiz cəhd loga ACCESS_DENIED kimi düşür.
@@ -62,7 +62,7 @@ function report_date_param($name) {
 }
 
 /* ---------- Təhsilat hesabatı ----------
-   Sətir = ödəniş və ya geri qaytarma (ilkin ödəniş daxil deyil — o, müqavilənin üstündədir, ödəniş sətri deyil).
+   Sətir = ödəniş və ya geri qaytarma (ilkin ödəniş "rows"-a daxil deyil — o, müqavilənin üstündədir; ayrıca "ilkin" siyahısında).
    Təhsilatçı = ödənişin ÖZÜNƏ yazılmış təhsilatçı (payments.collectorId); boşdursa "Təyin olunmayıb".
    Əhatə: müqavilə əhatədədir VƏ YA ödənişin təhsilatçısı əhatədədir (authz_payment_collector_scope). */
 if ($report === 'collections') {
@@ -75,14 +75,23 @@ if ($report === 'collections') {
     $params[':dfrom'] = $from;
     $params[':dto'] = $to;
 
-    $collector = (string) ($_GET['collector'] ?? '');
-    if ($collector === '__none__') {
-        $where[] = "(p.collectorId IS NULL OR p.collectorId = '')";
-    } elseif ($collector !== '') {
-        if (!preg_match('/^[0-9a-fA-F-]{36}$/', $collector)) { fail(400, 'Təhsilatçı düzgün deyil'); }
-        $where[] = 'p.collectorId = :fcol';
-        $params[':fcol'] = $collector;
-    }
+    // Təhsilatçı: boş = hamısı; bir və ya bir neçə (vergüllə) — uuid və/və ya __none__ (təyin olunmayıb); aralarında VƏ YA
+    $collector = trim((string) ($_GET['collector'] ?? ''));
+    $sel = $collector === '' ? [] : array_values(array_unique(array_filter(array_map('trim', explode(',', $collector)), 'strlen')));
+    if (count($sel) > 500) { fail(400, 'Çox təhsilatçı seçilib'); }
+    foreach ($sel as $v) { if ($v !== '__none__' && !preg_match('/^[0-9a-fA-F-]{36}$/', $v)) { fail(400, 'Təhsilatçı düzgün deyil'); } }
+    $colCond = function ($expr, $prefix) use ($sel) {   // [sql, params]; seçim yoxdursa ['', []]
+        if (!$sel) return ['', []];
+        $or = []; $ph = []; $pp = [];
+        foreach ($sel as $i => $v) {
+            if ($v === '__none__') { $or[] = "($expr IS NULL OR $expr = '')"; continue; }
+            $ph[] = ':' . $prefix . $i; $pp[':' . $prefix . $i] = $v;
+        }
+        if ($ph) { $or[] = "$expr IN (" . implode(',', $ph) . ')'; }
+        return ['(' . implode(' OR ', $or) . ')', $pp];
+    };
+    [$cc, $cp] = $colCond('p.collectorId', 'fcol');
+    if ($cc !== '') { $where[] = $cc; $params += $cp; }
 
     $st = $pdo->prepare("SELECT p.id, p.contractId, p.meblag, p.odemeTarixi, p.collectorId, p.emeliyyatNovu,
             c.nomre, c.statusId, cu.soyad, cu.ad, cu.ataAdi
@@ -108,8 +117,27 @@ if ($report === 'collections') {
             'date' => (string) $r['odemeTarixi'],
         ];
     }
+    // İlkin ödəniş / çatdırılma xidməti: müqavilə tarixi dövrdə olan, ilkin ödənişi > 0 müqavilələr (bağlılar da — keçmiş pul).
+    // Ödənişə yazılmış təhsilatçı yoxdur → təhsilatçı filtri müqavilənin HAZIRKI təhsilatçısına tətbiq olunur; əhatə — müqavilə əhatəsi.
+    // Mobil "Mənim ödənişlərim"də qaytarılmır (təhsilatçı ilkin ödəniş qəbul etmir).
+    $ilkin = [];
+    if (!$mobileOwn) {
+        [$kSql, $kp] = authz_contract_scope($ctx, 'c', 'ik');
+        $kw = ["c.tarix >= :kfrom", "c.tarix <= :kto", "c.ilkinOdenis > 0", $kSql];
+        $kp[':kfrom'] = $from; $kp[':kto'] = $to;
+        [$cc2, $cp2] = $colCond('c.currentCollectorId', 'kcol');
+        if ($cc2 !== '') { $kw[] = $cc2; $kp += $cp2; }
+        $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, c.salespersonId, c.currentCollectorId, c.statusId, cu.soyad, cu.ad, cu.ataAdi
+            FROM contracts c LEFT JOIN customers cu ON cu.id = c.customerId WHERE " . implode(' AND ', $kw) . " ORDER BY c.tarix ASC, c.nomre ASC");
+        $st->execute($kp);
+        foreach ($st->fetchAll() as $r) {
+            $ilkin[] = ['cid' => $r['id'], 'nomre' => (string) $r['nomre'], 'st' => (string) ($r['statusId'] ?? ''), 'cust' => audit_full_name($r),
+                'date' => (string) $r['tarix'], 'amt' => (float) $r['ilkinOdenis'], 'sale' => (float) $r['meblag'],
+                'sp' => (string) ($r['salespersonId'] ?? ''), 'col' => (string) ($r['currentCollectorId'] ?? '')];
+        }
+    }
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
-    echo json_encode(['rows' => $rows, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    echo json_encode(['rows' => $rows, 'ilkin' => $ilkin, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 

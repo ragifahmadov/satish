@@ -85,7 +85,7 @@ function perm_screen_needs() {
         'calls' => ['collectors' => 'ref', 'curators' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         'report-overdue' => ['contracts' => 'ref', 'customers' => 'ref', 'salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', '@sums' => 1, '@last' => 1, 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Təhsilat hesabatının sətirləri report-api.php-dən gəlir (müqavilə №, müştəri adı — yığcam); burada yalnız təhsilatçı siyahısı
-        'report-collections' => ['collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
+        'report-collections' => ['collectors' => 'ref', 'salespeople' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],   // satıcılar — ilkin ödəniş tabları
         // Müqavilə axtarışının sətirləri report-api.php-dən gəlir; burada yalnız filtr siyahıları (adlar)
         'report-contracts' => ['salespeople' => 'ref', 'collectors' => 'ref', 'curators' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Borclu müştərilərə satışlar: sətirlər report-api.php-dən; burada yalnız filtr siyahıları

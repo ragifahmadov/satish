@@ -151,3 +151,10 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    «İlkin ödəniş / çatdırılma xidməti» ayrıca iki tabda (ümumiləşdirilmiş — satıcı üzrə; detallı — müqavilə üzrə): müqavilə tarixi
    dövrdə olan, ilkin ödənişi > 0 müqavilələr (bağlılar da); ödənişə yazılmış təhsilatçı olmadığı üçün təhsilatçı filtri müqavilənin
    HAZIRKI təhsilatçısına tətbiq olunur; əhatə — müqavilə əhatəsi; mobil «Mənim ödənişlərim»də yoxdur. Excel 4 vərəq + Məlumat.
+30. **«Təhsilatçılar üzrə» tabı (Təhsilatçı hesabatları):** yalnız cari ay; hüquq — «Təhsilatçı hesabatları» Baxış
+   (`report-api.php?report=collector-plan`). Plan — Cari ay planı ilə EYNİ funksiya (`mp_contract_plans`: əhatə + Bağlı xaric, hazırkı
+   təhsilatçı): Keçmişdən qalan borc + Cari ayda yığmalı = Cəmi plan. Yığılıb — təhsilatçının bu ay yazdığı gündəlik hesabatlardakı
+   «Təhsilat məbləği» (əhatəsiz); Xərclər — benzin + digər. İcra % (cari ay) = yığılıb ÷ cari ayda yığmalı; İcra % (ümumi) = yığılıb ÷
+   cəmi plan; rəng <50 qırmızı, 50–80 sarı, ≥80 yaşıl. Excel + log.
+31. **Ödənişlər — «Bağlanmış müqavilələrdə də axtar»:** defolt söndürülüb, ekran menyudan hər açılanda söndürülür; seçiləndə bağlı
+   müqavilələr də tapılır («Bağlı», «yalnız baxış» nişanı), açılanda yalnız baxış (qəbul forması, dəyiş/sil yoxdur; server 409).

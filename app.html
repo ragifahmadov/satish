@@ -1537,10 +1537,15 @@ async function renderPayments(){
   renderPaymentsPanel(contract);
 }
 
+// «Bağlanmış müqavilələrdə də axtar»: defolt söndürülüb, ekran hər açılanda yenidən söndürülür (menyu keçidi). Bağlı müqavilə
+// açılsa yalnız baxış: qəbul forması və dəyiş/sil düymələri göstərilmir (renderPaymentsPanel), server də hər dəyişikliyi rədd edir (409).
+let payClosedSearch=false;
 function renderPaymentsPicker(filter){
   setContent(`
     <div class="topbar"><div><h1>Ödənişlər</h1><div class="sub">Ödəniş qeyd etmək üçün müqavilə seçin</div></div></div>
     <div class="card" style="padding:22px;max-width:540px;">
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:12px;font-weight:400;cursor:pointer;">
+        <input type="checkbox" id="pay-pick-closed"${payClosedSearch?' checked':''} style="width:auto;"> Bağlanmış müqavilələrdə də axtar <span class="muted" style="font-size:12px;">(yalnız baxış)</span></label>
       <label>Müqavilə axtar</label>
       <div style="position:relative;">
         <input type="text" id="pay-pick-search" autocomplete="off" placeholder="Müştəri adı, soyadı və ya müqavilə № ilə axtar…" value="${esc(filter||'')}">
@@ -1554,18 +1559,19 @@ function renderPaymentsPicker(filter){
     const query=(q||'').toLowerCase();
     if(query.length<3){ results.innerHTML=`<div class="search-item muted">Ən azı 3 simvol yazın…</div>`; results.style.display='block'; return; }
     const matches=state.contracts.filter(c=>{
-      if(isClosed(c)) return false;   // bağlı müqavilə ödəniş üçün seçilmir
+      if(isClosed(c) && !payClosedSearch) return false;   // bağlı müqavilə defolt axtarılmır (açılarsa — yalnız baxış)
       const cust=byId(state.customers,c.customerId);
       return (c.nomre+' '+(cust?fullName(cust):'')).toLowerCase().includes(query);
     }).slice(0,30);
     results.innerHTML = matches.length
-      ? matches.map(c=>`<div class="search-item" data-id="${c.id}">${esc(c.nomre)} — ${esc(customerName(c.customerId))}</div>`).join('')
+      ? matches.map(c=>`<div class="search-item" data-id="${c.id}">${esc(c.nomre)} — ${esc(customerName(c.customerId))}${isClosed(c)?' '+statusTagHtml(c.statusId)+' <span class="muted" style="font-size:12px;">yalnız baxış</span>':''}</div>`).join('')
       : `<div class="search-item muted">Nəticə tapılmadı</div>`;
     results.style.display='block';
   }
   input.addEventListener('focus', ()=>renderList(input.value));
   input.addEventListener('input', ()=>renderList(input.value));
   input.addEventListener('blur', ()=>{ setTimeout(()=>{ results.style.display='none'; }, 150); });
+  document.getElementById('pay-pick-closed').addEventListener('change', (e)=>{ payClosedSearch=e.target.checked; if(input.value) renderList(input.value); input.focus(); });
   results.addEventListener('mousedown', (e)=>{
     const item=e.target.closest('.search-item[data-id]');
     if(!item) return;
@@ -2010,10 +2016,81 @@ function crListFiltered(q){
 }
 function crTabsHtml(){
   return `<div class="tabs"><button type="button" class="tab${crTab==='list'?' active':''}" data-action="cr-tab" data-tab="list">Ümumi siyahı</button>
-    <button type="button" class="tab${crTab==='filter'?' active':''}" data-action="cr-tab" data-tab="filter">Filtr və hesabat</button></div>`;
+    <button type="button" class="tab${crTab==='filter'?' active':''}" data-action="cr-tab" data-tab="filter">Filtr və hesabat</button>
+    <button type="button" class="tab${crTab==='plan'?' active':''}" data-action="cr-tab" data-tab="plan">Təhsilatçılar üzrə</button></div>`;
+}
+/* ---- «Təhsilatçılar üzrə» tabı: cari ayın planı və yığımı (report-api.php?report=collector-plan) ----
+   Plan (keçmişdən qalan + cari ayda yığmalı) — Cari ay planı hesabatının qaydası (əhatə + Bağlı xaric, hazırkı təhsilatçı);
+   Yığılıb — təhsilatçının bu ay yazdığı gündəlik hesabatlarda «Təhsilat məbləği»; Xərclər — benzin + digər. Yalnız cari ay. */
+let cpR={rows:[], month:'', loading:false, err:'', loaded:false, req:0};
+function cpPct(a,b){ return b>0.009?Math.round(a/b*1000)/10:null; }
+function cpPctHtml(p){ if(p==null) return '<span class="muted">—</span>'; const cls=p<50?'tag-red':(p<80?'tag-amber':'tag-green'); return `<span class="tag ${cls}">${String(p).replace('.',',')}%</span>`; }
+function cpRows(){
+  const r=cpR.rows.map(x=>Object.assign({},x,{name:x.col?collectorName(x.col):'Təyin olunmayıb', rest:Math.round((x.plan-x.coll)*100)/100,
+    pctCur:cpPct(x.coll,x.cur), pctAll:cpPct(x.coll,x.plan)}));
+  return r.sort((a,b)=>(a.col?0:1)-(b.col?0:1) || a.name.localeCompare(b.name,'az'));
+}
+function cpTotals(rows){
+  const t=rows.reduce((t,x)=>({contracts:t.contracts+x.contracts, arrears:t.arrears+x.arrears, cur:t.cur+x.cur, plan:t.plan+x.plan, coll:t.coll+x.coll, exp:t.exp+x.exp, rest:t.rest+x.rest}),
+    {contracts:0,arrears:0,cur:0,plan:0,coll:0,exp:0,rest:0});
+  t.pctCur=cpPct(t.coll,t.cur); t.pctAll=cpPct(t.coll,t.plan); return t;
+}
+const CP_COLUMNS=[
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:30, td:r=>`<td><strong>${esc(r.name)}</strong></td>`, val:r=>r.name},
+  {th:'<th class="num">Müqavilə</th>', xl:'Planı olan müqavilə', type:'int', width:12, td:r=>`<td class="num">${r.contracts}</td>`, val:r=>r.contracts},
+  {th:'<th class="num">Keçmişdən<br>qalan borc</th>', xl:'Keçmişdən qalan borc', type:'money', width:17, td:r=>`<td class="num">${fmtMoney(r.arrears)}</td>`, val:r=>r.arrears},
+  {th:'<th class="num">Cari ayda<br>yığmalı</th>', xl:'Cari ayda yığmalı', type:'money', width:16, td:r=>`<td class="num">${fmtMoney(r.cur)}</td>`, val:r=>r.cur},
+  {th:'<th class="num">Cəmi plan</th>', xl:'Cəmi plan', type:'money', width:16, td:r=>`<td class="num"><strong>${fmtMoney(r.plan)}</strong></td>`, val:r=>r.plan},
+  {th:'<th class="num">Yığılıb</th>', xl:'Yığılıb (hesabatlara görə)', type:'money', width:16, td:r=>`<td class="num"><strong>${fmtMoney(r.coll)}</strong></td>`, val:r=>r.coll},
+  {th:'<th class="num">İcra %<br>(cari ay)</th>', xl:'İcra % (cari ay)', type:'money', width:13, td:r=>`<td class="num">${cpPctHtml(r.pctCur)}</td>`, val:r=>r.pctCur},
+  {th:'<th class="num">İcra %<br>(ümumi)</th>', xl:'İcra % (ümumi)', type:'money', width:13, td:r=>`<td class="num">${cpPctHtml(r.pctAll)}</td>`, val:r=>r.pctAll},
+  {th:'<th class="num">Xərclər</th>', xl:'Xərclər (benzin + digər)', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.exp)}</td>`, val:r=>r.exp},
+  {th:'<th class="num">Qalıq</th>', xl:'Qalıq (plan − yığılıb)', type:'money', width:15, td:r=>`<td class="num"${r.rest<0?' style="color:var(--green);"':''}>${fmtMoney(r.rest)}</td>`, val:r=>r.rest},
+];
+const CP_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust','Sentyabr','Oktyabr','Noyabr','Dekabr'];
+function cpMonthLabel(){ const m=cpR.month||bakuDateIso().slice(0,7); return CP_MONTHS[Number(m.slice(5,7))-1]+' '+m.slice(0,4); }
+function cpFilterDescription(){ return [{l:'Ay',v:cpMonthLabel()+' (cari ay, '+fmtDate(bakuDateIso())+' vəziyyəti)'}]; }
+function cpResultRows(){ return (cpR.loaded && !cpR.loading && !cpR.err)?cpRows():[]; }
+async function loadCollectorPlan(){
+  const my=++cpR.req; cpR.loading=true; cpR.err=''; refreshCollectorPlan();
+  try{
+    const r=await fetch('report-api.php?report=collector-plan');
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json(); if(my!==cpR.req) return;
+    cpR.rows=j.rows||[]; cpR.month=j.month||''; cpR.loaded=true;
+  }catch(e){ if(my!==cpR.req) return; cpR.rows=[]; cpR.loaded=false; cpR.err='Məlumat yüklənmədi: '+e.message; }
+  finally{ if(my===cpR.req) cpR.loading=false; }
+  if(currentScreen==='collector-reports' && crTab==='plan') refreshCollectorPlan();
+}
+function refreshCollectorPlan(){
+  const box=document.getElementById('cp-body'); if(!box) return;
+  const eb=document.getElementById('export-btn'), sumEl=document.getElementById('cp-summary');
+  const rows=cpResultRows();
+  if(eb){ eb.disabled=!rows.length; eb.textContent=rows.length?('Excelə yüklə — '+rows.length+' sətir'):'Excelə yüklə'; }
+  if(cpR.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(cpR.err)}</div>`; return; }
+  if(cpR.loading || !cpR.loaded){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Hesablanır…</div>`; return; }
+  const t=cpTotals(rows);
+  sumEl.innerHTML=`${esc(cpMonthLabel())} &nbsp;·&nbsp; Cəmi plan: <strong>${fmtMoney(t.plan)}</strong> (keçmişdən ${fmtMoney(t.arrears)} + cari ay ${fmtMoney(t.cur)}) &nbsp;·&nbsp; Yığılıb: <strong>${fmtMoney(t.coll)}</strong> &nbsp;·&nbsp; İcra: cari ay ${cpPctHtml(t.pctCur)} ümumi ${cpPctHtml(t.pctAll)} &nbsp;·&nbsp; Xərclər: <strong>${fmtMoney(t.exp)}</strong>`;
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="cp-table">
+    <thead><tr>${CP_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${rows.length
+      ? rows.map(r=>`<tr>${CP_COLUMNS.map(c=>c.td(r)).join('')}</tr>`).join('')
+        +`<tr class="total-row"><td>Cəmi</td><td class="num">${t.contracts}</td><td class="num">${fmtMoney(t.arrears)}</td><td class="num">${fmtMoney(t.cur)}</td><td class="num">${fmtMoney(t.plan)}</td><td class="num">${fmtMoney(t.coll)}</td><td class="num">${cpPctHtml(t.pctCur)}</td><td class="num">${cpPctHtml(t.pctAll)}</td><td class="num">${fmtMoney(t.exp)}</td><td class="num">${fmtMoney(t.rest)}</td></tr>`
+      : `<tr><td colspan="${CP_COLUMNS.length}" class="empty" style="padding:40px;">Bu ay üçün plan və hesabat yoxdur</td></tr>`}</tbody></table></div></div>
+    <div class="muted" style="font-size:12px;margin:8px 2px;line-height:1.5;">Plan — «Cari ay təhsilat planı» qaydası ilə (müqavilənin hazırkı təhsilatçısı, bağlı müqavilələr xaric). Yığılıb — təhsilatçının bu ay yazdığı gündəlik hesabatlardakı «Təhsilat məbləği». İcra % (cari ay) = yığılıb ÷ cari ayda yığmalı (keçmiş borcdan yığılan da sayıldığı üçün 100%-i keçə bilər); İcra % (ümumi) = yığılıb ÷ cəmi plan.</div>`;
+}
+function renderCollectorPlanTab(){
+  setContent(`
+    <div class="topbar"><div><h1>Təhsilatçı hesabatları</h1><div class="sub">Təhsilatçılar üzrə cari ayın planı, yığımı və icra faizi</div></div>
+      <div style="display:flex;gap:8px;">${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="collector-plan" disabled>Excelə yüklə</button>`:''}</div></div>
+    ${crTabsHtml()}
+    <div id="cp-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="cp-body"></div>`);
+  refreshCollectorPlan();
+  loadCollectorPlan();   // hər açılışda serverdən təzə hesablanır
 }
 function renderCollectorReports(filter){
   if(crTab==='filter') return renderCrFilterTab();
+  if(crTab==='plan') return renderCollectorPlanTab();
   const q=(filter||'').length>=3?filter:'';
   const rows=crListFiltered(q);
   const {pageRows, totalPages, total}=paginateArr(rows, 'collector-reports');
@@ -2117,7 +2194,7 @@ function renderCrFilterTab(){
   refreshCrFilter();
   updateReportDirty('collector-reports');
 }
-function crRefreshView(){ if(crTab==='filter') refreshCrFilter(); else renderCollectorReports(document.getElementById('search-collector-reports')?.value||''); }
+function crRefreshView(){ if(crTab==='filter') refreshCrFilter(); else if(crTab==='plan') loadCollectorPlan(); else renderCollectorReports(document.getElementById('search-collector-reports')?.value||''); }
 function crTodayIso(){ return bakuDateIso(); }
 function openCollectorReportForm(id){
   const rec=id?byId(state.collector_reports,id):null;
@@ -4269,6 +4346,15 @@ const REPORT_EXPORTS={
     totals:()=>{ const s=bcResultRows('soon'), c=bcResultRows('closed'); return [['Bağlanmasına az qalan (müqavilə)',s.length],['Onların cəmi qalığı',s.reduce((a,r)=>a+r.qaliq,0)],['Yaxın vaxtda bağlanan (müqavilə)',c.length]]; },
     sheets:()=>[{name:'Bağlanmasına az qalanlar', columns:BC_COLS.soon, rows:bcResultRows('soon')},{name:'Yaxın vaxtda bağlananlar', columns:BC_COLS.closed, rows:bcResultRows('closed')}],
   },
+  'collector-plan':{
+    title:'Təhsilatçılar üzrə (cari ay)', file:'Tehsilatcilar_uzre_cari_ay',
+    columns:()=>CP_COLUMNS,
+    rows:()=>cpResultRows(),
+    filters:()=>cpFilterDescription(),
+    totals:(rows)=>{ const t=cpTotals(rows); return [['Keçmişdən qalan borc',t.arrears],['Cari ayda yığmalı',t.cur],['Cəmi plan',t.plan],['Yığılıb',t.coll],['İcra % (cari ay)',t.pctCur==null?0:t.pctCur],['İcra % (ümumi)',t.pctAll==null?0:t.pctAll],['Xərclər',t.exp],['Qalıq',t.rest]]; },
+    sheets:(rows)=>{ const t=cpTotals(rows); return [{name:'Təhsilatçılar üzrə', columns:CP_COLUMNS, rows, filter:false,
+      extraRows:[[{v:'Cəmi',s:5},{v:t.contracts,t:'int'},{v:t.arrears,t:'money'},{v:t.cur,t:'money'},{v:t.plan,t:'money'},{v:t.coll,t:'money'},{v:t.pctCur,t:'money'},{v:t.pctAll,t:'money'},{v:t.exp,t:'money'},{v:t.rest,t:'money'}]]}]; },
+  },
   'report-calls':{
     title:'Zəng hesabatı', file:'Zeng_hesabati',
     rows:()=>rcResultRows(),
@@ -4877,7 +4963,7 @@ document.addEventListener('click', async (e)=>{
   const btn=e.target.closest('[data-action]');
   if(!btn) return;
   const action=btn.dataset.action, id=btn.dataset.id;
-  if(action==='nav'){ currentScreen=btn.dataset.screen; if(btn.dataset.group){ navOpen.add(btn.dataset.group); saveNavOpen(); } renderScreen(); return; }
+  if(action==='nav'){ if(btn.dataset.screen==='payments') payClosedSearch=false; currentScreen=btn.dataset.screen; if(btn.dataset.group){ navOpen.add(btn.dataset.group); saveNavOpen(); } renderScreen(); return; }
   if(action==='nav-group'){ const g=btn.dataset.group; if(navOpen.has(g)) navOpen.delete(g); else navOpen.add(g); saveNavOpen(); renderNav(); return; }
   if(action==='manual-refresh'){
     const label=btn.querySelector('span');
@@ -4993,7 +5079,7 @@ document.addEventListener('click', async (e)=>{
   if(action==='mp-reset'){ resetMpFilters(); renderReportMonthlyPlan(); return; }
   if(action==='mp-tab'){ mpR.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-monthly-plan']=1;
     document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===mpR.tab)); refreshMp(); return; }
-  if(action==='cr-tab'){ crTab=btn.dataset.tab==='filter'?'filter':'list'; renderCollectorReports(); return; }
+  if(action==='cr-tab'){ crTab=['filter','plan'].includes(btn.dataset.tab)?btn.dataset.tab:'list'; renderCollectorReports(); return; }
   if(action==='cr-reset'){ resetCrFilters(); crApplied=null; renderCrFilterTab(); return; }
   if(action==='add-creport'){ openCollectorReportForm(); return; }
   if(action==='edit-creport'){ openCollectorReportForm(id); return; }

@@ -38,6 +38,7 @@ $REPORTS = [
     'calls' => ['Zənglər', 'calls'],
     'report-calls' => ['Zəng hesabatı', 'report-calls'],
     'closing' => ['Bağlanan müqavilələr', 'report-closing'],
+    'collector-plan' => ['Təhsilatçılar üzrə (cari ay)', 'collector-reports'],
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

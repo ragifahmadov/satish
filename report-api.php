@@ -36,6 +36,7 @@ $REPORT_SCREENS = [
     'debt-payments' => 'report-debt-payments',
     'calls' => 'report-calls',
     'closing' => 'report-closing',
+    'collector-plan' => 'collector-reports',   // Təhsilatçı hesabatları → «Təhsilatçılar üzrə» tabı
 ];
 
 $report = (string) ($_GET['report'] ?? '');
@@ -382,18 +383,11 @@ if ($report === 'debtor-sales') {
      Qalıq           = Plan − min(Yığılıb, Plan)
    Təhsilatçı = müqavilənin HAZIRKI təhsilatçısı (istifadəçi qərarı: yığılan da müqavilənin təhsilatçısına yazılır).
    Məhkəməlik defolt daxildir. Hamısı əhatə daxilində (authz_contract_scope). */
-if ($report === 'monthly-plan') {
-    $g = function ($k) { return trim((string) ($_GET[$k] ?? '')); };
-    $teh = $g('tehsilatci');
-    if ($teh !== '' && $teh !== '__none__' && !preg_match('/^[0-9a-fA-F-]{36}$/', $teh)) { fail(400, 'Seçim düzgün deyil (tehsilatci)'); }
-    $court = $g('mehkeme');            // '' — hamısı, '1' — yalnız məhkəməlik, '0' — məhkəməlik xaric
-    if (!in_array($court, ['', '0', '1'], true)) { fail(400, 'Seçim düzgün deyil (mehkeme)'); }
-    $planOnly = ($g('planOnly') === '1');
-
-    $today = baku_today();
+// Cari ayın planı — müqavilə üzrə (Cari ay planı hesabatı və «Təhsilatçılar üzrə» tabı EYNİ hesabdan istifadə edir).
+// $teh: '' — hamısı, '__none__' — təhsilatçısız, uuid — həmin təhsilatçı. Əhatə + «Bağlı xaric». Hər sətir: xam sətir + hesablanmış sahələr.
+function mp_contract_plans($pdo, $ctx, $teh, $today) {
     $ms = substr($today, 0, 8) . '01';
     $prevEnd = (new DateTime($ms))->modify('-1 day')->format('Y-m-d');
-
     [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
     [$oSql, $oP] = contract_open_sql($pdo, 'c', 'op');   // Bağlı müqavilələr planda iştirak etmir
     $where = [$cSql, $oSql];
@@ -415,13 +409,8 @@ if ($report === 'monthly-plan') {
         WHERE " . implode(' AND ', $where) . "
         ORDER BY c.nomre ASC");
     $st->execute($params);
-
-    $rows = [];
+    $out = [];
     foreach ($st->fetchAll() as $r) {
-        $mq = json_decode((string) $r['mehkemeQeydleri'], true);
-        $isCourt = is_array($mq) && count($mq) > 0;
-        if ($court === '1' && !$isCourt) continue;
-        if ($court === '0' && $isCourt) continue;
         $m = (int) $r['muddet'];
         $net = (float) $r['meblag'] - (float) $r['ret'];
         $ilkin = (float) $r['ilkinOdenis'];
@@ -430,8 +419,31 @@ if ($report === 'monthly-plan') {
         $debtStart = $net - $ilkin - $before;
         $plan = max(0, min($monthly * schedule_due_count($r['tarix'], $m, $ms) - $before, $debtStart));
         $arrears = max(0, min($monthly * schedule_due_count($r['tarix'], $m, $prevEnd) - $before, $plan));
-        $coll = max(0, (float) $r['paidMonth']);
-        $plan = round($plan, 2); $arrears = round($arrears, 2); $coll = round($coll, 2);
+        $r['_monthly'] = $monthly;
+        $r['_plan'] = round($plan, 2);
+        $r['_arrears'] = round($arrears, 2);
+        $r['_coll'] = round(max(0, (float) $r['paidMonth']), 2);
+        $out[] = $r;
+    }
+    return $out;
+}
+
+if ($report === 'monthly-plan') {
+    $g = function ($k) { return trim((string) ($_GET[$k] ?? '')); };
+    $teh = $g('tehsilatci');
+    if ($teh !== '' && $teh !== '__none__' && !preg_match('/^[0-9a-fA-F-]{36}$/', $teh)) { fail(400, 'Seçim düzgün deyil (tehsilatci)'); }
+    $court = $g('mehkeme');            // '' — hamısı, '1' — yalnız məhkəməlik, '0' — məhkəməlik xaric
+    if (!in_array($court, ['', '0', '1'], true)) { fail(400, 'Seçim düzgün deyil (mehkeme)'); }
+    $planOnly = ($g('planOnly') === '1');
+    $today = baku_today();
+
+    $rows = [];
+    foreach (mp_contract_plans($pdo, $ctx, $teh, $today) as $r) {
+        $mq = json_decode((string) $r['mehkemeQeydleri'], true);
+        $isCourt = is_array($mq) && count($mq) > 0;
+        if ($court === '1' && !$isCourt) continue;
+        if ($court === '0' && $isCourt) continue;
+        $monthly = $r['_monthly']; $plan = $r['_plan']; $arrears = $r['_arrears']; $coll = $r['_coll'];
         if ($plan < 0.01 && ($planOnly || $coll < 0.01)) continue;
         $covered = min($coll, $plan);
         $rows[] = [
@@ -446,6 +458,47 @@ if ($report === 'monthly-plan') {
             'coll' => $coll, 'covered' => round($covered, 2), 'rest' => round($plan - $covered, 2),
             'lastPay' => (string) ($r['lastPay'] ?? ''), 'court' => $isCourt, 'st' => (string) ($r['statusId'] ?? ''),
         ];
+    }
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['rows' => $rows, 'month' => substr($today, 0, 7), 'today' => $today], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+/* ---------- Təhsilatçılar üzrə (Təhsilatçı hesabatları ekranının tabı) ----------
+   Yalnız CARİ ay. Hüquq: «Təhsilatçı hesabatları» → Baxış. Təhsilatçı üzrə:
+     Keçmişdən qalan borc / Cari ayda yığmalı / Cəmi plan — Cari ay planı hesabatının qaydası (mp_contract_plans; əhatə + Bağlı xaric;
+       müqavilənin hazırkı təhsilatçısı);
+     Yığılıb — təhsilatçının bu ay yazdığı gündəlik hesabatlarda «Təhsilat məbləği» cəmi (collector_reports — əhatəsiz, əvvəlki kimi);
+     Xərclər — bu ayın benzin + digər xərcləri. Faizləri brauzer hesablayır. */
+if ($report === 'collector-plan') {
+    $today = baku_today();
+    $ms = substr($today, 0, 8) . '01';
+    $by = [];
+    $get = function ($col) use (&$by) {
+        if (!isset($by[$col])) $by[$col] = ['col' => $col, 'arrears' => 0.0, 'cur' => 0.0, 'plan' => 0.0, 'contracts' => 0, 'coll' => 0.0, 'exp' => 0.0, 'reports' => 0];
+        return $col;
+    };
+    foreach (mp_contract_plans($pdo, $ctx, '', $today) as $r) {
+        if ($r['_plan'] < 0.01) continue;
+        $k = $get((string) ($r['currentCollectorId'] ?? ''));
+        $by[$k]['arrears'] += $r['_arrears'];
+        $by[$k]['cur'] += $r['_plan'] - $r['_arrears'];
+        $by[$k]['plan'] += $r['_plan'];
+        $by[$k]['contracts']++;
+    }
+    $st = $pdo->prepare("SELECT collectorId, SUM(tehsilatMeblegi) AS t, SUM(benzinXerci) AS b, SUM(digerXerc) AS d, COUNT(*) AS n
+        FROM collector_reports WHERE tarix >= :ms AND tarix <= :td GROUP BY collectorId");
+    $st->execute([':ms' => $ms, ':td' => $today]);
+    foreach ($st->fetchAll() as $r) {
+        $k = $get((string) ($r['collectorId'] ?? ''));
+        $by[$k]['coll'] += (float) $r['t'];
+        $by[$k]['exp'] += (float) $r['b'] + (float) $r['d'];
+        $by[$k]['reports'] += (int) $r['n'];
+    }
+    $rows = [];
+    foreach ($by as $x) {
+        foreach (['arrears', 'cur', 'plan', 'coll', 'exp'] as $f) { $x[$f] = round($x[$f], 2); }
+        $rows[] = $x;
     }
     header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
     echo json_encode(['rows' => $rows, 'month' => substr($today, 0, 7), 'today' => $today], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);

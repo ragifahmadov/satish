@@ -1,7 +1,7 @@
 <?php
 // «Zənglər» ekranının məlumatı (yalnız oxuma; yazı api.php?col=contract_calls ilə — log eyni əməliyyatda).
 //   GET calls-api.php?op=today                         — bu gün zəng ediləcəklər (son zəngin növbəti zəng tarixi çatıb / vəd pozulub / vəd tarixi bu gündür)
-//   GET calls-api.php?op=overdue&collector=&curator=&status=&gecMin=&called=&days=  — gecikmiş müqavilələr (zəng vəziyyəti ilə)
+//   GET calls-api.php?op=overdue&collector=&curator=&status=&gecMin=&gecMax=&called=&days=  — gecikmiş müqavilələr (zəng vəziyyəti ilə)
 //   GET calls-api.php?op=history&from=&to=&user=&elaqe=&netice=&ved=               — zəng tarixçəsi
 //   GET calls-api.php?op=find&q=                       — müqavilə axtarışı (№, müştəri, telefon)
 //   GET calls-api.php?op=contract&id=                  — zəng kartı: müqavilə + bütün zəngləri
@@ -152,6 +152,9 @@ if ($op === 'overdue') {
     $status = id_param('status', false);
     $gm = (string) ($_GET['gecMin'] ?? '');
     $gecMin = $gm === '' ? CALL_OVERDUE_MIN_MONTHS : (ctype_digit($gm) ? max(CALL_OVERDUE_MIN_MONTHS, (int) $gm) : fail(400, 'Gecikmə (ay) düzgün deyil'));
+    $gx = (string) ($_GET['gecMax'] ?? '');   // ən çox (boş — həddsiz)
+    $gecMax = $gx === '' ? null : (ctype_digit($gx) ? (int) $gx : fail(400, 'Gecikmə (ay, ən çox) düzgün deyil'));
+    if ($gecMax !== null && $gecMax < $gecMin) fail(400, 'Gecikmə intervalı düzgün deyil: «ən çox» «ən az»dan kiçik ola bilməz.');
     $called = (string) ($_GET['called'] ?? '');
     if (!in_array($called, ['', 'never', 'stale'], true)) fail(400, 'Zəng filtri düzgün deyil');
     $dd = (string) ($_GET['days'] ?? '7');
@@ -160,6 +163,7 @@ if ($op === 'overdue') {
     $rows = [];
     foreach (base_rows($pdo, $ctx, $today) as $r) {
         if ($r['qaliq'] <= 0.009 || $r['gec'] < $gecMin) continue;
+        if ($gecMax !== null && $r['gec'] > $gecMax) continue;
         if ($col !== '' && ($col === '__none__' ? $r['col'] !== '' : $r['col'] !== $col)) continue;
         if ($cur !== '' && ($cur === '__none__' ? $r['cur'] !== '' : $r['cur'] !== $cur)) continue;
         if ($status !== '' && $r['st'] !== $status) continue;

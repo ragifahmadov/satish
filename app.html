@@ -3412,7 +3412,7 @@ const CL_PAGE_SIZE=50;
 let clTab='today';
 let clR={today:{rows:[],loaded:false,loading:false,err:'',req:0}, overdue:{rows:[],applied:null,loading:false,err:'',req:0}, history:{rows:[],applied:null,loading:false,err:'',req:0}};
 let clOF={}, clHF={};
-function resetClOF(){ clOF={collector:'',curator:'',status:'',gecMin:'',called:'',days:'7'}; }
+function resetClOF(){ clOF={collector:'',curator:'',status:'',gecMin:'',gecMax:'',called:'',days:'7'}; }
 function resetClHF(){ const t=bakuDateIso(); clHF={from:t.slice(0,8)+'01',to:t,user:'',elaqe:'',netice:'',ved:''}; }
 resetClOF(); resetClHF();
 let clUsers=[];
@@ -3498,6 +3498,7 @@ async function clSearch(tab, fOverride){
     if(!f.from || !f.to){ s.err='Hər iki tarixi seçin.'; s.applied=null; refreshCl(); return; }
     if(f.from>f.to){ s.err='Başlanğıc tarixi son tarixdən böyük ola bilməz.'; s.applied=null; refreshCl(); return; }
   }
+  if(tab==='overdue' && f.gecMin!=='' && f.gecMax!=='' && Number(f.gecMax)<Number(f.gecMin)){ s.err='Gecikmə intervalı düzgün deyil: «ən çox» «ən az»dan kiçik ola bilməz.'; s.applied=null; refreshCl(); return; }
   s.applied=JSON.parse(JSON.stringify(f));
   const qs='op='+tab+'&'+Object.entries(s.applied).filter(([k,v])=>v!=='').map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   const my=++s.req; s.loading=true; s.err=''; pageNum.calls=1; refreshCl();
@@ -3517,6 +3518,7 @@ function clFilterDescription(tab){
     if(f.curator) out.push({l:'Kurator',v:nm(state.curators,f.curator,curatorName)});
     if(f.status) out.push({l:'Status',v:statusName(f.status)});
     out.push({l:'Gecikmə (ay), ən azı',v:String(f.gecMin||OVERDUE_MIN_MONTHS)});
+    if(f.gecMax) out.push({l:'Gecikmə (ay), ən çox',v:String(f.gecMax)});
     if(f.called==='never') out.push({l:'Zəng',v:'Heç zəng edilməyib'});
     if(f.called==='stale') out.push({l:'Zəng',v:'Son '+f.days+' gündə zəng edilməyib'});
     return out;
@@ -3580,6 +3582,7 @@ async function renderCalls(){
       <div class="field"><label>Kurator</label><select data-clofilter="curator">${people(state.curators,f.curator,'Hamısı')}</select></div>
       <div class="field"><label>Status</label><select data-clofilter="status">${o('','Hamısı',f.status)}${statusValues(false).filter(v=>v.kod!=='bagli').map(v=>o(v.id,v.ad,f.status)).join('')}</select></div>
       <div class="field"><label>Gecikmə (ay), ən azı</label><input type="number" min="${OVERDUE_MIN_MONTHS}" step="1" data-clofilter="gecMin" value="${esc(f.gecMin)}" placeholder="${OVERDUE_MIN_MONTHS}"></div>
+      <div class="field"><label>Gecikmə (ay), ən çox</label><input type="number" min="${OVERDUE_MIN_MONTHS}" step="1" data-clofilter="gecMax" value="${esc(f.gecMax)}" placeholder="həddsiz"></div>
       <div class="field"><label>Zəng</label><select data-clofilter="called">${o('','Hamısı',f.called)}${o('never','Heç zəng edilməyib',f.called)}${o('stale','Son N gündə zəng edilməyib',f.called)}</select></div>
       <div class="field"><label>N (gün)</label><input type="number" min="1" max="365" step="1" data-clofilter="days" value="${esc(f.days)}"></div>
     </div>${reportFilterButtonsHtml('calls-overdue','cl-o-reset')}</div>${reportDirtyHtml('calls-overdue')}`;

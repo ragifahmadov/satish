@@ -165,3 +165,5 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
 33. **Məhkəmə statusu düzəlişi (bir dəfəlik, yalnız admin):** `court-status-fix.php` (Administrasiya menyusunda). Məhkəmə qeydi olan,
    statusu Məhkəmə/İcra/Bağlı olmayan müqavilələr; önizləmə — hazırkı status üzrə qruplar (defolt seçilir: Normal, Gecikmə, statussuz;
    öz statusları admin özü seçir); tətbiq hissə-hissə (50), eyni opId, sonda FIX xülasə; təkrar işlədilsə artıq Məhkəmə olanlara toxunmur.
+34. **Zənglər → Gecikmiş müqavilələr:** gecikmə ayı intervalla süzülür — «ən azı» (boş = 2, 2-dən az olmur) və «ən çox» (boş = həddsiz);
+   «ən çox» < «ən az» olarsa server 400, brauzer sorğu göndərmir.

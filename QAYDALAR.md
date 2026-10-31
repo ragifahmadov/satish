@@ -158,3 +158,10 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    cəmi plan; rəng <50 qırmızı, 50–80 sarı, ≥80 yaşıl. Excel + log.
 31. **Ödənişlər — «Bağlanmış müqavilələrdə də axtar»:** defolt söndürülüb, ekran menyudan hər açılanda söndürülür; seçiləndə bağlı
    müqavilələr də tapılır («Bağlı», «yalnız baxış» nişanı), açılanda yalnız baxış (qəbul forması, dəyiş/sil yoxdur; server 409).
+32. **Məhkəmə qeydi → status «Məhkəmə»:** müqaviləyə məhkəmə qeydi ƏLAVƏ olunanda (qeyd sayı artanda) server statusu avtomatik
+   «Məhkəmə» edir (`contract_status_court`, eyni əməliyyatda, loga «Avtomatik (məhkəmə qeydi)», status tarixi — bu gün; «Müqavilə
+   statusunu dəyişmək» hüququ tələb olunmur). İstisna: status artıq Məhkəmə və ya İcradır (geri salınmır), Bağlıdır (dəyişmir).
+   Qeyd silinəndə status dəyişmir. Mövcud qeydli müqavilələrə geriyə tətbiq olunmur.
+33. **Məhkəmə statusu düzəlişi (bir dəfəlik, yalnız admin):** `court-status-fix.php` (Administrasiya menyusunda). Məhkəmə qeydi olan,
+   statusu Məhkəmə/İcra/Bağlı olmayan müqavilələr; önizləmə — hazırkı status üzrə qruplar (defolt seçilir: Normal, Gecikmə, statussuz;
+   öz statusları admin özü seçir); tətbiq hissə-hissə (50), eyni opId, sonda FIX xülasə; təkrar işlədilsə artıq Məhkəmə olanlara toxunmur.

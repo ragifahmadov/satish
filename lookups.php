@@ -187,6 +187,35 @@ function contract_status_auto($pdo, $contractId, $reason) {
     return $new;
 }
 
+// Məhkəmə qeydi ƏLAVƏ olunanda (qeyd sayı artanda) status avtomatik «Məhkəmə» olur — eyni əməliyyatda, loga «Avtomatik».
+// İstisna: status artıq Məhkəmə və ya İcradırsa (İcra sonrakı mərhələdir — geri salınmır) və ya Bağlıdırsa (bağlı müqavilə dəyişmir).
+// Qeyd silinəndə status dəyişmir. Dəyişibsə yeni sətri (row_out), yoxsa null qaytarır.
+function contract_status_court($pdo, $contractId) {
+    global $SCHEMA;
+    $contractId = (string) $contractId;
+    $ids = contract_status_ids($pdo);
+    if (!isset($ids['mehkeme'])) return null;
+    $sel = $pdo->prepare("SELECT * FROM contracts WHERE id = ?");
+    $sel->execute([$contractId]);
+    $row = $sel->fetch();
+    if (!$row) return null;
+    $cur = contract_status_code($pdo, $row['statusId'] ?? '');
+    if (in_array($cur, ['mehkeme', 'icra', 'bagli'], true)) return null;
+    $schema = $SCHEMA['contracts'];
+    $old = row_out($row, $schema);
+    $pdo->prepare("UPDATE contracts SET statusId = ?, statusTarix = ? WHERE id = ?")->execute([$ids['mehkeme'], baku_today(), $contractId]);
+    $sel->execute([$contractId]);
+    $new = row_out($sel->fetch(), $schema);
+    $changes = audit_diff($pdo, 'contracts', $schema, $old, $new);
+    audit_insert($pdo, [
+        'action' => 'UPDATE', 'entity' => 'contracts', 'entityId' => $contractId,
+        'entityLabel' => audit_entity_label($pdo, 'contracts', $new), 'contractId' => $contractId,
+        'summary' => audit_cut('Avtomatik (məhkəmə qeydi): ' . audit_summary_update($changes), 480),
+        'changes' => $changes,
+    ]);
+    return $new;
+}
+
 // Statusu boş olan müqavilələrə ilkin status yazır (bir dəfəlik; idxaldan sonra da işləyir):
 // qalıq ≤ 0 → Bağlı, qrafik üzrə borc > 0 → Gecikmə, qalan → Normal. Bir xülasə sətri loga (FIX).
 function contract_status_bootstrap($pdo) {

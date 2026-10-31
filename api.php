@@ -288,6 +288,10 @@ try {
                 $sel->execute([':id' => $newId]);
                 $rowOut = row_out($sel->fetch(), $schema);
                 audit_log_create($pdo, $col, $schema, $rowOut);
+                if ($col === 'contracts' && count((array) ($rowOut['mehkemeQeydleri'] ?? [])) > 0) {   // məhkəmə qeydi ilə yaradılan müqavilə
+                    $courtRow = contract_status_court($pdo, $newId);
+                    if ($courtRow !== null) { $rowOut = $courtRow; }
+                }
                 if ($col === 'lookup_values') { lookup_after_write($pdo, $rowOut); }
                 if ($col === 'company_debt_ops') { cd_recalc_state($pdo, $rowOut['debtId']); }
                 // Ödənişdən sonra müqavilə statusu (Gecikmə→Normal, →Bağlı, Bağlı→geri) — eyni əməliyyatda, loga "Avtomatik"
@@ -432,6 +436,12 @@ try {
                 $sel2->execute([':id' => $id]);
                 $newOut = row_out($sel2->fetch(), $schema);
                 audit_log_update($pdo, $col, $schema, $oldOut, $newOut);  // dəyişiklik yoxdursa heç nə yazmır
+                // Məhkəmə qeydi əlavə olunubsa (say artıb) → status «Məhkəmə» (lookups.php → contract_status_court)
+                if ($col === 'contracts' && array_key_exists('mehkemeQeydleri', $body)
+                    && count((array) ($newOut['mehkemeQeydleri'] ?? [])) > count((array) ($oldOut['mehkemeQeydleri'] ?? []))) {
+                    $courtRow = contract_status_court($pdo, $id);
+                    if ($courtRow !== null) { $newOut = $courtRow; }
+                }
                 if ($col === 'lookup_values') { lookup_after_write($pdo, $newOut); }
                 if ($col === 'company_debt_ops') { cd_recalc_state($pdo, $newOut['debtId']); }
                 if ($col === 'company_debts') { cd_recalc_state($pdo, $newOut['id']); }

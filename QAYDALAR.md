@@ -167,3 +167,5 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    öz statusları admin özü seçir); tətbiq hissə-hissə (50), eyni opId, sonda FIX xülasə; təkrar işlədilsə artıq Məhkəmə olanlara toxunmur.
 34. **Zənglər → Gecikmiş müqavilələr:** gecikmə ayı intervalla süzülür — «ən azı» (boş = 2, 2-dən az olmur) və «ən çox» (boş = həddsiz);
    «ən çox» < «ən az» olarsa server 400, brauzer sorğu göndərmir.
+35. **İdarə paneli — «Bu ay bağlanan müqavilələr»:** statusu «Bağlı» və status tarixi cari aya (Bakı) düşən müqavilələrin sayı
+   (tam ödənişlə avtomatik və ya əllə/idxalla bağlanma); əhatə — istifadəçinin müqavilə əhatəsi (brauzerdəki siyahı serverdən süzülüb gəlir).

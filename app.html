@@ -587,6 +587,10 @@ function renderDashboard(){
   const totalIlkin=open.reduce((s,c)=>s+(Number(c.ilkinOdenis)||0),0);
   const totalDebt=open.reduce((s,c)=>s+contractDebt(c),0);
   const thisMonth=dashMonthTotal;
+  // Bu ay bağlanan müqavilələr: statusu «Bağlı» olan və status tarixi cari aya (Bakı) düşən müqavilələr
+  // (tam ödənişlə avtomatik və ya əllə bağlanma; əhatə serverdə tətbiq olunub — state.contracts yalnız görünənlərdir)
+  const ym=bakuDateIso().slice(0,7);
+  const closedThisMonth=state.contracts.filter(c=>isClosed(c) && (c.statusTarix||'').slice(0,7)===ym).length;
   setContent(`
     <div class="topbar"><div><h1>İdarə paneli</h1><div class="sub">Ümumi vəziyyətə baxış</div></div></div>
     <div class="kpis">
@@ -595,6 +599,7 @@ function renderDashboard(){
       <div class="card kpi"><div class="lbl">Toplanmış məbləğ</div><div class="val">${fmtMoney(totalPaid+totalIlkin)}</div></div>
       <div class="card kpi"><div class="lbl">Qalan ümumi borc</div><div class="val" style="color:var(--red)">${fmtMoney(totalDebt)}</div></div>
       <div class="card kpi"><div class="lbl">Bu ay toplanan</div><div class="val" style="color:var(--green)">${fmtMoney(thisMonth)}</div></div>
+      <div class="card kpi" id="kpi-closed-month"><div class="lbl">Bu ay bağlanan müqavilələr</div><div class="val">${closedThisMonth}</div></div>
     </div>
     <div class="section-title">Son müqavilələr</div>
     <div class="card">

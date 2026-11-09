@@ -107,12 +107,23 @@ try {
                     json_out($out);
                     break;
                 }
-                if ($agg === 'ret') {
-                    // Geri qaytarmalar (İdarə paneli): ümumi say və cəm (müsbət) + verilən ayda (YYYY-MM). Bütün görünən müqavilələr (bağlılar da).
+                // Dövr: from + to (YYYY-MM-DD, to daxil DEYİL) — İdarə panelinin hesabat dövrü; yoxdursa ym (YYYY-MM) ayı
+                $period = function () {
+                    $f = (string) ($_GET['from'] ?? ''); $t = (string) ($_GET['to'] ?? '');
+                    if ($f !== '' || $t !== '') {
+                        foreach ([$f, $t] as $d) {
+                            if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $d, $m) || !checkdate((int) $m[2], (int) $m[3], (int) $m[1])) { fail(400, 'from/to YYYY-MM-DD formatında olmalıdır'); }
+                        }
+                        if ($f >= $t) { fail(400, 'from to-dan kiçik olmalıdır'); }
+                        return [$f, $t];
+                    }
                     $ym = isset($_GET['ym']) ? $_GET['ym'] : date('Y-m');
                     if (!preg_match('/^\d{4}-\d{2}$/', $ym)) { fail(400, 'ym parametri YYYY-MM formatında olmalıdır'); }
-                    $start = $ym . '-01';
-                    $end = date('Y-m-d', strtotime($start . ' +1 month'));
+                    return [$ym . '-01', date('Y-m-d', strtotime($ym . '-01 +1 month'))];
+                };
+                if ($agg === 'ret') {
+                    // Geri qaytarmalar (İdarə paneli): ümumi say və cəm (müsbət) + verilən ayda (YYYY-MM). Bütün görünən müqavilələr (bağlılar da).
+                    [$start, $end] = $period();
                     $stmt = $pdo->prepare("SELECT COUNT(*) AS n, COALESCE(SUM(-p.meblag), 0) AS total,
                             COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s AND p.odemeTarixi < :e THEN 1 ELSE 0 END), 0) AS mn,
                             COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s2 AND p.odemeTarixi < :e2 THEN -p.meblag ELSE 0 END), 0) AS mt
@@ -122,11 +133,8 @@ try {
                     json_out(['count' => (int) $r['n'], 'total' => round((float) $r['total'], 2), 'monthCount' => (int) $r['mn'], 'monthTotal' => round((float) $r['mt'], 2)]);
                     break;
                 }
-                // $agg === 'month': verilən ayda (YYYY-MM) toplanan ödənişlərin cəmi
-                $ym = isset($_GET['ym']) ? $_GET['ym'] : date('Y-m');
-                if (!preg_match('/^\d{4}-\d{2}$/', $ym)) { fail(400, 'ym parametri YYYY-MM formatında olmalıdır'); }
-                $start = $ym . '-01';
-                $end = date('Y-m-d', strtotime($start . ' +1 month'));
+                // $agg === 'month': dövrdə (from–to və ya ym ayı) toplanan ödənişlərin cəmi
+                [$start, $end] = $period();
                 $stmt = $pdo->prepare("SELECT COALESCE(SUM(p.meblag), 0) FROM payments p
                     WHERE p.odemeTarixi >= :s AND p.odemeTarixi < :e AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu <> 'Geri qaytarma') $payFilter");
                 $stmt->execute(array_merge([':s' => $start, ':e' => $end], $cParams));

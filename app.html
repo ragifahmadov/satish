@@ -370,6 +370,19 @@ function salespersonName(id){ const s=byId(state.salespeople,id); return s?fullN
 function collectorName(id){ const c=byId(state.collectors,id); return c?fullName(c):'—'; }
 function curatorName(id){ const c=byId(state.curators,id); return c?fullName(c):'—'; }
 function currentYm(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+// İdarə panelinin hesabat dövrü: keçmiş ayın 5-dən (daxil) cari ayın 5-dək (daxil deyil, yəni 4-ü daxil), Bakı tarixi ilə.
+// {from, to — daxil deyil (server üçün), last — son gün (göstərmək üçün), label}
+const DASH_PERIOD_DAY=5;
+function dashPeriod(){
+  const t=bakuDateIso(), y=Number(t.slice(0,4)), m=Number(t.slice(5,7));
+  const iso=(yy,mm,dd)=>yy+'-'+String(mm).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
+  const py=m===1?y-1:y, pm=m===1?12:m-1, dd=DASH_PERIOD_DAY;
+  const from=iso(py,pm,dd), to=iso(y,m,dd);
+  const l=new Date(Date.UTC(y,m-1,dd)); l.setUTCDate(l.getUTCDate()-1);
+  const last=l.toISOString().slice(0,10);
+  return {from, to, last, label:fmtDate(from).slice(0,5)+' – '+fmtDate(last).slice(0,5)};
+}
+function inDashPeriod(d){ const p=dashPeriod(); return !!d && d>=p.from && d<p.to; }
 
 // Ödəniş qrafiki: müştəriyə ödənişə başlamaq üçün 40 gün güzəşt verilir — 1-ci taksitin AYI = müqavilə tarixi + 40 gün
 // düşən ay, sonrakılar hər növbəti ay (gün vacib deyil, taksit ay ərzində ödənilir). Serverdəki schedule_due_count() ilə EYNİ qayda.
@@ -513,8 +526,8 @@ const PSEUDO_LOADERS={
     }
   },
   paymentLast: async ()=>{ paymentLast=await apiPaymentLast(); },
-  dashMonth: async ()=>{ dashMonthTotal=await apiMonthSum(currentYm()); },
-  dashRet: async ()=>{ dashRet=await apiReturnTotals(currentYm()); },
+  dashMonth: async ()=>{ dashMonthTotal=await apiMonthSum(dashPeriod()); },
+  dashRet: async ()=>{ dashRet=await apiReturnTotals(dashPeriod()); },
 };
 async function ensureLoaded(cols){
   const need=cols.filter(c=>!loadedCols.has(c));
@@ -589,21 +602,21 @@ function renderDashboard(){
   const totalIlkin=open.reduce((s,c)=>s+(Number(c.ilkinOdenis)||0),0);
   const totalDebt=open.reduce((s,c)=>s+contractDebt(c),0);
   const thisMonth=dashMonthTotal;
-  // Bu ay bağlanan müqavilələr: statusu «Bağlı» olan və status tarixi cari aya (Bakı) düşən müqavilələr
+  // Dövrdə bağlanan müqavilələr: statusu «Bağlı» olan və status tarixi hesabat dövrünə (keçmiş ayın 5-i — cari ayın 4-ü) düşənlər
   // (tam ödənişlə avtomatik və ya əllə bağlanma; əhatə serverdə tətbiq olunub — state.contracts yalnız görünənlərdir)
-  const ym=bakuDateIso().slice(0,7);
-  const closedThisMonth=state.contracts.filter(c=>isClosed(c) && (c.statusTarix||'').slice(0,7)===ym).length;
+  const per=dashPeriod();
+  const closedThisMonth=state.contracts.filter(c=>isClosed(c) && inDashPeriod(c.statusTarix||'')).length;
   setContent(`
-    <div class="topbar"><div><h1>İdarə paneli</h1><div class="sub">Ümumi vəziyyətə baxış</div></div></div>
+    <div class="topbar"><div><h1>İdarə paneli</h1><div class="sub">Ümumi vəziyyətə baxış · hesabat dövrü: <strong>${fmtDate(per.from)} – ${fmtDate(per.last)}</strong></div></div></div>
     <div class="kpis">
       <div class="card kpi"><div class="lbl">Aktiv müqavilələr</div><div class="val">${open.length}</div></div>
       <div class="card kpi"><div class="lbl">Ümumi satış məbləği</div><div class="val">${fmtMoney(totalSales)}</div></div>
       <div class="card kpi"><div class="lbl">Toplanmış məbləğ</div><div class="val">${fmtMoney(totalPaid+totalIlkin)}</div></div>
       <div class="card kpi"><div class="lbl">Qalan ümumi borc</div><div class="val" style="color:var(--red)">${fmtMoney(totalDebt)}</div></div>
-      <div class="card kpi"><div class="lbl">Bu ay toplanan</div><div class="val" style="color:var(--green)">${fmtMoney(thisMonth)}</div></div>
-      <div class="card kpi" id="kpi-closed-month"><div class="lbl">Bu ay bağlanan müqavilələr</div><div class="val">${closedThisMonth}</div></div>
+      <div class="card kpi"><div class="lbl">Toplanan (${per.label})</div><div class="val" style="color:var(--green)">${fmtMoney(thisMonth)}</div></div>
+      <div class="card kpi" id="kpi-closed-month"><div class="lbl">Bağlanan müqavilələr (${per.label})</div><div class="val">${closedThisMonth}</div></div>
       <div class="card kpi" id="kpi-returns"><div class="lbl">Geri qaytarmalar</div><div class="val" style="color:var(--red)">${fmtMoney(dashRet.total)}</div>
-        <div class="muted" style="font-size:12px;margin-top:4px;">${dashRet.count} əməliyyat · bu ay: ${dashRet.monthCount} / ${fmtMoney(dashRet.monthTotal)}</div></div>
+        <div class="muted" style="font-size:12px;margin-top:4px;">${dashRet.count} əməliyyat · ${per.label}: ${dashRet.monthCount} / ${fmtMoney(dashRet.monthTotal)}</div></div>
     </div>
     <div class="section-title">Son müqavilələr</div>
     <div class="card">
@@ -1744,7 +1757,7 @@ function recalcContractPaymentAggregates(cid){
   if(ret) returnSums[cid]=ret; else delete returnSums[cid];
   if(last) paymentLast[cid]=last; else delete paymentLast[cid];
 }
-function monthPart(p){ return (!p || isReturnPayment(p) || (p.odemeTarixi||'').slice(0,7)!==currentYm())?0:(Number(p.meblag)||0); }
+function monthPart(p){ return (!p || isReturnPayment(p) || !inDashPeriod(p.odemeTarixi||''))?0:(Number(p.meblag)||0); }   // İdarə panelinin dövrü
 function openPaymentEdit(id){
   const p=byId(state.payments,id);
   if(!p) return;
@@ -1849,7 +1862,7 @@ async function recordQuickPayment(contractId){
     } else {
       paymentSums[cid]=(Number(paymentSums[cid])||0)+amt;
       if(amt>0 && (!paymentLast[cid] || date>paymentLast[cid])) paymentLast[cid]=date;
-      if(date.slice(0,7)===currentYm()) dashMonthTotal+=amt;
+      if(inDashPeriod(date)) dashMonthTotal+=amt;
     }
     renderScreen();
   }catch(err){
@@ -5285,13 +5298,13 @@ async function apiPaymentLast(){
   return r.json();
 }
 // Geri qaytarmalar (İdarə paneli): {count, total, monthCount, monthTotal} — serverdə, əhatə daxilində
-async function apiReturnTotals(ym){
-  const r=await fetch(API_BASE+'payments&agg=ret&ym='+encodeURIComponent(ym));
+async function apiReturnTotals(p){
+  const r=await fetch(API_BASE+'payments&agg=ret&from='+p.from+'&to='+p.to);
   if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası (geri qaytarmalar)'));
   return r.json();
 }
-async function apiMonthSum(ym){
-  const r=await fetch(API_BASE+'payments&agg=month&ym='+encodeURIComponent(ym));
+async function apiMonthSum(p){
+  const r=await fetch(API_BASE+'payments&agg=month&from='+p.from+'&to='+p.to);
   if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası (aylıq cəm)'));
   const j=await r.json();
   return Number(j.total)||0;

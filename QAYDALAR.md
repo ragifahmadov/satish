@@ -171,3 +171,6 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    (tam ödənişlə avtomatik və ya əllə/idxalla bağlanma); əhatə — istifadəçinin müqavilə əhatəsi (brauzerdəki siyahı serverdən süzülüb gəlir).
 36. **İdarə paneli — «Geri qaytarmalar»:** ümumi say və cəm (müsbət), altında bu ayın sayı/cəmi; serverdə aqreqat
    (`api.php?col=payments&agg=ret&ym=YYYY-MM`, bayraq `@month` — İdarə paneli hüququ), əhatə daxilində; bütün görünən müqavilələr (bağlılar da).
+37. **İdarə panelinin hesabat dövrü:** «Toplanan», «Bağlanan müqavilələr» və «Geri qaytarmalar»ın dövr hissəsi — keçmiş ayın 5-dən
+   (daxil) cari ayın 5-dək (daxil deyil, yəni 4-ü daxil), Bakı tarixi ilə (`dashPeriod()`, `DASH_PERIOD_DAY=5`). Server aqreqatları
+   `agg=month` / `agg=ret` `from`+`to` (to daxil deyil) qəbul edir; `ym` köhnə uyğunluq üçün qalır. Dövr başlıqda və kart adlarında yazılır.

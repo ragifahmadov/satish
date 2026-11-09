@@ -296,6 +296,7 @@ let paymentSums={};   // müqavilə id -> ödənişlərin cəmi (geri qaytarma x
 let returnSums={};    // müqavilə id -> geri qaytarılan (mal qaytarılması) məbləğ, müsbət ədəd
 let paymentLast={};   // müqavilə id -> ən son real ödəniş tarixi (YYYY-MM-DD)
 let dashMonthTotal=0; // bu ay toplanan (idarə paneli)
+let dashRet={count:0,total:0,monthCount:0,monthTotal:0}; // geri qaytarmalar (idarə paneli)
 function upsertInState(col, item){
   if(!state[col] || !item || !item.id) return;
   const idx=state[col].findIndex(x=>x.id===item.id);
@@ -472,7 +473,7 @@ function setContent(html){ document.getElementById('content').innerHTML=html; }
 // Hər ekranın faktiki ehtiyac duyduğu cədvəllər (ad/borc kimi hesablanan
 // sahələr üçün başqa cədvəllərə də baxmaq lazım ola bilər).
 const SCREEN_DEPS={
-  dashboard:['contracts','paymentSums','customers','dashMonth','lookup_types','lookup_values'],
+  dashboard:['contracts','paymentSums','customers','dashMonth','dashRet','lookup_types','lookup_values'],
   salespeople:['salespeople'],
   collectors:['collectors'],
   curators:['curators'],
@@ -513,6 +514,7 @@ const PSEUDO_LOADERS={
   },
   paymentLast: async ()=>{ paymentLast=await apiPaymentLast(); },
   dashMonth: async ()=>{ dashMonthTotal=await apiMonthSum(currentYm()); },
+  dashRet: async ()=>{ dashRet=await apiReturnTotals(currentYm()); },
 };
 async function ensureLoaded(cols){
   const need=cols.filter(c=>!loadedCols.has(c));
@@ -600,6 +602,8 @@ function renderDashboard(){
       <div class="card kpi"><div class="lbl">Qalan ümumi borc</div><div class="val" style="color:var(--red)">${fmtMoney(totalDebt)}</div></div>
       <div class="card kpi"><div class="lbl">Bu ay toplanan</div><div class="val" style="color:var(--green)">${fmtMoney(thisMonth)}</div></div>
       <div class="card kpi" id="kpi-closed-month"><div class="lbl">Bu ay bağlanan müqavilələr</div><div class="val">${closedThisMonth}</div></div>
+      <div class="card kpi" id="kpi-returns"><div class="lbl">Geri qaytarmalar</div><div class="val" style="color:var(--red)">${fmtMoney(dashRet.total)}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px;">${dashRet.count} əməliyyat · bu ay: ${dashRet.monthCount} / ${fmtMoney(dashRet.monthTotal)}</div></div>
     </div>
     <div class="section-title">Son müqavilələr</div>
     <div class="card">
@@ -5278,6 +5282,12 @@ async function apiPaymentSums(){
 async function apiPaymentLast(){
   const r=await fetch(API_BASE+'payments&agg=last');
   if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası (son ödəniş tarixləri)'));
+  return r.json();
+}
+// Geri qaytarmalar (İdarə paneli): {count, total, monthCount, monthTotal} — serverdə, əhatə daxilində
+async function apiReturnTotals(ym){
+  const r=await fetch(API_BASE+'payments&agg=ret&ym='+encodeURIComponent(ym));
+  if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası (geri qaytarmalar)'));
   return r.json();
 }
 async function apiMonthSum(ym){

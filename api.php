@@ -80,7 +80,7 @@ try {
             // "Geri qaytarma" əməliyyatları (mal qaytarılması) ödəniş sayılmır, ayrıca cəmlənir.
             if ($col === 'payments' && isset($_GET['agg'])) {
                 $agg = (string) $_GET['agg'];
-                $flags = ['sum' => '@sums', 'last' => '@last', 'month' => '@month'];
+                $flags = ['sum' => '@sums', 'last' => '@last', 'month' => '@month', 'ret' => '@month'];   // ret — İdarə paneli
                 if (!isset($flags[$agg])) { fail(400, 'Naməlum aqreqat'); }
                 if (!authz_has_flag($ctx, $flags[$agg])) { api_deny('Bu məlumata baxmaq üçün icazəniz yoxdur.'); }
 
@@ -105,6 +105,21 @@ try {
                     $out = [];
                     foreach ($stmt->fetchAll() as $row) { if ($row['lastDate']) { $out[$row['contractId']] = $row['lastDate']; } }
                     json_out($out);
+                    break;
+                }
+                if ($agg === 'ret') {
+                    // Geri qaytarmalar (İdarə paneli): ümumi say və cəm (müsbət) + verilən ayda (YYYY-MM). Bütün görünən müqavilələr (bağlılar da).
+                    $ym = isset($_GET['ym']) ? $_GET['ym'] : date('Y-m');
+                    if (!preg_match('/^\d{4}-\d{2}$/', $ym)) { fail(400, 'ym parametri YYYY-MM formatında olmalıdır'); }
+                    $start = $ym . '-01';
+                    $end = date('Y-m-d', strtotime($start . ' +1 month'));
+                    $stmt = $pdo->prepare("SELECT COUNT(*) AS n, COALESCE(SUM(-p.meblag), 0) AS total,
+                            COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s AND p.odemeTarixi < :e THEN 1 ELSE 0 END), 0) AS mn,
+                            COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s2 AND p.odemeTarixi < :e2 THEN -p.meblag ELSE 0 END), 0) AS mt
+                        FROM payments p WHERE p.emeliyyatNovu = 'Geri qaytarma' $payFilter");
+                    $stmt->execute(array_merge([':s' => $start, ':e' => $end, ':s2' => $start, ':e2' => $end], $cParams));
+                    $r = $stmt->fetch();
+                    json_out(['count' => (int) $r['n'], 'total' => round((float) $r['total'], 2), 'monthCount' => (int) $r['mn'], 'monthTotal' => round((float) $r['mt'], 2)]);
                     break;
                 }
                 // $agg === 'month': verilən ayda (YYYY-MM) toplanan ödənişlərin cəmi

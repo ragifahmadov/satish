@@ -169,3 +169,5 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    «ən çox» < «ən az» olarsa server 400, brauzer sorğu göndərmir.
 35. **İdarə paneli — «Bu ay bağlanan müqavilələr»:** statusu «Bağlı» və status tarixi cari aya (Bakı) düşən müqavilələrin sayı
    (tam ödənişlə avtomatik və ya əllə/idxalla bağlanma); əhatə — istifadəçinin müqavilə əhatəsi (brauzerdəki siyahı serverdən süzülüb gəlir).
+36. **İdarə paneli — «Geri qaytarmalar»:** ümumi say və cəm (müsbət), altında bu ayın sayı/cəmi; serverdə aqreqat
+   (`api.php?col=payments&agg=ret&ym=YYYY-MM`, bayraq `@month` — İdarə paneli hüququ), əhatə daxilində; bütün görünən müqavilələr (bağlılar da).

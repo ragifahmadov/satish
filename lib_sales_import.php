@@ -281,6 +281,7 @@ function si_analyze(array $rows, array $db, array $opts) {
         if ($it['tarix'] === null) $E[] = 'Tarix oxunmadı.';
         else {
             if ($it['tarix'] > $today) $E[] = 'Tarix gələcəkdədir (' . $it['tarix'] . ').';
+            elseif (!empty($opts['dateLocked']) && ($lk = ($opts['dateLocked'])($it['tarix'])) !== '') $E[] = $lk;   // bağlanmış hesabat ayı (QAYDALAR 40)
             elseif ($month !== '' && substr($it['tarix'], 0, 7) !== $month) $W[] = 'Tarix seçilmiş ayda deyil (' . $it['tarix'] . ').';
         }
         // məbləğlər

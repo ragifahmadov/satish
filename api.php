@@ -208,6 +208,8 @@ try {
             $why = authz_write_denied($ctx, $col, 'POST', $col === 'contracts' ? array_diff_key($body, ['statusId' => 1, 'statusTarix' => 1]) : $body);
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'POST', null, $body); }
             if ($why !== '') { api_deny($why); }
+            $why = period_write_check($pdo, $ctx, $col, 'POST', null, $body);   // bağlanmış hesabat ayı (QAYDALAR 40)
+            if ($why !== '') { fail(409, $why); }
 
             // Ödənişin təhsilatçısı: müqavilənin HAZIRKI təhsilatçısı (server özü yazır, brauzerin göndərdiyi nəzərə alınmır).
             // Təhsilatçı təyin olunmayıbsa ödəniş də, geri qaytarma da qəbul edilmir.
@@ -377,6 +379,8 @@ try {
             if ($why !== '') { api_deny($why); }
             // Bağlı müqavilə: yalnız statusun özü dəyişdirilə bilər (başqa sahə ilə birlikdə yox)
             if ($col === 'contracts' && contract_is_closed($pdo, $id) && array_keys($body) !== ['statusId']) { fail(409, CONTRACT_CLOSED_MSG); }
+            $why = period_write_check($pdo, $ctx, $col, 'PUT', $id, $body);   // bağlanmış hesabat ayı (QAYDALAR 40)
+            if ($why !== '') { fail(409, $why); }
             if ($col === 'payments') {
                 $why = authz_payment_row_denied($pdo, $ctx, $id);   // "Geri qaytarma" sətri → "Mal qaytarılması" hüququ
                 if ($why !== '') { api_deny($why); }
@@ -507,6 +511,8 @@ try {
             if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, $col, 'DELETE', $id, []); }
             if ($why === '' && $col === 'payments') { $why = authz_payment_row_denied($pdo, $ctx, $id); }
             if ($why !== '') { api_deny($why); }
+            $why = period_write_check($pdo, $ctx, $col, 'DELETE', $id, []);   // bağlanmış hesabat ayı (QAYDALAR 40)
+            if ($why !== '') { fail(409, $why); }
             if ($col === 'lookup_types' || $col === 'lookup_values') {
                 $why = lookup_delete_denied($pdo, $col, $id);
                 if ($why !== '') { fail(400, $why); }

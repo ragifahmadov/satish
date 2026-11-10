@@ -194,3 +194,17 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    tranzaksiyada, eyni opId ilə loga düşür + sonda bir xülasə (IMPORT). Təkrar işə salmaq təhlükəsizdir (№ bazada varsa keçilir). Satıcı
    uyğunluğu (`sales_import_aliases`, $SCHEMA-da deyil) yalnız idxal tamamlananda yazılır. Təhsilatçı TƏYİN OLUNMUR (faylda yoxdur) —
    «Təhsilatçı dəyişikliyi» ilə təyin edilir. Excel (yoxlama nəticəsi) server tərəfdə yaradılır: əvvəl STRİKT log, sonra fayl.
+40. **Hesabat ayları və ayın bağlanması** (`periods.php` qaydalar, `periods-api.php` server, cədvəllər `report_periods`, `period_snapshots` —
+   $SCHEMA-da deyil, avtomatik yaranır; ekran açarı `periods`): ay = ad + başlanğıc + son; üst-üstə düşmə və boşluq yoxdur; yalnız bir açıq
+   (cari) ay (son = boş, «bu günə qədər»). İlk ay əl ilə yaradılır; ayı bağlayanda son tarix seçilir (≥ başlanğıc, **≤ dünən**, Bakı) və növbəti
+   ay ertəsi gündən avtomatik açılır (ad təklifi: başlanğıc ayın 1–15-dədirsə həmin ay, yoxsa növbəti — «2026-Oktyabr», dəyişmək olar).
+   Hüquq: Baxış — siyahı və yekun önizləməsi; Dəyişiklik — ilk ay, bağlamaq, ad; **yenidən açmaq — yalnız admin, səbəb məcburi, yalnız son
+   bağlı ay** (açıq ay silinir, günləri birləşir, şəkil silinir). Bağlananda bir tranzaksiyada: status, şəkil (hər müqavilə: son tarixə
+   görə xalis satış, ilkin, ödənilib, endirim, qaytarma, qalıq, bağlı/bağlanma tarixi), növbəti ay və log (PERIOD_CLOSE + PERIOD_CREATE eyni
+   opId). **Kilid** (`period_write_check`, api.php POST/PUT/DELETE): tarixi bağlı aya düşən ödəniş / geri qaytarma / endirim (köhnə və yeni
+   tarix), müqavilənin maliyyə sahələri (tarix, məbləğ, ilkin, müddət — dəyişibsə; digər sahələr olar), təhsilatçı hesabatı → 409, admin
+   də. İlk aydan əvvəlki tarixlər — yalnız admin. Ay yoxdursa kilid işləmir. İdxal (satış idxalı): bağlı aya düşən sətir — xəta, admin
+   üçün — keçir. Kilidlənmir: zənglər, statuslar, məhkəmə qeydləri, təyinatlar. İdarə paneli: dövr = seçilmiş hesabat ayı (defolt cari
+   açıq ay); bağlı ay seçiləndə «Aktiv / Ümumi satış / Toplanmış / Qalıq borc / Bağlanan» — şəkildən (əhatə müqavilənin bugünkü təyinatı
+   ilə), «Toplanan / Qaytarma / Endirim» — dövr üzrə (məlumat kilidli olduğu üçün dəyişmir). Ay yoxdursa köhnə «5-dən 5-dək» qaydası.
+   Menyu: «Hesabat ayları» və «Aylıq satış idxalı» — «Administrasiya» qrupunda (qrup admin və bu iki hüquqdan biri olana görünür).

@@ -295,6 +295,22 @@ t('Satış idxalı: əhatəsi məhdud istifadəçi bloklanır (authz_scoped), b�
     authz_scoped(mk(['sales-import' => 2], [], 'selected', ['salespeople' => []])) && !authz_scoped($siWrite));
 t('Satış idxalı: Excel üçün «Excelə export» ayrıca hüquqdur', !authz_extra($siWrite, 'export') && authz_extra(mk(['sales-import' => 1], ['export' => true]), 'export'));
 
+/* ---------- Hesabat ayları (ayın bağlanması) ---------- */
+t('Hesabat ayları: ekran reyestrdə, needs boşdur (öz API-si periods-api.php)', isset(perm_screens()['periods']) && perm_screen_needs()['periods'] === []);
+t('Hesabat ayları: Baxış bağlaya bilmir, Dəyişiklik bağlayır', !authz_can(mk(['periods' => 1]), 'periods', 2) && authz_can(mk(['periods' => 2]), 'periods', 2));
+t('Ayın adı təklifi: 05.10 → Oktyabr, 11.11 → Noyabr, 20.11 → Dekabr, 20.12 → növbəti ilin Yanvarı',
+    period_suggest_name('2026-10-05') === '2026-Oktyabr' && period_suggest_name('2026-11-11') === '2026-Noyabr' && period_suggest_name('2026-11-20') === '2026-Dekabr' && period_suggest_name('2026-12-20') === '2027-Yanvar');
+try {
+    $plist = periods_all($pdo ?? get_pdo(), true);
+    $okSeq = true; $open = 0;
+    foreach ($plist as $i => $pp) {
+        if ($pp['status'] === 'acik') { $open++; if ($pp['son'] !== null || $i !== count($plist) - 1) $okSeq = false; }
+        elseif ($pp['son'] === null || $pp['son'] < $pp['baslama']) $okSeq = false;
+        if ($i > 0 && $plist[$i - 1]['son'] !== null && period_next_day((string) $plist[$i - 1]['son']) !== $pp['baslama']) $okSeq = false;
+    }
+    t('Real bazada hesabat ayları ardıcıldır (boşluq / üst-üstə düşmə yoxdur), açıq ay ən çox biri və sonuncudur (' . count($plist) . ' ay)', $okSeq && $open <= 1 && (!$plist || $open === 1));
+} catch (Throwable $e) { t('Hesabat ayları cədvəli oxundu', false, $e->getMessage()); }
+
 /* ---------- nəticə ---------- */
 $fail = 0;
 foreach ($results as $r) { if (!$r[1]) $fail++; }

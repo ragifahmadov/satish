@@ -86,6 +86,8 @@ function si_seller_map_in() {
 }
 function si_month_in() { $m = (string) ($_POST['month'] ?? ''); return preg_match('/^\d{4}-\d{2}$/', $m) ? $m : ''; }
 function si_today() { return baku_today(); }
+// Bağlanmış hesabat ayına düşən satış: admin — keçir, digərləri — sətir xətadır (QAYDALAR 40)
+function si_date_locked($pdo, $ctx) { return function ($d) use ($pdo, $ctx) { return period_import_locked($pdo, $ctx, $d); }; }
 function si_public($a, $db) {
     $people = [];
     foreach ($db['salespeople'] as $s) $people[] = ['id' => $s['id'], 'name' => trim($s['soyad'] . ' ' . $s['ad'])];
@@ -111,7 +113,7 @@ if ($action === 'analyze') {
         $job = si_job_load($jobId, $ctx);
     }
     $db = si_db_data($pdo);
-    $a = si_analyze($job['rows'], $db, ['month' => si_month_in(), 'sellerMap' => si_seller_map_in(), 'today' => si_today()]);
+    $a = si_analyze($job['rows'], $db, ['month' => si_month_in(), 'sellerMap' => si_seller_map_in(), 'today' => si_today(), 'dateLocked' => si_date_locked($pdo, $ctx)]);
     si_json(array_merge(['jobId' => $jobId, 'file' => $job['file'], 'canWrite' => $canWrite, 'canExport' => authz_extra($ctx, 'export')], si_public($a, $db)));
 }
 
@@ -129,7 +131,7 @@ if ($action === 'start') {
     $selected = json_decode((string) ($_POST['selected'] ?? '[]'), true);
     if (!is_array($selected) || !$selected) si_fail(400, 'İdxal üçün sətir seçilməyib.');
     $db = si_db_data($pdo);
-    $a = si_analyze($job['rows'], $db, ['month' => si_month_in(), 'sellerMap' => si_seller_map_in(), 'today' => si_today()]);
+    $a = si_analyze($job['rows'], $db, ['month' => si_month_in(), 'sellerMap' => si_seller_map_in(), 'today' => si_today(), 'dateLocked' => si_date_locked($pdo, $ctx)]);
     $plan = si_build_plan($a, $selected);
     if (!$plan) si_fail(400, 'Seçilmiş sətirlərin hamısı xətalıdır — idxal olunacaq heç nə yoxdur.');
     $user = si_seller_map_in();
@@ -244,7 +246,7 @@ if ($action === 'export') {
     $jobId = si_job_id($_POST['jobId'] ?? '');
     $job = si_job_load($jobId, $ctx);
     $db = si_db_data($pdo);
-    $a = si_analyze($job['rows'], $db, ['month' => si_month_in(), 'sellerMap' => si_seller_map_in(), 'today' => si_today()]);
+    $a = si_analyze($job['rows'], $db, ['month' => si_month_in(), 'sellerMap' => si_seller_map_in(), 'today' => si_today(), 'dateLocked' => si_date_locked($pdo, $ctx)]);
     $lv = ['error' => 'XƏTA', 'warn' => 'Xəbərdarlıq', 'ok' => 'Hazır'];
     $rows = [];
     foreach ($a['rows'] as $r) {

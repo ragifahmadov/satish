@@ -239,18 +239,20 @@
       <span>Yenilə</span>
     </button>
     <div class="sidebar-foot" id="user-info">Ortaq baza</div>
-    <div id="admin-group" class="admin-only">
+    <div id="admin-group" style="display:none;">
       <button class="navbtn" id="admin-group-btn" data-action="toggle-admin-group">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 3v5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6l7-3z"/><path d="M9.5 12l2 2 3.5-4"/></svg>
         <span>Administrasiya</span>
         <svg class="navchev" id="admin-group-chev" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
       </button>
       <div id="admin-group-items" style="display:none;">
-        <button class="navbtn navsub" data-action="nav" data-screen="user-access"><span>Səlahiyyətlər</span></button>
-        <button class="navbtn navsub" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
-        <a href="admin.php" class="navbtn navsub" style="text-decoration:none;"><span>İstifadəçilər</span></a>
-        <a href="import-ledger.php" class="navbtn navsub" style="text-decoration:none;"><span>İdxal</span></a>
-        <a href="court-status-fix.php" class="navbtn navsub" style="text-decoration:none;"><span>Məhkəmə statusu düzəlişi</span></a>
+        <button class="navbtn navsub admin-only" data-action="nav" data-screen="user-access"><span>Səlahiyyətlər</span></button>
+        <button class="navbtn navsub admin-only" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
+        <button class="navbtn navsub" id="nav-periods" data-action="nav" data-screen="periods" style="display:none;"><span>Hesabat ayları</span></button>
+        <a href="sales-import.php" class="navbtn navsub" id="nav-sales-import" style="text-decoration:none;display:none;"><span>Aylıq satış idxalı</span></a>
+        <a href="admin.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>İstifadəçilər</span></a>
+        <a href="import-ledger.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>İdxal</span></a>
+        <a href="court-status-fix.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>Məhkəmə statusu düzəlişi</span></a>
         <!-- status-import.php, fix-qrafik.php, reset.php menyudan çıxarılıb (səhifələr qalır, yalnız admin, ünvanla) -->
       </div>
     </div>
@@ -315,8 +317,7 @@ const SCREENS=[
   {id:'dashboard',label:'İdarə paneli',icon:'dashboard'},
   {group:'sales',label:'Satış',icon:'contract',children:[
     {id:'customers',label:'Müştərilər',icon:'customers'},
-    {id:'contracts',label:'Müqavilələr',icon:'contract'},
-    {id:'sales-import',label:'Aylıq satış idxalı',icon:'contract',href:'sales-import.php'}]},   // ayrıca səhifə (sales-import.php)
+    {id:'contracts',label:'Müqavilələr',icon:'contract'}]},
   {group:'collection',label:'Təhsilat',icon:'payment',children:[
     {id:'payments',label:'Ödənişlər',icon:'payment'},
     {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
@@ -374,8 +375,34 @@ function curatorName(id){ const c=byId(state.curators,id); return c?fullName(c):
 function currentYm(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 // İdarə panelinin hesabat dövrü: keçmiş ayın 5-dən (daxil) cari ayın 5-dək (daxil deyil, yəni 4-ü daxil), Bakı tarixi ilə.
 // {from, to — daxil deyil (server üçün), last — son gün (göstərmək üçün), label}
-const DASH_PERIOD_DAY=5;
+/* ---- Hesabat ayları (periods-api.php; QAYDALAR 40) ---- */
+let periodsData={periods:[],today:'',yesterday:'',canClose:false,canReopen:false};
+let periodsP=null;
+let dashSelId='';        // İdarə panelində seçilmiş ay (boş = cari açıq ay)
+let dashSnap=null;       // bağlı ayın şəkli (anlıq kartlar)
+function loadPeriods(force){
+  if(!periodsP || force){
+    periodsP=fetch('periods-api.php?op=list').then(r=>r.ok?r.json():null).catch(()=>null)
+      .then(d=>{ periodsData=(d&&Array.isArray(d.periods))?d:{periods:[],today:'',yesterday:'',canClose:false,canReopen:false}; return periodsData; });
+  }
+  return periodsP;
+}
+function isoNextDay(d){ const x=new Date(d+'T00:00:00Z'); x.setUTCDate(x.getUTCDate()+1); return x.toISOString().slice(0,10); }
+function periodSuggestName(start){ let y=+start.slice(0,4), m=+start.slice(5,7); if(+start.slice(8,10)>15){ m++; if(m>12){ m=1; y++; } } return y+'-'+AZ_MONTHS[m-1]; }
+// Brauzerdə yalnız rahatlıq üçün (düymələri gizlətmək); əsl kilid serverdədir
+function periodLockedLocal(date){
+  const list=periodsData.periods||[]; if(!list.length || !date) return false;
+  if(date<list[0].baslama) return !isAdmin();
+  return list.some(p=>p.status==='bagli' && date>=p.baslama && date<=p.son);
+}
+const DASH_PERIOD_DAY=5;   // hələ hesabat ayı yaradılmayıbsa: keçmiş ayın 5-i — cari ayın 5-i
 function dashPeriod(){
+  const list=periodsData.periods||[];
+  if(list.length){
+    const sel=list.find(p=>p.id===dashSelId) || list.find(p=>p.status==='acik') || list[list.length-1];
+    const last=sel.son||bakuDateIso();
+    return {from:sel.baslama, to:isoNextDay(last), last, label:sel.ad, id:sel.id, closed:sel.status==='bagli'};
+  }
   const t=bakuDateIso(), y=Number(t.slice(0,4)), m=Number(t.slice(5,7));
   const iso=(yy,mm,dd)=>yy+'-'+String(mm).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
   const py=m===1?y-1:y, pm=m===1?12:m-1, dd=DASH_PERIOD_DAY;
@@ -476,10 +503,15 @@ function renderNav(){
 }
 // "Administrasiya" qrupu: log ekranındaykən avtomatik açıq, əks halda düymə ilə açılıb-bağlanır
 let adminGroupOpen=false;
+// Qrup admin üçün, həmçinin «Hesabat ayları» və ya «Aylıq satış idxalı» hüququ olan istifadəçi üçün görünür (hər bənd öz hüququ ilə)
 function syncAdminGroup(){
   const items=document.getElementById('admin-group-items');
   if(!items) return;
-  const open=adminGroupOpen || currentScreen==='audit-log' || currentScreen==='user-access';
+  const showP=can('periods',1), showS=can('sales-import',1);
+  const grp=document.getElementById('admin-group'); if(grp) grp.style.display=(isAdmin()||showP||showS)?'':'none';
+  const np=document.getElementById('nav-periods'); if(np) np.style.display=showP?'':'none';
+  const ns=document.getElementById('nav-sales-import'); if(ns) ns.style.display=showS?'':'none';
+  const open=adminGroupOpen || currentScreen==='audit-log' || currentScreen==='user-access' || currentScreen==='periods';
   items.style.display=open?'block':'none';
   const chev=document.getElementById('admin-group-chev');
   if(chev) chev.classList.toggle('open',open);
@@ -490,7 +522,8 @@ function setContent(html){ document.getElementById('content').innerHTML=html; }
 // Hər ekranın faktiki ehtiyac duyduğu cədvəllər (ad/borc kimi hesablanan
 // sahələr üçün başqa cədvəllərə də baxmaq lazım ola bilər).
 const SCREEN_DEPS={
-  dashboard:['contracts','paymentSums','customers','dashMonth','dashRet','lookup_types','lookup_values'],
+  dashboard:['periods','contracts','paymentSums','customers','dashMonth','dashRet','dashSnap','lookup_types','lookup_values'],
+  periods:['periods'],
   salespeople:['salespeople'],
   collectors:['collectors'],
   curators:['curators'],
@@ -499,7 +532,7 @@ const SCREEN_DEPS={
   'company-debts':['company_debts','company_debt_ops'],
   customers:['customers'],
   contracts:['contracts','customers','salespeople','collectors','curators','paymentSums','lookup_types','lookup_values'],
-  payments:['contracts','customers','collectors','paymentSums','lookup_types','lookup_values'],
+  payments:['periods','contracts','customers','collectors','paymentSums','lookup_types','lookup_values'],
   reassign:['contracts','customers','collectors','paymentSums','lookup_types','lookup_values'],
   'reassign-curator':['contracts','customers','curators','paymentSums','lookup_types','lookup_values'],
   'debt-inquiry':['customers','contracts','collectors','paymentSums','lookup_types','lookup_values'],
@@ -533,8 +566,16 @@ const PSEUDO_LOADERS={
     }
   },
   paymentLast: async ()=>{ paymentLast=await apiPaymentLast(); },
-  dashMonth: async ()=>{ dashMonthTotal=await apiMonthSum(dashPeriod()); },
-  dashRet: async ()=>{ dashRet=await apiReturnTotals(dashPeriod()); },
+  periods: async ()=>{ await loadPeriods(true); },
+  dashMonth: async ()=>{ await loadPeriods(); dashMonthTotal=await apiMonthSum(dashPeriod()); },
+  dashRet: async ()=>{ await loadPeriods(); dashRet=await apiReturnTotals(dashPeriod()); },
+  dashSnap: async ()=>{
+    await loadPeriods(); const p=dashPeriod(); dashSnap=null;
+    if(!p.closed) return;
+    const r=await fetch('periods-api.php?op=dash&id='+encodeURIComponent(p.id));
+    if(!r.ok) throw new Error(await readErr(r,'Yükləmə xətası (ayın şəkli)'));
+    dashSnap=(await r.json()).snapshot;
+  },
 };
 async function ensureLoaded(cols){
   const need=cols.filter(c=>!loadedCols.has(c));
@@ -599,6 +640,7 @@ async function renderScreen(){
     case 'report-discounts': return renderReportDiscounts();
     case 'audit-log': return renderAuditLog();
     case 'user-access': return renderUserAccess();
+    case 'periods': return renderPeriods();
   }
 }
 
@@ -613,14 +655,21 @@ function renderDashboard(){
   // Dövrdə bağlanan müqavilələr: statusu «Bağlı» olan və status tarixi hesabat dövrünə (keçmiş ayın 5-i — cari ayın 4-ü) düşənlər
   // (tam ödənişlə avtomatik və ya əllə bağlanma; əhatə serverdə tətbiq olunub — state.contracts yalnız görünənlərdir)
   const per=dashPeriod();
-  const closedThisMonth=state.contracts.filter(c=>isClosed(c) && inDashPeriod(c.statusTarix||'')).length;
+  let closedThisMonth=state.contracts.filter(c=>isClosed(c) && inDashPeriod(c.statusTarix||'')).length;
+  // Bağlanmış ay seçilibsə «anlıq» kartlar bağlanma anındakı şəkildəndir (son tarixə görə), əhatə serverdə
+  const snap=per.closed?dashSnap:null;
+  const kActive=snap?snap.active:open.length, kSales=snap?snap.sales:totalSales, kColl=snap?snap.collectedTotal:totalPaid+totalIlkin, kDebt=snap?snap.debt:totalDebt;
+  if(snap) closedThisMonth=snap.closed;
+  const plist=(periodsData.periods||[]).slice().reverse();
   setContent(`
-    <div class="topbar"><div><h1>İdarə paneli</h1><div class="sub">Ümumi vəziyyətə baxış · hesabat dövrü: <strong>${fmtDate(per.from)} – ${fmtDate(per.last)}</strong></div></div></div>
+    <div class="topbar"><div><h1>İdarə paneli</h1><div class="sub">Ümumi vəziyyətə baxış · hesabat dövrü: <strong>${fmtDate(per.from)} – ${fmtDate(per.last)}</strong>${plist.length?` (${esc(per.label)}${per.closed?', bağlanıb':', cari'})`:''}</div></div>
+      ${plist.length?`<div class="field" style="margin:0;min-width:200px;"><label>Hesabat ayı</label><select id="dash-period">${plist.map(p=>`<option value="${p.id}"${p.id===per.id?' selected':''}>${esc(p.ad)}${p.status==='acik'?' (cari)':''}</option>`).join('')}</select></div>`:''}</div>
+    ${snap?`<div class="notice" id="dash-snap-note" style="margin-bottom:12px;">Bağlanmış ay: «Aktiv müqavilələr», «Ümumi satış», «Toplanmış», «Qalan borc» və «Bağlanan» — ayın son günü (${fmtDate(per.last)}) vəziyyətinə görə, ay bağlananda saxlanmış şəkildən.</div>`:''}
     <div class="kpis">
-      <div class="card kpi"><div class="lbl">Aktiv müqavilələr</div><div class="val">${open.length}</div></div>
-      <div class="card kpi"><div class="lbl">Ümumi satış məbləği</div><div class="val">${fmtMoney(totalSales)}</div></div>
-      <div class="card kpi"><div class="lbl">Toplanmış məbləğ</div><div class="val">${fmtMoney(totalPaid+totalIlkin)}</div></div>
-      <div class="card kpi"><div class="lbl">Qalan ümumi borc</div><div class="val" style="color:var(--red)">${fmtMoney(totalDebt)}</div></div>
+      <div class="card kpi"><div class="lbl">Aktiv müqavilələr</div><div class="val">${kActive}</div></div>
+      <div class="card kpi"><div class="lbl">Ümumi satış məbləği</div><div class="val">${fmtMoney(kSales)}</div></div>
+      <div class="card kpi"><div class="lbl">Toplanmış məbləğ</div><div class="val">${fmtMoney(kColl)}</div></div>
+      <div class="card kpi"><div class="lbl">Qalan ümumi borc</div><div class="val" style="color:var(--red)">${fmtMoney(kDebt)}</div></div>
       <div class="card kpi"><div class="lbl">Toplanan (${per.label})</div><div class="val" style="color:var(--green)">${fmtMoney(thisMonth)}</div></div>
       <div class="card kpi" id="kpi-closed-month"><div class="lbl">Bağlanan müqavilələr (${per.label})</div><div class="val">${closedThisMonth}</div></div>
       <div class="card kpi" id="kpi-returns"><div class="lbl">Geri qaytarmalar</div><div class="val" style="color:var(--red)">${fmtMoney(dashRet.total)}</div>
@@ -1752,7 +1801,8 @@ function paymentRowButtons(p){
   if(isClosed(byId(state.contracts,p.contractId))) return '';   // bağlı müqavilənin ödənişləri dəyişmir
   const ret=isReturnPayment(p);
   if(ret && !canExtra('goods-return')) return '';
-  if(isDiscountPayment(p) && !canExtra('discount')) return '';   // endirim sətri → "Endirim" hüququ da lazımdır (server də yoxlayır)
+  if(isDiscountPayment(p) && !canExtra('discount')) return '';
+  if(periodLockedLocal(p.odemeTarixi)) return '<span class="muted" title="Bağlanmış hesabat ayı" style="font-size:12px;">bağlı ay</span>';   // endirim sətri → "Endirim" hüququ da lazımdır (server də yoxlayır)
   return (canExtra('payment-edit')?`<button class="iconbtn" data-action="edit-payment" data-id="${p.id}" title="Dəyiş">${ICONS.edit}</button> `:'')
     +(canExtra('payment-delete')?`<button class="iconbtn" data-action="delete-payment" data-id="${p.id}" title="Sil">${ICONS.trash}</button>`:'');
 }
@@ -4229,6 +4279,151 @@ function renderReportDebtPayments(){
   refreshDp();
 }
 
+/* ============ HESABAT AYLARI (ayın bağlanması; periods-api.php, QAYDALAR 40) ============
+   Hüquq: ekran «Hesabat ayları» — Baxış (siyahı, yekun), Dəyişiklik (ilk ay, ayı bağlamaq, ad); yenidən açmaq — yalnız admin. Hamısı serverdə yoxlanır. */
+let perMsg='';
+async function periodsPost(op, body){
+  const r=await fetch('periods-api.php?op='+op,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+  return r.json();
+}
+function periodsChanged(){   // ay dəyişəndə idarə panelinin dövrü də dəyişir
+  ['periods','dashMonth','dashRet','dashSnap'].forEach(k=>loadedCols.delete(k));
+  dashSelId='';
+}
+function renderPeriods(){
+  const pd=periodsData, list=pd.periods||[], w=can('periods',2);
+  const open=list.find(p=>p.status==='acik');
+  const closedList=list.filter(p=>p.status==='bagli');
+  const lastClosed=closedList.length?closedList[closedList.length-1]:null;
+  const t=pd.today||bakuDateIso();
+  const prev=new Date(Date.UTC(+t.slice(0,4), +t.slice(5,7)-2, 5)).toISOString().slice(0,10);   // təklif: keçmiş ayın 5-i
+  const rows=list.slice().reverse().map(p=>`<tr data-period-row="${p.id}">
+      <td><strong>${esc(p.ad)}</strong></td><td>${fmtDate(p.baslama)}</td><td>${p.son?fmtDate(p.son):'<span class="muted">bu günə qədər</span>'}</td>
+      <td>${p.status==='acik'?'<span class="tag tag-green">Açıq (cari)</span>':'<span class="tag tag-gray">Bağlı</span>'}</td>
+      <td class="muted">${esc(p.closedBy||'')}</td><td class="muted">${p.closedAt?fmtBaku(p.closedAt):''}</td>
+      <td class="actions" style="white-space:nowrap;">
+        ${p.status==='acik'&&w?`<button class="btn btn-primary btn-sm" id="per-close-btn" data-action="per-close" data-id="${p.id}">Ayı bağla</button> `:''}
+        ${w?`<button class="btn btn-ghost btn-sm" data-action="per-rename" data-id="${p.id}">Adı</button> `:''}
+        ${lastClosed&&p.id===lastClosed.id&&pd.canReopen?`<button class="btn btn-ghost btn-sm" id="per-reopen-btn" data-action="per-reopen" data-id="${p.id}">Yenidən aç</button>`:''}
+      </td></tr>`).join('');
+  setContent(`
+    <div class="topbar"><div><h1>Hesabat ayları</h1><div class="sub">Ayın bağlanması: bağlanmış ayın tarixinə düşən ödəniş, geri qaytarma, endirim, müqavilənin maliyyə sahələri
+      (tarix, məbləğ, ilkin ödəniş, müddət) və təhsilatçı hesabatları dəyişdirilə bilməz</div></div></div>
+    ${perMsg?`<div class="notice" id="per-msg" style="margin-bottom:12px;">${esc(perMsg)}</div>`:''}
+    ${!list.length?(w?`<div class="card" style="padding:18px 20px;margin-bottom:14px;" id="per-init">
+      <div style="font-weight:600;margin-bottom:8px;">İlk hesabat ayını yaradın</div>
+      <div class="muted" style="font-size:13px;margin-bottom:12px;">Ay açıq (cari) yaranır; bağlayanda son tarixi siz seçirsiniz və növbəti ay avtomatik açılır.
+        Başlanğıcdan ƏVVƏLKİ tarixlərdəki məlumatı bundan sonra yalnız admin dəyişə bilər.</div>
+      <div class="filters">
+        <div class="field"><label>Başlanğıc</label><input type="date" id="per-init-start" value="${prev}" max="${t}"></div>
+        <div class="field"><label>Ayın adı</label><input type="text" id="per-init-name" value="${esc(periodSuggestName(prev))}" maxlength="60"></div>
+      </div>
+      <div class="field-err" id="per-init-err" style="display:none;margin-top:8px;"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button class="btn btn-primary" id="per-init-btn" data-action="per-init">Yarat</button></div>
+    </div>`:`<div class="card muted" style="padding:30px;text-align:center;">Hələ hesabat ayı yaradılmayıb.</div>`):''}
+    ${list.length?`<div class="card"><div class="table-scroll"><table class="table-compact" id="per-table">
+      <thead><tr><th>Ay</th><th>Başlanğıc</th><th>Son</th><th>Vəziyyət</th><th>Bağlayan</th><th>Bağlanma vaxtı</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`:''}
+    ${open?`<div class="muted" style="font-size:12px;margin-top:10px;">Cari ay: <strong>${esc(open.ad)}</strong>, ${fmtDate(open.baslama)}-dan. İlk aydan əvvəlki tarixlər (${fmtDate(list[0].baslama)}-dan əvvəl) bağlı sayılır — yalnız admin dəyişə bilər.</div>`:''}
+  `);
+  perMsg='';
+}
+async function submitPeriodInit(){
+  const err=document.getElementById('per-init-err'); err.style.display='none';
+  const baslama=document.getElementById('per-init-start').value, ad=document.getElementById('per-init-name').value.trim();
+  if(!baslama){ err.textContent='Başlanğıc tarixini seçin.'; err.style.display='block'; return; }
+  if(!confirm('İlk hesabat ayı «'+ad+'» '+fmtDate(baslama)+'-dan açılacaq. Bu tarixdən əvvəlki ödəniş və müqavilələri bundan sonra yalnız admin dəyişə biləcək. Davam edilsin?')) return;
+  try{ await periodsPost('init',{baslama, ad}); periodsChanged(); perMsg='Hesabat ayı yaradıldı: '+ad; await renderScreen(); }
+  catch(e){ err.textContent='Yaradılmadı: '+e.message; err.style.display='block'; }
+}
+function openPeriodClose(id){
+  const p=(periodsData.periods||[]).find(x=>x.id===id); if(!p) return;
+  const y=periodsData.yesterday||'';
+  const def=y<p.baslama?p.baslama:y;
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>Ayı bağla — ${esc(p.ad)}</h2>
+    <form id="period-close-form" data-id="${p.id}">
+      <div class="muted" style="font-size:13px;margin-bottom:10px;">Başlanğıc: <strong>${fmtDate(p.baslama)}</strong>. Son tarix ən gec dünən ola bilər (bu günün ödənişləri bağlı aya düşməməlidir).</div>
+      <div class="filters">
+        <div class="field"><label>Son tarix</label><input type="date" id="pc-son" value="${def}" min="${p.baslama}" max="${y}"></div>
+        <div class="field"><label>Növbəti ayın adı</label><input type="text" id="pc-next" value="${esc(periodSuggestName(isoNextDay(def)))}" maxlength="60"></div>
+      </div>
+      <div id="pc-preview" class="card" style="padding:12px 14px;margin-top:10px;"><div class="muted">Yekun hesablanır…</div></div>
+      <div class="notice" style="margin-top:10px;font-size:12.5px;">Bağlandıqdan sonra bu ayın tarixinə düşən ödəniş, geri qaytarma, endirim, müqavilənin maliyyə sahələri və təhsilatçı hesabatları dəyişdirilə bilməz (admin də). Növbəti ay avtomatik açılır.</div>
+      <div class="field-err" id="pc-err" style="display:none;margin-top:8px;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+        <button type="submit" class="btn btn-primary" id="pc-submit">Ayı bağla</button>
+      </div>
+    </form>`;
+  openModal();
+  loadPeriodPreview();
+}
+let pcReq=0;
+async function loadPeriodPreview(){
+  const f=document.getElementById('period-close-form'); if(!f) return;
+  const son=document.getElementById('pc-son').value, box=document.getElementById('pc-preview'), my=++pcReq;
+  document.getElementById('pc-next').value=son?periodSuggestName(isoNextDay(son)):'';
+  if(!son){ box.innerHTML='<div class="muted">Son tarixi seçin.</div>'; return; }
+  box.innerHTML='<div class="muted">Yekun hesablanır…</div>';
+  try{
+    const r=await fetch('periods-api.php?op=preview&id='+encodeURIComponent(f.dataset.id)+'&son='+son);
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json(); if(my!==pcReq) return;
+    const s=j.summary, row=(l,v)=>`<tr><td>${l}</td><td class="num"><strong>${v}</strong></td></tr>`;
+    box.innerHTML=`<div style="font-weight:600;margin-bottom:6px;">Yekun: ${fmtDate(j.from)} – ${fmtDate(j.to)}</div><table class="table-compact" id="pc-table"><tbody>
+      ${row('Toplanan (ödənişlər, '+s.payCount+')',fmtMoney(s.paySum))}${row('Geri qaytarma ('+s.retCount+')',fmtMoney(s.retSum))}${row('Endirim ('+s.discCount+')',fmtMoney(s.discSum))}
+      ${row('Yeni satışlar ('+s.newCount+')',fmtMoney(s.newSum))}${row('Yeni satışların ilkin ödənişi',fmtMoney(s.newIlkin))}${row('Bağlanan müqavilələr',s.closed)}
+      ${row('Ayın sonunda aktiv müqavilələr',s.active)}${row('Ayın sonunda qalıq borc',fmtMoney(s.debt))}</tbody></table>`;
+  }catch(e){ if(my===pcReq) box.innerHTML=`<div class="banner">${esc(e.message)}</div>`; }
+}
+async function submitPeriodClose(form){
+  const err=document.getElementById('pc-err'); err.style.display='none';
+  const son=document.getElementById('pc-son').value, nextAd=document.getElementById('pc-next').value.trim();
+  const p=(periodsData.periods||[]).find(x=>x.id===form.dataset.id);
+  if(!son){ err.textContent='Son tarixi seçin.'; err.style.display='block'; return; }
+  if(!confirm('«'+(p?p.ad:'')+'» '+fmtDate(son)+' tarixi ilə bağlansın? Bu ayın məlumatları kilidlənəcək, «'+nextAd+'» '+fmtDate(isoNextDay(son))+'-dan açılacaq.')) return;
+  try{ await periodsPost('close',{id:form.dataset.id, son, nextAd}); periodsChanged(); perMsg='Ay bağlandı: «'+(p?p.ad:'')+'». Cari ay: «'+nextAd+'».'; closeModal(); await renderScreen(); }
+  catch(e){ err.textContent='Bağlanmadı: '+e.message; err.style.display='block'; }
+}
+function openPeriodReopen(id){
+  const p=(periodsData.periods||[]).find(x=>x.id===id); if(!p) return;
+  const open=(periodsData.periods||[]).find(x=>x.status==='acik');
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>Ayı yenidən aç — ${esc(p.ad)}</h2>
+    <form id="period-reopen-form" data-id="${p.id}">
+      <div class="notice" style="font-size:12.5px;margin-bottom:10px;">«${esc(p.ad)}» yenidən açıq (cari) olacaq; ${open?`«${esc(open.ad)}» silinəcək və onun günləri bu aya birləşəcək; `:''}bağlanma şəkli silinəcək. Sonra ayı yenidən bağlamaq lazımdır.</div>
+      <div class="field"><label>Səbəb</label><textarea id="pr-reason" rows="3"></textarea></div>
+      <div class="field-err" id="pr-err" style="display:none;"></div>
+      <div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button><button type="submit" class="btn btn-primary" id="pr-submit">Yenidən aç</button></div>
+    </form>`;
+  openModal();
+}
+async function submitPeriodReopen(form){
+  const err=document.getElementById('pr-err'); err.style.display='none';
+  const reason=document.getElementById('pr-reason').value.trim();
+  if(!reason){ err.textContent='Səbəbi yazın.'; err.style.display='block'; return; }
+  try{ await periodsPost('reopen',{id:form.dataset.id, reason}); periodsChanged(); perMsg='Ay yenidən açıldı.'; closeModal(); await renderScreen(); }
+  catch(e){ err.textContent='Açılmadı: '+e.message; err.style.display='block'; }
+}
+function openPeriodRename(id){
+  const p=(periodsData.periods||[]).find(x=>x.id===id); if(!p) return;
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>Ayın adı</h2>
+    <form id="period-rename-form" data-id="${p.id}">
+      <div class="field"><label>Ad</label><input type="text" id="prn-ad" value="${esc(p.ad)}" maxlength="60"></div>
+      <div class="field-err" id="prn-err" style="display:none;"></div>
+      <div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button><button type="submit" class="btn btn-primary">Yadda saxla</button></div>
+    </form>`;
+  openModal();
+}
+async function submitPeriodRename(form){
+  const err=document.getElementById('prn-err'); err.style.display='none';
+  try{ await periodsPost('rename',{id:form.dataset.id, ad:document.getElementById('prn-ad').value.trim()}); periodsChanged(); closeModal(); await renderScreen(); }
+  catch(e){ err.textContent='Yadda saxlanmadı: '+e.message; err.style.display='block'; }
+}
+
 /* ============ HESABAT: ENDİRİMLƏR (report-api.php?report=discounts) ============
    Sətir = «Endirim» əməliyyatı (borcun silinməsi). Əhatə serverdə; əməkdaş = logda həmin sətri yaradan istifadəçi. */
 const EN_PAGE_SIZE=50;
@@ -4679,8 +4874,9 @@ const AUDIT_ACTIONS={
   USER_UNBLOCK:['Blokdan çıxarıldı','tag-green'], USER_PASSWORD:['Şifrə dəyişdi','tag-amber'], PASSWORD_FAILED:['Şifrə dəyişmə: səhv şifrə','tag-red'],
   USER_DELETE:['İstifadəçi silindi','tag-red'], EXPORT:['Excel export','tag-accent'],
   USER_PERMISSIONS:['Səlahiyyət dəyişdi','tag-amber'], ACCESS_DENIED:['İcazə verilmədi','tag-red'],
+  PERIOD_CREATE:['Hesabat ayı açıldı','tag-green'], PERIOD_CLOSE:['Ay bağlandı','tag-accent'], PERIOD_REOPEN:['Ay yenidən açıldı','tag-red'], PERIOD_RENAME:['Ayın adı dəyişdi','tag-amber'],
 };
-const AUDIT_ENTITIES={contract_calls:'Zəng',company_debts:'Şirkət borcu',company_debt_ops:'Şirkət borcu əməliyyatı',lookup_types:'Köməkçi məlumat tipi',lookup_values:'Köməkçi məlumat dəyəri',contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
+const AUDIT_ENTITIES={report_periods:'Hesabat ayı',contract_calls:'Zəng',company_debts:'Şirkət borcu',company_debt_ops:'Şirkət borcu əməliyyatı',lookup_types:'Köməkçi məlumat tipi',lookup_values:'Köməkçi məlumat dəyəri',contracts:'Müqavilə',payments:'Ödəniş',customers:'Müştəri',salespeople:'Satıcı',collectors:'Təhsilatçı',curators:'Kurator',users:'İstifadəçi',reports:'Hesabat'};
 
 // Log vaxtları serverdə UTC saxlanılır; burada Bakı vaxtı ilə göstərilir
 const _bakuFmt=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Baku',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
@@ -4931,7 +5127,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'report-closing':1,'report-discounts':1,'reassign-collector':2,'reassign-curator':2,'sales-import':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={periods:2,dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'report-closing':1,'report-discounts':1,'reassign-collector':2,'reassign-curator':2,'sales-import':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək','discount':'ödəniş ekranında endirim etmək və ya qalan borcu silmək (səbəb məcburi; pul sayılmır)','contract-status':'müqavilənin statusunu əllə dəyişmək (Normal, Gecikmə, Məhkəmə, İcra…); ödəniş zamanı avtomatik dəyişiklik bu hüquqdan asılı deyil'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
@@ -5305,6 +5501,10 @@ document.addEventListener('click', async (e)=>{
   if(action==='ua-none'){ uaSelectAll(btn.dataset.key,false); return; }
   if(action==='ua-cancel'){ uaCancel(); return; }
   if(action==='ua-save'){ await withButtonLoading(btn, ()=>uaSave()); return; }
+  if(action==='per-init'){ await withButtonLoading(btn, submitPeriodInit); return; }
+  if(action==='per-close'){ openPeriodClose(btn.dataset.id); return; }
+  if(action==='per-reopen'){ openPeriodReopen(btn.dataset.id); return; }
+  if(action==='per-rename'){ openPeriodRename(btn.dataset.id); return; }
   if(action==='toggle-admin-group'){ adminGroupOpen=!adminGroupOpen; syncAdminGroup(); return; }
   if(action==='audit-kind'){ auditFilters.kind=btn.dataset.kind; pageNum['audit-log']=1; renderAuditLog(); return; }
   if(action==='audit-reset'){ auditFilters=auditDefaultFilters(); pageNum['audit-log']=1; renderAuditLog(); return; }
@@ -5345,6 +5545,9 @@ document.addEventListener('submit', async (e)=>{
   if(e.target.id==='password-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitChangePassword(e.target)); }
   if(e.target.id==='creport-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCollectorReportForm(e.target)); }
   if(e.target.id==='payment-edit-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPaymentEdit(e.target)); }
+  if(e.target.id==='period-close-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPeriodClose(e.target)); }
+  if(e.target.id==='period-reopen-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPeriodReopen(e.target)); }
+  if(e.target.id==='period-rename-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPeriodRename(e.target)); }
   if(e.target.id==='discount-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitDiscount(e.target)); }
   if(e.target.id==='call-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCallForm(e.target)); }
 });
@@ -5352,6 +5555,9 @@ document.addEventListener('submit', async (e)=>{
 document.addEventListener('change', (e)=>{
   const t=e.target; if(!t) return;
   if(t.id==='qp-return'){ updateReturnToggleUi(t.checked); return; }
+  if(t.id==='dash-period'){ dashSelId=t.value; ['dashMonth','dashRet','dashSnap'].forEach(k=>loadedCols.delete(k)); renderScreen(); return; }
+  if(t.id==='pc-son'){ loadPeriodPreview(); return; }
+  if(t.id==='per-init-start'){ const n=document.getElementById('per-init-name'); if(n && t.value) n.value=periodSuggestName(t.value); return; }
   if(t.id==='contracts-status-filter'){ contractStatusFilter=t.value; pageNum.contracts=1; const sv=document.getElementById('search-contracts'); renderContracts(sv?sv.value:''); return; }
   const ds=t.dataset||{};
   if(ds.cfilter){ collFilters[ds.cfilter]=t.value; updateReportDirty('collections'); return; }

@@ -41,6 +41,7 @@ function perm_screens() {
         'report-closing' => 'Hesabat: Bağlanan müqavilələr',
         'report-discounts' => 'Hesabat: Endirimlər',
         'sales-import' => 'Aylıq satış idxalı',
+        'periods' => 'Hesabat ayları (ayın bağlanması)',
     ];
 }
 
@@ -105,6 +106,8 @@ function perm_screen_needs() {
         // Aylıq satış idxalı: ayrıca səhifə (sales-import.php + sales-import-api.php) öz API-si ilə işləyir — ümumi siyahılara ehtiyac yoxdur.
         // Baxış = faylı yoxlamaq; Dəyişiklik = idxal etmək (api.php-dən keçmir: yazma və log sales-import-api.php-dədir)
         'sales-import' => [],
+        // Hesabat ayları: öz API-si (periods-api.php); Baxış = siyahı və yekun, Dəyişiklik = ayı bağlamaq; yenidən açmaq — yalnız admin
+        'periods' => [],
     ];
 }
 
@@ -691,4 +694,5 @@ function collector_report_prepare($pdo, $body, $old, $id) {
 require_once __DIR__ . '/lookups.php';   // köməkçi məlumatlar + müqavilə statusu qaydaları
 require_once __DIR__ . '/company-debts.php';   // şirkətin borcları
 require_once __DIR__ . '/calls.php';
+require_once __DIR__ . '/periods.php';   // hesabat ayları, ayın bağlanması və kilid (QAYDALAR 40)
 require_once __DIR__ . '/closing.php';   // «Bağlanan müqavilələr» hesabatının qaydaları   // zənglər (ofis əməkdaşının müştəriyə zəngləri)

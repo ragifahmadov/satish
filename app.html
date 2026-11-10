@@ -315,7 +315,8 @@ const SCREENS=[
   {id:'dashboard',label:'İdarə paneli',icon:'dashboard'},
   {group:'sales',label:'Satış',icon:'contract',children:[
     {id:'customers',label:'Müştərilər',icon:'customers'},
-    {id:'contracts',label:'Müqavilələr',icon:'contract'}]},
+    {id:'contracts',label:'Müqavilələr',icon:'contract'},
+    {id:'sales-import',label:'Aylıq satış idxalı',icon:'contract',href:'sales-import.php'}]},   // ayrıca səhifə (sales-import.php)
   {group:'collection',label:'Təhsilat',icon:'payment',children:[
     {id:'payments',label:'Ödənişlər',icon:'payment'},
     {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
@@ -4930,7 +4931,7 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'report-closing':1,'report-discounts':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'report-closing':1,'report-discounts':1,'reassign-collector':2,'reassign-curator':2,'sales-import':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
 const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək','discount':'ödəniş ekranında endirim etmək və ya qalan borcu silmək (səbəb məcburi; pul sayılmır)','contract-status':'müqavilənin statusunu əllə dəyişmək (Normal, Gecikmə, Məhkəmə, İcra…); ödəniş zamanı avtomatik dəyişiklik bu hüquqdan asılı deyil'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];

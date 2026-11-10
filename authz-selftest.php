@@ -286,6 +286,15 @@ t('Bağlanma tarixi: borcu sıfıra endirən ödəniş; çatmayıbsa boş; ödə
     closing_date('2026-01-01', 180, [['2026-03-01', 100], ['2026-02-01', 50], ['2026-04-01', 30]]) === '2026-04-01' && closing_date('2026-01-01', 180, [['2026-03-01', 100]]) === '' && closing_date('2026-01-01', 0, []) === '2026-01-01');
 t('Bağlanan: hesabat reyestrdə', isset(perm_screens()['report-closing']));
 
+/* ---------- Aylıq satış idxalı ---------- */
+t('Satış idxalı: ekran reyestrdə və needs boşdur (öz API-si)', isset(perm_screens()['sales-import']) && perm_screen_needs()['sales-import'] === []);
+$siNone = mk([]); $siView = mk(['sales-import' => 1]); $siWrite = mk(['sales-import' => 2]);
+t('Satış idxalı: hüquqsuz — girişi yoxdur; Baxış — yoxlayır, idxal edə bilmir; Dəyişiklik — idxal edir',
+    !authz_can($siNone, 'sales-import', 1) && authz_can($siView, 'sales-import', 1) && !authz_can($siView, 'sales-import', 2) && authz_can($siWrite, 'sales-import', 2));
+t('Satış idxalı: əhatəsi məhdud istifadəçi bloklanır (authz_scoped), bütün müqavilələr əhatəsi — yox',
+    authz_scoped(mk(['sales-import' => 2], [], 'selected', ['salespeople' => []])) && !authz_scoped($siWrite));
+t('Satış idxalı: Excel üçün «Excelə export» ayrıca hüquqdur', !authz_extra($siWrite, 'export') && authz_extra(mk(['sales-import' => 1], ['export' => true]), 'export'));
+
 /* ---------- nəticə ---------- */
 $fail = 0;
 foreach ($results as $r) { if (!$r[1]) $fail++; }

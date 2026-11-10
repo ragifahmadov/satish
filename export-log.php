@@ -39,6 +39,7 @@ $REPORTS = [
     'report-calls' => ['Zəng hesabatı', 'report-calls'],
     'closing' => ['Bağlanan müqavilələr', 'report-closing'],
     'discounts' => ['Endirimlər', 'report-discounts'],
+    'sales-import' => ['Aylıq satış idxalı — yoxlama', 'sales-import'],   // fayl sales-import-api.php-də yaradılır (logu orada strikt yazılır)
     'collector-plan' => ['Təhsilatçılar üzrə (cari ay)', 'collector-reports'],
 ];
 

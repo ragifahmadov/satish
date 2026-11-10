@@ -182,3 +182,15 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    alınır), tarix düzgün və gələcək deyil, bağlı müqavilədə 409; təhsilatçı yazılmır (null), mobil təhsilatçı endirim edə bilməz; növ redaktədə
    dəyişmir. Dəyişmək/silmək üçün əlavə olaraq «Ödənişi dəyişmək/silmək». Hesabat «Endirimlər» (`report-discounts`, Excel + log):
    əməkdaş = logda sətrin CREATE yazısının istifadəçisi. İdarə panelində «Endirimlər» kartı (dövr + ümumi).
+39. **Aylıq satış idxalı** (`sales-import.php` + `sales-import-api.php` + `lib_sales_import.php`, ekran açarı `sales-import`): ayın satış siyahısı
+   (.xlsx, ilk vərəq, sütunlar BAŞLIĞA görə: TARIX, SENED NO, AAS, ILKIN ODENIS, DEYERI, AYLIQ ODENIS, FIN KOD, TEL NO, adres, SATİCİ).
+   Hüquq: Baxış = «Əvvəlcədən yoxla» (bazaya heç nə yazılmır); Dəyişiklik = «İdxal et»; Excel — ayrıca «Excelə export». Əhatəsi məhdud
+   istifadəçi işlədə bilməz. Eyni təhlil həm yoxlamada, həm idxalda SERVERDƏ yenidən aparılır (brauzerin göndərdiyi nəticəyə etibar yoxdur;
+   brauzer yalnız seçilmiş sətir nömrələrini və satıcı uyğunluğunu göndərir, xətalı sətir heç vaxt yazılmır). Xəta: təkrar/boş/bazada olan №,
+   ad boş, tarix gələcək, məbləğ düzgün deyil, nağd satış, satıcı tanınmayıb, eyni FIN-də fərqli ad, bazada birmənalı olmayan müştəri.
+   Xəbərdarlıq: FIN yox/səhv, telefon, tam olmayan ad, müddət > 12 ay, ehtimal olunan təkrar (defolt seçilmir). Müştəri: FIN → ad üzrə mövcud
+   tapılır, yoxsa yeni (mövcud müştəri DƏYİŞDİRİLMİR). Müddət = ⌈(dəyər − ilkin) ÷ aylıq − 0,05⌉; faylın aylığı sistemdəkindən >0,5 ₼ fərqlənirsə
+   müqavilənin qeydinə yazılır. Yazma: 30 sətirlik dəstələr, hər dəstə bir tranzaksiya; hər müştəri/müqavilə `audit_log_create` ilə eyni
+   tranzaksiyada, eyni opId ilə loga düşür + sonda bir xülasə (IMPORT). Təkrar işə salmaq təhlükəsizdir (№ bazada varsa keçilir). Satıcı
+   uyğunluğu (`sales_import_aliases`, $SCHEMA-da deyil) yalnız idxal tamamlananda yazılır. Təhsilatçı TƏYİN OLUNMUR (faylda yoxdur) —
+   «Təhsilatçı dəyişikliyi» ilə təyin edilir. Excel (yoxlama nəticəsi) server tərəfdə yaradılır: əvvəl STRİKT log, sonra fayl.

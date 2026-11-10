@@ -40,6 +40,7 @@ function perm_screens() {
         'report-calls' => 'Hesabat: Zənglər',
         'report-closing' => 'Hesabat: Bağlanan müqavilələr',
         'report-discounts' => 'Hesabat: Endirimlər',
+        'sales-import' => 'Aylıq satış idxalı',
     ];
 }
 
@@ -101,6 +102,9 @@ function perm_screen_needs() {
         'report-closing' => ['salespeople' => 'ref', 'collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Endirimlər: sətirlər report-api.php-dən; burada yalnız ad/status siyahıları
         'report-discounts' => ['collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
+        // Aylıq satış idxalı: ayrıca səhifə (sales-import.php + sales-import-api.php) öz API-si ilə işləyir — ümumi siyahılara ehtiyac yoxdur.
+        // Baxış = faylı yoxlamaq; Dəyişiklik = idxal etmək (api.php-dən keçmir: yazma və log sales-import-api.php-dədir)
+        'sales-import' => [],
     ];
 }
 

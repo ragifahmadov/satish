@@ -147,6 +147,8 @@
   .lk-type:hover{background:var(--bg-page);}
   .lk-type.active{background:rgba(184,134,63,.13);font-weight:600;}
   body:not(.is-admin) .admin-only{display:none !important;}
+  /* Administrasiya qrupu: admin görür; admin olmayan yalnız «Aylıq satış idxalı» hüququ varsa (qrupda yalnız həmin bənd görünür) */
+  body:not(.is-admin):not(.can-sales-import) #admin-group{display:none !important;}
   .modal-panel.wide{max-width:900px;}
   tr.clickable{cursor:pointer;}
   a.cl-link{color:inherit;font-weight:600;text-decoration:none;border-bottom:1px dashed var(--border);}
@@ -239,18 +241,19 @@
       <span>Yenilə</span>
     </button>
     <div class="sidebar-foot" id="user-info">Ortaq baza</div>
-    <div id="admin-group" class="admin-only">
+    <div id="admin-group">
       <button class="navbtn" id="admin-group-btn" data-action="toggle-admin-group">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 3v5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6l7-3z"/><path d="M9.5 12l2 2 3.5-4"/></svg>
         <span>Administrasiya</span>
         <svg class="navchev" id="admin-group-chev" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
       </button>
       <div id="admin-group-items" style="display:none;">
-        <button class="navbtn navsub" data-action="nav" data-screen="user-access"><span>Səlahiyyətlər</span></button>
-        <button class="navbtn navsub" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
-        <a href="admin.php" class="navbtn navsub" style="text-decoration:none;"><span>İstifadəçilər</span></a>
-        <a href="import-ledger.php" class="navbtn navsub" style="text-decoration:none;"><span>İdxal</span></a>
-        <a href="court-status-fix.php" class="navbtn navsub" style="text-decoration:none;"><span>Məhkəmə statusu düzəlişi</span></a>
+        <button class="navbtn navsub admin-only" data-action="nav" data-screen="user-access"><span>Səlahiyyətlər</span></button>
+        <button class="navbtn navsub admin-only" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
+        <a href="admin.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>İstifadəçilər</span></a>
+        <a href="import-ledger.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>İdxal</span></a>
+        <a href="court-status-fix.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>Məhkəmə statusu düzəlişi</span></a>
+        <a href="sales-import.php" class="navbtn navsub" style="text-decoration:none;"><span>Aylıq satış idxalı</span></a>   <!-- ayrıca səhifə; hüququ olan admin olmayan istifadəçi də görür -->
         <!-- status-import.php, fix-qrafik.php, reset.php menyudan çıxarılıb (səhifələr qalır, yalnız admin, ünvanla) -->
       </div>
     </div>
@@ -314,8 +317,7 @@ const SCREENS=[
   {id:'dashboard',label:'İdarə paneli',icon:'dashboard'},
   {group:'sales',label:'Satış',icon:'contract',children:[
     {id:'customers',label:'Müştərilər',icon:'customers'},
-    {id:'contracts',label:'Müqavilələr',icon:'contract'},
-    {id:'sales-import',label:'Aylıq satış idxalı',icon:'contract',href:'sales-import.php'}]},   // ayrıca səhifə (sales-import.php)
+    {id:'contracts',label:'Müqavilələr',icon:'contract'}]},
   {group:'collection',label:'Təhsilat',icon:'payment',children:[
     {id:'payments',label:'Ödənişlər',icon:'payment'},
     {id:'debt-inquiry',label:'Müştəri borc sorğusu',icon:'inquiry'},
@@ -5343,6 +5345,7 @@ function applyMe(u){
   currentUsername=me.username;
   document.getElementById('user-info').textContent=me.username+' ('+(isAdmin()?'Admin':'İstifadəçi')+')';
   if(isAdmin()) document.body.classList.add('is-admin');
+  if(!isAdmin() && can('sales-import',1)) document.body.classList.add('can-sales-import');
 }
 setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Serverə qoşulur</div></div></div>`);
 (async function boot(){

@@ -85,21 +85,22 @@ try {
                 if (!authz_has_flag($ctx, $flags[$agg])) { api_deny('Bu məlumata baxmaq üçün icazəniz yoxdur.'); }
 
                 if ($agg === 'sum') {
-                    // müqavilə -> [ödənişlərin cəmi, geri qaytarılan məbləğ (müsbət)]
+                    // müqavilə -> [borcu azaldan cəm (ödəniş + endirim), geri qaytarılan məbləğ (müsbət), o cümlədən endirim]
                     $stmt = $pdo->prepare("SELECT p.contractId,
                             SUM(CASE WHEN p.emeliyyatNovu = 'Geri qaytarma' THEN 0 ELSE p.meblag END) AS paid,
-                            SUM(CASE WHEN p.emeliyyatNovu = 'Geri qaytarma' THEN -p.meblag ELSE 0 END) AS ret
+                            SUM(CASE WHEN p.emeliyyatNovu = 'Geri qaytarma' THEN -p.meblag ELSE 0 END) AS ret,
+                            SUM(CASE WHEN p.emeliyyatNovu = 'Endirim' THEN p.meblag ELSE 0 END) AS disc
                         FROM payments p WHERE 1=1 $payFilter GROUP BY p.contractId");
                     $stmt->execute($cParams);
                     $out = [];
-                    foreach ($stmt->fetchAll() as $row) { $out[$row['contractId']] = [(float) $row['paid'], (float) $row['ret']]; }
+                    foreach ($stmt->fetchAll() as $row) { $out[$row['contractId']] = [(float) $row['paid'], (float) $row['ret'], (float) $row['disc']]; }
                     json_out($out);
                     break;
                 }
                 if ($agg === 'last') {
                     // müqavilə -> ən son (real, müsbət) ödəniş tarixi
                     $stmt = $pdo->prepare("SELECT p.contractId, MAX(p.odemeTarixi) AS lastDate FROM payments p
-                        WHERE p.meblag > 0 AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu <> 'Geri qaytarma') $payFilter
+                        WHERE p.meblag > 0 AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu NOT IN ('Geri qaytarma', 'Endirim')) $payFilter   -- endirim ödəniş deyil (son ödəniş tarixinə təsir etmir)
                         GROUP BY p.contractId");
                     $stmt->execute($cParams);
                     $out = [];
@@ -124,19 +125,24 @@ try {
                 if ($agg === 'ret') {
                     // Geri qaytarmalar (İdarə paneli): ümumi say və cəm (müsbət) + verilən ayda (YYYY-MM). Bütün görünən müqavilələr (bağlılar da).
                     [$start, $end] = $period();
-                    $stmt = $pdo->prepare("SELECT COUNT(*) AS n, COALESCE(SUM(-p.meblag), 0) AS total,
-                            COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s AND p.odemeTarixi < :e THEN 1 ELSE 0 END), 0) AS mn,
-                            COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s2 AND p.odemeTarixi < :e2 THEN -p.meblag ELSE 0 END), 0) AS mt
-                        FROM payments p WHERE p.emeliyyatNovu = 'Geri qaytarma' $payFilter");
-                    $stmt->execute(array_merge([':s' => $start, ':e' => $end, ':s2' => $start, ':e2' => $end], $cParams));
-                    $r = $stmt->fetch();
-                    json_out(['count' => (int) $r['n'], 'total' => round((float) $r['total'], 2), 'monthCount' => (int) $r['mn'], 'monthTotal' => round((float) $r['mt'], 2)]);
+                    // + Endirimlər (eyni dövr): disc* sahələri
+                    $q = function ($nov, $sign) use ($pdo, $start, $end, $payFilter, $cParams) {
+                        $stmt = $pdo->prepare("SELECT COUNT(*) AS n, COALESCE(SUM($sign p.meblag), 0) AS total,
+                                COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s AND p.odemeTarixi < :e THEN 1 ELSE 0 END), 0) AS mn,
+                                COALESCE(SUM(CASE WHEN p.odemeTarixi >= :s2 AND p.odemeTarixi < :e2 THEN $sign p.meblag ELSE 0 END), 0) AS mt
+                            FROM payments p WHERE p.emeliyyatNovu = :nov $payFilter");
+                        $stmt->execute(array_merge([':s' => $start, ':e' => $end, ':s2' => $start, ':e2' => $end, ':nov' => $nov], $cParams));
+                        return $stmt->fetch();
+                    };
+                    $r = $q('Geri qaytarma', '-'); $d = $q('Endirim', '');
+                    json_out(['count' => (int) $r['n'], 'total' => round((float) $r['total'], 2), 'monthCount' => (int) $r['mn'], 'monthTotal' => round((float) $r['mt'], 2),
+                        'discCount' => (int) $d['n'], 'discTotal' => round((float) $d['total'], 2), 'discMonthCount' => (int) $d['mn'], 'discMonthTotal' => round((float) $d['mt'], 2)]);
                     break;
                 }
                 // $agg === 'month': dövrdə (from–to və ya ym ayı) toplanan ödənişlərin cəmi
                 [$start, $end] = $period();
                 $stmt = $pdo->prepare("SELECT COALESCE(SUM(p.meblag), 0) FROM payments p
-                    WHERE p.odemeTarixi >= :s AND p.odemeTarixi < :e AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu <> 'Geri qaytarma') $payFilter");
+                    WHERE p.odemeTarixi >= :s AND p.odemeTarixi < :e AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu NOT IN ('Geri qaytarma', 'Endirim')) $payFilter");   // endirim pul deyil
                 $stmt->execute(array_merge([':s' => $start, ':e' => $end], $cParams));
                 json_out(['total' => (float) $stmt->fetchColumn()]);
                 break;
@@ -230,24 +236,32 @@ try {
                 }
                 $cid = (string) ($body['contractId'] ?? '');
                 if (contract_is_closed($pdo, $cid)) { fail(409, CONTRACT_CLOSED_MSG); }
-                $pc = payment_collector_for_contract($pdo, $cid);
-                $want = (string) ($body['reassignCollectorId'] ?? '');
-                if ($want !== '' && $want !== $pc) {
-                    $why = authz_write_denied($ctx, 'contracts', 'PUT', ['tehsilatciTeyinatlari' => []]);
-                    if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, 'contracts', 'PUT', $cid, ['tehsilatciTeyinatlari' => []]); }
-                    if ($why !== '') { api_deny($why); }
-                    $chk = $pdo->prepare("SELECT 1 FROM collectors WHERE id = ?");
-                    $chk->execute([$want]);
-                    if (!$chk->fetchColumn()) { fail(400, 'Seçilən təhsilatçı tapılmadı.'); }
-                    $reassignTo = $want;
-                    $pc = $want;
-                    if (audit_op_context()[0] === null) {   // logda müqavilə dəyişikliyi və ödəniş bir əməliyyat kimi qruplaşsın
-                        $_SERVER['HTTP_X_OP_ID'] = make_uuid();
-                        $_SERVER['HTTP_X_OP_LABEL'] = rawurlencode('Ödəniş + təhsilatçı dəyişikliyi');
+                if ((string) ($body['emeliyyatNovu'] ?? '') === 'Endirim') {
+                    // Endirim / borcun silinməsi: pul deyil — təhsilatçı yazılmır; səbəb məcburi; məbləğ > 0 və qalıq borcdan çox olmamalı
+                    $why = discount_prepare($pdo, $cid, $body, null);
+                    if ($why !== '') { fail(400, $why); }
+                    $body['collectorId'] = null;
+                    unset($body['reassignCollectorId']);
+                } else {
+                    $pc = payment_collector_for_contract($pdo, $cid);
+                    $want = (string) ($body['reassignCollectorId'] ?? '');
+                    if ($want !== '' && $want !== $pc) {
+                        $why = authz_write_denied($ctx, 'contracts', 'PUT', ['tehsilatciTeyinatlari' => []]);
+                        if ($why === '') { $why = authz_scope_write_denied($pdo, $ctx, 'contracts', 'PUT', $cid, ['tehsilatciTeyinatlari' => []]); }
+                        if ($why !== '') { api_deny($why); }
+                        $chk = $pdo->prepare("SELECT 1 FROM collectors WHERE id = ?");
+                        $chk->execute([$want]);
+                        if (!$chk->fetchColumn()) { fail(400, 'Seçilən təhsilatçı tapılmadı.'); }
+                        $reassignTo = $want;
+                        $pc = $want;
+                        if (audit_op_context()[0] === null) {   // logda müqavilə dəyişikliyi və ödəniş bir əməliyyat kimi qruplaşsın
+                            $_SERVER['HTTP_X_OP_ID'] = make_uuid();
+                            $_SERVER['HTTP_X_OP_LABEL'] = rawurlencode('Ödəniş + təhsilatçı dəyişikliyi');
+                        }
                     }
+                    if ($pc === null) { fail(400, PAYMENT_NO_COLLECTOR_MSG); }
+                    $body['collectorId'] = $pc;
                 }
-                if ($pc === null) { fail(400, PAYMENT_NO_COLLECTOR_MSG); }
-                $body['collectorId'] = $pc;
             }
 
             if ($col === 'collector_reports') {
@@ -371,6 +385,15 @@ try {
                 if (contract_is_closed($pdo, (string) $pc0->fetchColumn())) { fail(409, CONTRACT_CLOSED_MSG); }
                 // Ödənişin təhsilatçısı və müqaviləsi redaktədə dəyişmir (yalnız məbləğ, tarix, qeyd)
                 unset($body['collectorId'], $body['contractId'], $body['reassignCollectorId']);
+                $pn = $pdo->prepare("SELECT * FROM payments WHERE id = ?");
+                $pn->execute([(string) $id]);
+                $pRow = $pn->fetch();
+                if ($pRow && ((string) $pRow['emeliyyatNovu'] === 'Endirim' || (string) ($body['emeliyyatNovu'] ?? '') === 'Endirim')) {
+                    // endirimin növü dəyişmir (nə ödənişə, nə ödənişdən endirimə); məbləğ/tarix/səbəb yoxlanır
+                    if ((string) $pRow['emeliyyatNovu'] !== 'Endirim' || (array_key_exists('emeliyyatNovu', $body) && (string) $body['emeliyyatNovu'] !== 'Endirim')) { fail(400, 'Endirimin növü dəyişdirilə bilməz.'); }
+                    $why = discount_prepare($pdo, (string) $pRow['contractId'], array_merge(row_out($pRow, $schema), $body), row_out($pRow, $schema));
+                    if ($why !== '') { fail(400, $why); }
+                }
                 if (array_key_exists('meblag', $body)) {
                     $st = $pdo->prepare("SELECT emeliyyatNovu FROM payments WHERE id = ?");
                     $st->execute([(string) $id]);

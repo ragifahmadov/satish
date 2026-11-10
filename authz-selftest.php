@@ -80,6 +80,9 @@ $cases = [
     ['Ödəniş yaza bilir', $pay, 'payments', 'POST', ['emeliyyatNovu' => 'Ödəniş'], true],
     ['"Mal qaytarılması" hüququ olmadan geri qaytarma YAZA BİLMİR', $pay, 'payments', 'POST', ['emeliyyatNovu' => 'Geri qaytarma'], false],
     ['"Mal qaytarılması" hüququ ilə geri qaytarma yaza bilir', $payRet, 'payments', 'POST', ['emeliyyatNovu' => 'Geri qaytarma'], true],
+    ['"Endirim" hüququ olmadan endirim YAZA BİLMİR (Ödənişlər 2 olsa da)', $pay, 'payments', 'POST', ['emeliyyatNovu' => 'Endirim'], false],
+    ['"Endirim" hüququ + Ödənişlər (baxış) ilə endirim yaza bilir', mk(['payments' => 1], ['discount' => true]), 'payments', 'POST', ['emeliyyatNovu' => 'Endirim'], true],
+    ['"Endirim" hüququ ekransız kifayət etmir', mk([], ['discount' => true]), 'payments', 'POST', ['emeliyyatNovu' => 'Endirim'], false],
     ['Ödənişi "Geri qaytarma"-ya çevirmək də hüquq tələb edir', $pay, 'payments', 'PUT', ['emeliyyatNovu' => 'Geri qaytarma'], false],
     ['Ödənişi silə BİLMİR (yalnız dəyişiklik)', $pay, 'payments', 'DELETE', [], false],
     ['Ödəniş qəbul edən (Dəyişiklik) "Ödənişi dəyişmək" olmadan ödənişi DƏYİŞƏ BİLMİR', $pay, 'payments', 'PUT', ['meblag' => 5], false],
@@ -144,7 +147,8 @@ t('Bağlı təhsilatçı: yalnız bugünkü tarix, yalnız müsbət ödəniş, t
     authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => 5]) === ''
     && authz_collector_payment_denied($linked, ['odemeTarixi' => '2000-01-01', 'meblag' => 5]) !== ''
     && authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => -5, 'emeliyyatNovu' => 'Geri qaytarma']) !== ''
-    && authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => 5, 'reassignCollectorId' => $cid]) !== '');
+    && authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => 5, 'reassignCollectorId' => $cid]) !== ''
+    && authz_collector_payment_denied($linked, ['odemeTarixi' => baku_today(), 'meblag' => 5, 'emeliyyatNovu' => 'Endirim']) !== '');
 t('Bağlı olmayan istifadəçiyə bu məhdudiyyət tətbiq olunmur', authz_collector_payment_denied(mk(['payments' => 2]), ['odemeTarixi' => '2000-01-01', 'meblag' => 5]) === '');
 
 t('Müqavilə axtarışı: hüquq açarı və filtr siyahıları (adlar)', authz_can(mk(['report-contracts' => 1]), 'report-contracts', 1) && authz_read_tier(mk(['report-contracts' => 1]), 'curators') === 'ref' && authz_read_tier(mk(['report-contracts' => 1]), 'contracts') === null);
@@ -281,15 +285,6 @@ t('Bağlanan: cari ay yoxlanmır (ay hələ bitməyib)', closing_max_arrears('20
 t('Bağlanma tarixi: borcu sıfıra endirən ödəniş; çatmayıbsa boş; ödəniş tələb olunmursa müqavilə tarixi',
     closing_date('2026-01-01', 180, [['2026-03-01', 100], ['2026-02-01', 50], ['2026-04-01', 30]]) === '2026-04-01' && closing_date('2026-01-01', 180, [['2026-03-01', 100]]) === '' && closing_date('2026-01-01', 0, []) === '2026-01-01');
 t('Bağlanan: hesabat reyestrdə', isset(perm_screens()['report-closing']));
-
-/* ---------- Aylıq satış idxalı ---------- */
-t('Satış idxalı: ekran reyestrdə və needs boşdur (öz API-si)', isset(perm_screens()['sales-import']) && perm_screen_needs()['sales-import'] === []);
-$siNone = mk([]); $siView = mk(['sales-import' => 1]); $siWrite = mk(['sales-import' => 2]);
-t('Satış idxalı: hüquqsuz — girişi yoxdur; Baxış — yoxlayır, idxal edə bilmir; Dəyişiklik — idxal edir',
-    !authz_can($siNone, 'sales-import', 1) && authz_can($siView, 'sales-import', 1) && !authz_can($siView, 'sales-import', 2) && authz_can($siWrite, 'sales-import', 2));
-t('Satış idxalı: əhatəsi məhdud istifadəçi bloklanır (authz_scoped), bütün müqavilələr əhatəsi — yox',
-    authz_scoped(mk(['sales-import' => 2], [], 'selected', ['salespeople' => []])) && !authz_scoped($siWrite));
-t('Satış idxalı: Excel üçün «Excelə export» ayrıca hüquqdur', !authz_extra($siWrite, 'export') && authz_extra(mk(['sales-import' => 1], ['export' => true]), 'export'));
 
 /* ---------- nəticə ---------- */
 $fail = 0;

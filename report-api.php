@@ -36,6 +36,7 @@ $REPORT_SCREENS = [
     'debt-payments' => 'report-debt-payments',
     'calls' => 'report-calls',
     'closing' => 'report-closing',
+    'discounts' => 'report-discounts',
     'collector-plan' => 'collector-reports',   // Təhsilatçı hesabatları → «Təhsilatçılar üzrə» tabı
 ];
 
@@ -93,6 +94,7 @@ if ($report === 'collections') {
     };
     [$cc, $cp] = $colCond('p.collectorId', 'fcol');
     if ($cc !== '') { $where[] = $cc; $params += $cp; }
+    $where[] = "(p.emeliyyatNovu IS NULL OR p.emeliyyatNovu <> 'Endirim')";   // endirim pul deyil — Təhsilat hesabatına düşmür (ayrıca «Endirimlər» hesabatı)
 
     $st = $pdo->prepare("SELECT p.id, p.contractId, p.meblag, p.odemeTarixi, p.collectorId, p.emeliyyatNovu,
             c.nomre, c.statusId, cu.soyad, cu.ad, cu.ataAdi
@@ -313,7 +315,7 @@ if ($report === 'debtor-sales') {
             $d = (string) $p['odemeTarixi'];
             if ($date !== null && $d >= $date) continue;
             if ($p['emeliyyatNovu'] === 'Geri qaytarma') { $ret += -(float) $p['meblag']; }
-            else { $paid += (float) $p['meblag']; if ((float) $p['meblag'] > 0 && $d > $last) { $last = $d; } }
+            else { $paid += (float) $p['meblag']; if ((float) $p['meblag'] > 0 && $p['emeliyyatNovu'] !== 'Endirim' && $d > $last) { $last = $d; } }
         }
         return [$paid, $ret, $last];
     };
@@ -394,17 +396,18 @@ function mp_contract_plans($pdo, $ctx, $teh, $today) {
     $params += $oP;
     if ($teh === '__none__') { $where[] = "(c.currentCollectorId IS NULL OR c.currentCollectorId = '')"; }
     elseif ($teh !== '') { $where[] = 'c.currentCollectorId = :fcol'; $params[':fcol'] = $teh; }
-    $params[':ms1'] = $ms; $params[':ms2'] = $ms;
+    $params[':ms1'] = $ms; $params[':ms2'] = $ms; $params[':ms3'] = $ms;
     $st = $pdo->prepare("SELECT c.id, c.nomre, c.tarix, c.meblag, c.ilkinOdenis, c.muddet, c.currentCollectorId, c.mehkemeQeydleri, c.statusId,
             cu.soyad, cu.ad, cu.ataAdi, cu.elaqeNomre1, cu.elaqeNomre2, cu.faktikiUnvan, cu.qeydiyyatUnvani,
-            COALESCE(ps.before_, 0) AS paidBefore, COALESCE(ps.month_, 0) AS paidMonth, COALESCE(ps.ret, 0) AS ret, ps.lastPay
+            COALESCE(ps.before_, 0) AS paidBefore, COALESCE(ps.month_, 0) AS paidMonth, COALESCE(ps.discM, 0) AS discMonth, COALESCE(ps.ret, 0) AS ret, ps.lastPay
         FROM contracts c
         LEFT JOIN customers cu ON cu.id = c.customerId
         LEFT JOIN (SELECT contractId,
                 SUM(CASE WHEN emeliyyatNovu <> 'Geri qaytarma' AND odemeTarixi < :ms1 THEN meblag ELSE 0 END) AS before_,
-                SUM(CASE WHEN emeliyyatNovu <> 'Geri qaytarma' AND odemeTarixi >= :ms2 THEN meblag ELSE 0 END) AS month_,
+                SUM(CASE WHEN emeliyyatNovu NOT IN ('Geri qaytarma', 'Endirim') AND odemeTarixi >= :ms2 THEN meblag ELSE 0 END) AS month_,   -- yığılan: endirim pul deyil (ayın 1-dək endirim isə before_-da borcu azaldır)
+                SUM(CASE WHEN emeliyyatNovu = 'Endirim' AND odemeTarixi >= :ms3 THEN meblag ELSE 0 END) AS discM,
                 SUM(CASE WHEN emeliyyatNovu = 'Geri qaytarma' THEN -meblag ELSE 0 END) AS ret,
-                MAX(CASE WHEN emeliyyatNovu <> 'Geri qaytarma' AND meblag > 0 THEN odemeTarixi END) AS lastPay
+                MAX(CASE WHEN emeliyyatNovu NOT IN ('Geri qaytarma', 'Endirim') AND meblag > 0 THEN odemeTarixi END) AS lastPay
             FROM payments GROUP BY contractId) ps ON ps.contractId = c.id
         WHERE " . implode(' AND ', $where) . "
         ORDER BY c.nomre ASC");
@@ -419,6 +422,9 @@ function mp_contract_plans($pdo, $ctx, $teh, $today) {
         $debtStart = $net - $ilkin - $before;
         $plan = max(0, min($monthly * schedule_due_count($r['tarix'], $m, $ms) - $before, $debtStart));
         $arrears = max(0, min($monthly * schedule_due_count($r['tarix'], $m, $prevEnd) - $before, $plan));
+        // bu ayın endirimi pul deyil («yığılıb»a düşmür), amma yığılmalı məbləği azaldır: əvvəl gecikmədən, sonra cari aydan
+        $disc = max(0, (float) $r['discMonth']);
+        if ($disc > 0) { $arrears = max(0, $arrears - $disc); $plan = max(0, $plan - $disc); }
         $r['_monthly'] = $monthly;
         $r['_plan'] = round($plan, 2);
         $r['_arrears'] = round($arrears, 2);
@@ -567,6 +573,34 @@ if ($report === 'calls') {
    İki siyahı bir sorğuda (tablar brauzerdə): "soon" — bağlanmasına ≤ N taksit qalanlar, "closed" — son N ayda bağlananlar.
    Qaydalar closing.php-dədir. Əhatə: authz_contract_scope; «Bağlı xaric» qaydasına istisna (2-ci siyahı bağlılardır).
    Filtrlər: months (1–24, defolt 2), satici, tehsilatci (boş | __none__ | id), problemsiz (1 | 0, defolt 1), diger ('' | none | nooverdue). */
+/* ---------- Endirimlər (borcun silinməsi) ----------
+   Sətir = emeliyyatNovu 'Endirim' olan əməliyyat (dövr: əməliyyat tarixi). Əhatə: müqavilənin əhatəsi (authz_contract_scope).
+   Endirimi edən əməkdaş = audit_log-da həmin sətrin CREATE yazısının istifadəçisi (idxal/köhnə sətirlərdə boş). */
+if ($report === 'discounts') {
+    $from = report_date_param('from');
+    $to = report_date_param('to');
+    if ($from > $to) { fail(400, 'Başlanğıc tarixi son tarixdən böyük ola bilməz.'); }
+    [$cSql, $params] = authz_contract_scope($ctx, 'c', 'sc');
+    $params[':dfrom'] = $from; $params[':dto'] = $to;
+    $st = $pdo->prepare("SELECT p.id, p.contractId, p.meblag, p.odemeTarixi, p.qeyd, c.nomre, c.statusId, c.currentCollectorId,
+            cu.soyad, cu.ad, cu.ataAdi,
+            (SELECT a.username FROM audit_log a WHERE a.entity = 'payments' AND a.action = 'CREATE' AND a.entityId = p.id ORDER BY a.id ASC LIMIT 1) AS usr
+        FROM payments p JOIN contracts c ON c.id = p.contractId LEFT JOIN customers cu ON cu.id = c.customerId
+        WHERE p.emeliyyatNovu = 'Endirim' AND p.odemeTarixi >= :dfrom AND p.odemeTarixi <= :dto AND $cSql
+        ORDER BY p.odemeTarixi ASC, c.nomre ASC");
+    $st->execute($params);
+    $rows = [];
+    foreach ($st->fetchAll() as $r) {
+        $rows[] = ['id' => $r['id'], 'contract' => $r['contractId'], 'no' => (string) $r['nomre'], 'status' => (string) ($r['statusId'] ?? ''),
+            'collector' => (string) ($r['currentCollectorId'] ?? ''),
+            'customer' => trim(implode(' ', array_filter([(string) $r['soyad'], (string) $r['ad'], (string) $r['ataAdi']], 'strlen'))),
+            'amt' => round((float) $r['meblag'], 2), 'date' => (string) $r['odemeTarixi'], 'qeyd' => (string) ($r['qeyd'] ?? ''), 'user' => (string) ($r['usr'] ?? '')];
+    }
+    header('Server-Timing: total;dur=' . round((microtime(true) - $t0) * 1000, 1));
+    echo json_encode(['rows' => $rows, 'from' => $from, 'to' => $to], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
 if ($report === 'closing') {
     $g = function ($k) { return trim((string) ($_GET[$k] ?? '')); };
     $mRaw = $g('months');

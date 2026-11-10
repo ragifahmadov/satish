@@ -147,8 +147,6 @@
   .lk-type:hover{background:var(--bg-page);}
   .lk-type.active{background:rgba(184,134,63,.13);font-weight:600;}
   body:not(.is-admin) .admin-only{display:none !important;}
-  /* Administrasiya qrupu: admin görür; admin olmayan yalnız «Aylıq satış idxalı» hüququ varsa (qrupda yalnız həmin bənd görünür) */
-  body:not(.is-admin):not(.can-sales-import) #admin-group{display:none !important;}
   .modal-panel.wide{max-width:900px;}
   tr.clickable{cursor:pointer;}
   a.cl-link{color:inherit;font-weight:600;text-decoration:none;border-bottom:1px dashed var(--border);}
@@ -241,19 +239,18 @@
       <span>Yenilə</span>
     </button>
     <div class="sidebar-foot" id="user-info">Ortaq baza</div>
-    <div id="admin-group">
+    <div id="admin-group" class="admin-only">
       <button class="navbtn" id="admin-group-btn" data-action="toggle-admin-group">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 3v5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6l7-3z"/><path d="M9.5 12l2 2 3.5-4"/></svg>
         <span>Administrasiya</span>
         <svg class="navchev" id="admin-group-chev" style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
       </button>
       <div id="admin-group-items" style="display:none;">
-        <button class="navbtn navsub admin-only" data-action="nav" data-screen="user-access"><span>Səlahiyyətlər</span></button>
-        <button class="navbtn navsub admin-only" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
-        <a href="admin.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>İstifadəçilər</span></a>
-        <a href="import-ledger.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>İdxal</span></a>
-        <a href="court-status-fix.php" class="navbtn navsub admin-only" style="text-decoration:none;"><span>Məhkəmə statusu düzəlişi</span></a>
-        <a href="sales-import.php" class="navbtn navsub" style="text-decoration:none;"><span>Aylıq satış idxalı</span></a>   <!-- ayrıca səhifə; hüququ olan admin olmayan istifadəçi də görür -->
+        <button class="navbtn navsub" data-action="nav" data-screen="user-access"><span>Səlahiyyətlər</span></button>
+        <button class="navbtn navsub" data-action="nav" data-screen="audit-log"><span>Dəyişiklik logu</span></button>
+        <a href="admin.php" class="navbtn navsub" style="text-decoration:none;"><span>İstifadəçilər</span></a>
+        <a href="import-ledger.php" class="navbtn navsub" style="text-decoration:none;"><span>İdxal</span></a>
+        <a href="court-status-fix.php" class="navbtn navsub" style="text-decoration:none;"><span>Məhkəmə statusu düzəlişi</span></a>
         <!-- status-import.php, fix-qrafik.php, reset.php menyudan çıxarılıb (səhifələr qalır, yalnız admin, ünvanla) -->
       </div>
     </div>
@@ -296,10 +293,11 @@ const AZ_MONTHS=['Yanvar','Fevral','Mart','Aprel','May','İyun','İyul','Avqust'
 /* ============ STATE ============ */
 const state={salespeople:[],collectors:[],curators:[],customers:[],contracts:[],payments:[],collector_reports:[],lookup_types:[],lookup_values:[],company_debts:[],company_debt_ops:[]};
 let paymentSums={};   // müqavilə id -> ödənişlərin cəmi (geri qaytarma xaric; yüngül, tam sətirlər olmadan)
+let discountSums={};  // müqavilə id -> endirim / borcun silinməsi cəmi (paymentSums-a DAXİLDİR; pul deyil — «Toplanmış»dan çıxılır)
 let returnSums={};    // müqavilə id -> geri qaytarılan (mal qaytarılması) məbləğ, müsbət ədəd
 let paymentLast={};   // müqavilə id -> ən son real ödəniş tarixi (YYYY-MM-DD)
 let dashMonthTotal=0; // bu ay toplanan (idarə paneli)
-let dashRet={count:0,total:0,monthCount:0,monthTotal:0}; // geri qaytarmalar (idarə paneli)
+let dashRet={count:0,total:0,monthCount:0,monthTotal:0,discCount:0,discTotal:0,discMonthCount:0,discMonthTotal:0}; // geri qaytarmalar (idarə paneli)
 function upsertInState(col, item){
   if(!state[col] || !item || !item.id) return;
   const idx=state[col].findIndex(x=>x.id===item.id);
@@ -329,7 +327,7 @@ const SCREENS=[
     {id:'reassign-curator',label:'Kurator dəyişikliyi',icon:'reassign'}]},
   {group:'reports',id:'reports',label:'Hesabatlar',icon:'reports',children:[
     {id:'report-overdue',label:'Gecikmiş müqavilələr'},{id:'report-collections',label:'Təhsilat hesabatı'},{id:'report-contracts',label:'Müqavilə axtarışı'},
-    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'},{id:'report-debt-payments',label:'Borc ödənişləri'},{id:'report-calls',label:'Zənglər'},{id:'report-closing',label:'Bağlanan müqavilələr'}]},
+    {id:'report-debtor-sales',label:'Borclu müştərilərə satışlar'},{id:'report-monthly-plan',label:'Cari ay təhsilat planı'},{id:'report-debt-payments',label:'Borc ödənişləri'},{id:'report-calls',label:'Zənglər'},{id:'report-closing',label:'Bağlanan müqavilələr'},{id:'report-discounts',label:'Endirimlər'}]},
   {group:'catalog',label:'Məlumat kitabçası',icon:'sales',children:[
     {id:'salespeople',label:'Satıcılar',icon:'sales'},
     {id:'collectors',label:'Təhsilatçılar',icon:'collector'},
@@ -344,7 +342,7 @@ let me={username:'',role:'user',screens:{},extras:{},scopeMode:'selected'};
 const SCREEN_PERM={reassign:'reassign-collector'};              // brauzer ekran adı → hüquq açarı (fərqli olanlar)
 const ADMIN_ONLY_SCREENS=['audit-log','user-access'];
 const OPEN_SCREENS=['change-password'];   // hər daxil olmuş istifadəçiyə açıq (hüquq tələb olunmur; server: password-api.php yalnız öz hesabı)
-const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan','report-debt-payments','report-calls','report-closing'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
+const REPORT_SCREENS=['report-overdue','report-collections','report-contracts','report-debtor-sales','report-monthly-plan','report-debt-payments','report-calls','report-closing','report-discounts'];   // "Hesabatlar" menyusunun alt ekranları (hər birinin öz hüququ var)
 function isAdmin(){ return me.role==='admin'; }
 function permKey(id){ return SCREEN_PERM[id]||id; }
 function can(id, level){ if(isAdmin()) return true; return (me.screens[permKey(id)]||0)>=level; }   // 1 baxış, 2 dəyişiklik, 3 silmə
@@ -401,6 +399,8 @@ function scheduleMonths(contract){
 // "Geri qaytarma" (mal qaytarılması) əməliyyatı cədvəldə mənfi məbləğlə görünür, amma
 // ödəniş sayılmır — müqavilənin xalis satış məbləğini azaldır.
 function isReturnPayment(p){ return !!p && p.emeliyyatNovu==='Geri qaytarma'; }
+// "Endirim" (borcun silinməsi): borcu ödəniş kimi azaldır, amma PUL DEYİL — toplanan/təhsilat/son ödəniş tarixinə düşmür
+function isDiscountPayment(p){ return !!p && p.emeliyyatNovu==='Endirim'; }
 function contractPaidSum(contractId){ return Number(paymentSums[contractId])||0; }
 function contractReturnedSum(contractId){ return Number(returnSums[contractId])||0; }
 function contractNetSale(contract){ return (Number(contract.meblag)||0) - contractReturnedSum(contract.id); }
@@ -512,6 +512,7 @@ const SCREEN_DEPS={
   'report-debt-payments':['company_debts'],
   calls:['collectors','curators','lookup_types','lookup_values'],   // siyahılar və kart calls-api.php-dən (əhatə serverdə)
   'report-calls':['lookup_types','lookup_values'],
+  'report-discounts':['collectors','lookup_types','lookup_values'],   // təhsilatçı filtri, status; sətirlər report-api.php-dən
   'report-closing':['salespeople','collectors','lookup_types','lookup_values'],   // filtr siyahıları; sətirlər report-api.php-dən   // borc yerləri (filtr); sətirlər report-api.php-dən   // təhsilatçı siyahısı; sətirlər report-api.php-dən
   'audit-log':[],
   'user-access':[],
@@ -521,11 +522,13 @@ const loadedCols=new Set();
 const PSEUDO_LOADERS={
   paymentSums: async ()=>{
     const r=await apiPaymentSums();
-    paymentSums={}; returnSums={};
+    paymentSums={}; returnSums={}; discountSums={};
     for(const cid in r){
       paymentSums[cid]=Number(r[cid][0])||0;
       const rt=Number(r[cid][1])||0;
       if(rt) returnSums[cid]=rt;
+      const dc=Number(r[cid][2])||0;   // endirim (paid-ə daxildir)
+      if(dc) discountSums[cid]=dc;
     }
   },
   paymentLast: async ()=>{ paymentLast=await apiPaymentLast(); },
@@ -592,6 +595,7 @@ async function renderScreen(){
     case 'calls': return renderCalls();
     case 'report-calls': return renderReportCalls();
     case 'report-closing': return renderReportClosing();
+    case 'report-discounts': return renderReportDiscounts();
     case 'audit-log': return renderAuditLog();
     case 'user-access': return renderUserAccess();
   }
@@ -601,7 +605,7 @@ async function renderScreen(){
 function renderDashboard(){
   const open=state.contracts.filter(c=>!isClosed(c));   // bağlı müqavilələr cəmlərdə iştirak etmir
   const totalSales=open.reduce((s,c)=>s+contractNetSale(c),0);
-  const totalPaid=open.reduce((s,c)=>s+contractPaidSum(c.id),0);
+  const totalPaid=open.reduce((s,c)=>s+contractPaidSum(c.id)-(Number(discountSums[c.id])||0),0);   // endirim pul deyil
   const totalIlkin=open.reduce((s,c)=>s+(Number(c.ilkinOdenis)||0),0);
   const totalDebt=open.reduce((s,c)=>s+contractDebt(c),0);
   const thisMonth=dashMonthTotal;
@@ -620,6 +624,8 @@ function renderDashboard(){
       <div class="card kpi" id="kpi-closed-month"><div class="lbl">Bağlanan müqavilələr (${per.label})</div><div class="val">${closedThisMonth}</div></div>
       <div class="card kpi" id="kpi-returns"><div class="lbl">Geri qaytarmalar</div><div class="val" style="color:var(--red)">${fmtMoney(dashRet.total)}</div>
         <div class="muted" style="font-size:12px;margin-top:4px;">${dashRet.count} əməliyyat · ${per.label}: ${dashRet.monthCount} / ${fmtMoney(dashRet.monthTotal)}</div></div>
+      <div class="card kpi" id="kpi-discounts"><div class="lbl">Endirimlər (${per.label})</div><div class="val" style="color:#B7791F">${fmtMoney(dashRet.discMonthTotal||0)}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px;">${dashRet.discMonthCount||0} əməliyyat · cəmi: ${dashRet.discCount||0} / ${fmtMoney(dashRet.discTotal||0)}</div></div>
     </div>
     <div class="section-title">Son müqavilələr</div>
     <div class="card">
@@ -672,7 +678,7 @@ const SIMPLE_META={
   curators:{title:'Kuratorlar',singular:'kurator',col:'curators'},
 };
 const PAGE_SIZE=5; // siyahı ekranları ilkin açılanda 5 sətir göstərir
-const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'calls':1,'report-calls':1,'report-closing':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
+const pageNum={salespeople:1,collectors:1,curators:1,customers:1,contracts:1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'calls':1,'report-calls':1,'report-closing':1,'report-discounts':1,'collector-reports':1,'collector-reports-f':1,'audit-log':1};
 function paginateArr(array, key, size){
   size=size||PAGE_SIZE;
   const total=array.length;
@@ -1641,11 +1647,11 @@ function buildOperationsRowsHtml(contract){
   const actCol=paymentActionsVisible();
   if(!list.length) return `<tr><td colspan="${actCol?6:5}" class="empty" style="padding:26px;">Hələ əməliyyat yoxdur</td></tr>`;
   return list.map(p=>{
-    const ret=isReturnPayment(p);
+    const ret=isReturnPayment(p), disc=isDiscountPayment(p);
     const amt=Number(p.meblag)||0;
     return `<tr>
       <td>${fmtDate(p.odemeTarixi)}</td>
-      <td><span class="tag ${ret?'tag-red':'tag-green'}">${ret?'Geri qaytarma':'Ödəniş'}</span></td>
+      <td>${disc?`<span class="tag tag-amber">Endirim</span><div class="muted" style="font-size:12px;margin-top:3px;white-space:normal;max-width:260px;">${esc(p.qeyd||'')}</div>`:`<span class="tag ${ret?'tag-red':'tag-green'}">${ret?'Geri qaytarma':'Ödəniş'}</span>`}</td>
       <td class="num" style="${amt<0?'color:var(--red);':''}">${fmtMoney(amt)}</td>
       <td class="muted">${p.collectorId?esc(collectorName(p.collectorId)):'—'}</td>
       <td class="muted">${esc(p.qrafikAyLabel||'—')}</td>
@@ -1690,6 +1696,7 @@ function renderPaymentsPanel(contract){
       <div><h1>${esc(contract.nomre)} <span class="sub" style="font-size:15px;font-weight:400;">— ${esc(customerName(contract.customerId))}</span> <span id="pay-status" style="font-size:13px;vertical-align:middle;">${statusTagHtml(contract.statusId)}</span>${contract.statusTarix?` <span class="muted" style="font-size:12px;font-weight:400;">${fmtDate(contract.statusTarix)}-dan</span>`:''}</h1></div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost admin-only" data-action="show-history" data-kind="contract" data-id="${contract.id}" data-title="Müqavilə № ${esc(contract.nomre)} — ${esc(customerName(contract.customerId))}">Tarixçə</button>
+        ${canExtra('discount')&&!isClosed(contract)&&debt>0.009?`<button class="btn btn-ghost" id="disc-open" data-action="open-discount" data-contract-id="${contract.id}">Endirim / borcu bağla</button>`:''}
         <button class="btn btn-ghost" data-action="pay-change-contract">Başqa müqavilə</button>
       </div>
     </div>
@@ -1744,34 +1751,38 @@ function paymentRowButtons(p){
   if(isClosed(byId(state.contracts,p.contractId))) return '';   // bağlı müqavilənin ödənişləri dəyişmir
   const ret=isReturnPayment(p);
   if(ret && !canExtra('goods-return')) return '';
+  if(isDiscountPayment(p) && !canExtra('discount')) return '';   // endirim sətri → "Endirim" hüququ da lazımdır (server də yoxlayır)
   return (canExtra('payment-edit')?`<button class="iconbtn" data-action="edit-payment" data-id="${p.id}" title="Dəyiş">${ICONS.edit}</button> `:'')
     +(canExtra('payment-delete')?`<button class="iconbtn" data-action="delete-payment" data-id="${p.id}" title="Sil">${ICONS.trash}</button>`:'');
 }
 // Müqavilənin yerli cəmlərini (ödəniş, geri qaytarma, son ödəniş) yüklənmiş ödənişlərdən yenidən hesablayır
 function recalcContractPaymentAggregates(cid){
   const list=state.payments.filter(p=>p.contractId===cid);
-  let paid=0, ret=0, last='';
+  let paid=0, ret=0, disc=0, last='';
   for(const p of list){
     const a=Number(p.meblag)||0;
     if(isReturnPayment(p)) ret+=Math.abs(a);
+    else if(isDiscountPayment(p)) { paid+=a; disc+=a; }   // borcu azaldır, son ödəniş tarixinə düşmür
     else { paid+=a; if(a>0 && (p.odemeTarixi||'')>last) last=p.odemeTarixi; }
   }
   paymentSums[cid]=paid;
+  if(disc) discountSums[cid]=disc; else delete discountSums[cid];
   if(ret) returnSums[cid]=ret; else delete returnSums[cid];
   if(last) paymentLast[cid]=last; else delete paymentLast[cid];
 }
-function monthPart(p){ return (!p || isReturnPayment(p) || !inDashPeriod(p.odemeTarixi||''))?0:(Number(p.meblag)||0); }   // İdarə panelinin dövrü
+function monthPart(p){ return (!p || isReturnPayment(p) || isDiscountPayment(p) || !inDashPeriod(p.odemeTarixi||''))?0:(Number(p.meblag)||0); }   // İdarə panelinin dövrü
 function openPaymentEdit(id){
   const p=byId(state.payments,id);
   if(!p) return;
-  const ret=isReturnPayment(p);
+  const ret=isReturnPayment(p), disc=isDiscountPayment(p);
   document.getElementById('modal-panel').innerHTML=`
-    <h2>${ret?'Geri qaytarmanı':'Ödənişi'} dəyiş</h2>
+    <h2>${ret?'Geri qaytarmanı':(disc?'Endirimi':'Ödənişi')} dəyiş</h2>
     <form id="payment-edit-form" data-id="${p.id}">
-      <div class="field"><label>Əməliyyat növü</label><input type="text" readonly value="${ret?'Geri qaytarma':'Ödəniş'}" style="background:var(--bg-page);"></div>
-      <div class="field"><label>Təhsilatçı</label><input type="text" readonly value="${p.collectorId?esc(collectorName(p.collectorId)):'Təyin olunmayıb'}" style="background:var(--bg-page);"></div>
+      <div class="field"><label>Əməliyyat növü</label><input type="text" readonly value="${ret?'Geri qaytarma':(disc?'Endirim':'Ödəniş')}" style="background:var(--bg-page);"></div>
+      ${disc?'':`<div class="field"><label>Təhsilatçı</label><input type="text" readonly value="${p.collectorId?esc(collectorName(p.collectorId)):'Təyin olunmayıb'}" style="background:var(--bg-page);"></div>`}
       <div class="field"><label>Məbləğ (₼)</label><input type="number" step="0.01" min="0" name="meblag" id="pe-amount" value="${Math.abs(Number(p.meblag)||0)}" required></div>
       <div class="field"><label>Tarix</label><input type="date" name="odemeTarixi" id="pe-date" value="${esc(p.odemeTarixi||'')}" required></div>
+      ${disc?`<div class="field"><label>Səbəb</label><textarea id="pe-qeyd" rows="3" required>${esc(p.qeyd||'')}</textarea></div>`:''}
       <div class="field-err" id="pe-err" style="display:none;"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
@@ -1789,10 +1800,17 @@ async function submitPaymentEdit(form){
   const date=document.getElementById('pe-date').value;
   if(!amount || amount<=0){ errEl.textContent='Məbləği düzgün daxil edin.'; errEl.style.display='block'; return; }
   if(!date){ errEl.textContent='Tarixi seçin.'; errEl.style.display='block'; return; }
-  const ret=isReturnPayment(p);
+  const ret=isReturnPayment(p), disc=isDiscountPayment(p);
+  const body={meblag:ret?-amount:amount, odemeTarixi:date};
+  if(disc){
+    const q=(document.getElementById('pe-qeyd').value||'').trim();
+    if(!q){ errEl.textContent='Endirimin səbəbini yazın.'; errEl.style.display='block'; return; }
+    if(date>bakuDateIso()){ errEl.textContent='Endirimin tarixi gələcək ola bilməz.'; errEl.style.display='block'; return; }
+    body.qeyd=q;
+  }
   try{
     const before=monthPart(p);
-    const saved=await apiUpdate('payments', p.id, {meblag:ret?-amount:amount, odemeTarixi:date});
+    const saved=await apiUpdate('payments', p.id, body);
     if(saved._contract){ upsertInState('contracts', saved._contract); delete saved._contract; }   // status avtomatik dəyişdisə
     upsertInState('payments', saved);
     recalcContractPaymentAggregates(saved.contractId);
@@ -1807,7 +1825,7 @@ async function deletePayment(id){
   const p=byId(state.payments,id);
   if(!p) return;
   const ret=isReturnPayment(p);
-  if(!confirm((ret?'Geri qaytarma':'Ödəniş')+' silinsin? '+fmtMoney(Math.abs(Number(p.meblag)||0))+', '+fmtDate(p.odemeTarixi))) return;
+  if(!confirm((ret?'Geri qaytarma':(isDiscountPayment(p)?'Endirim':'Ödəniş'))+' silinsin? '+fmtMoney(Math.abs(Number(p.meblag)||0))+', '+fmtDate(p.odemeTarixi))) return;
   try{
     const res=await apiDelete('payments', id);
     if(res && res._contract) upsertInState('contracts', res._contract);   // status avtomatik dəyişdisə
@@ -1816,6 +1834,59 @@ async function deletePayment(id){
   removeFromState('payments', id);
   recalcContractPaymentAggregates(p.contractId);
   renderScreen();
+}
+
+/* ---- Endirim / borcun silinməsi (ayrıca "Endirim" hüququ; təsdiq yoxdur; səbəb məcburi; məbləğ qalıq borcdan çox ola bilməz) ----
+   Pul deyil: təhsilatçı yazılmır, Təhsilat hesabatına, «Toplanan»a, plandakı «yığılıb»a, son ödəniş tarixinə düşmür. */
+function openDiscountModal(contractId){
+  const c=byId(state.contracts,contractId);
+  if(!c) return;
+  const debt=Math.max(0,Math.round(contractDebt(c)*100)/100);
+  document.getElementById('modal-panel').innerHTML=`
+    <h2>Endirim / borcun silinməsi — ${esc(c.nomre)}</h2>
+    <form id="discount-form" data-contract-id="${c.id}">
+      <div class="muted" style="font-size:13px;margin-bottom:10px;">${esc(customerName(c.customerId))} · qalıq borc: <strong>${fmtMoney(debt)}</strong>. Məbləğ borcdan çıxılır, amma təhsilat (pul) sayılmır.</div>
+      <div class="field"><label>Məbləğ (₼)</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><input type="number" step="0.01" min="0" id="disc-amount" style="max-width:160px;">
+        <button type="button" class="btn btn-ghost btn-sm" id="disc-full" data-action="discount-full" data-amount="${debt.toFixed(2)}">Qalan borcun hamısı (${fmtMoney(debt)})</button></div></div>
+      <div class="field"><label>Tarix</label><input type="date" id="disc-date" value="${bakuDateIso()}" max="${bakuDateIso()}"></div>
+      <div class="field"><label>Səbəb</label><textarea id="disc-qeyd" rows="3" placeholder="Məs.: rəhbərliyin qərarı ilə endirim; qalan kiçik borc silindi"></textarea></div>
+      <div class="field-err" id="disc-err" style="display:none;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">Ləğv et</button>
+        <button type="submit" class="btn btn-primary" id="disc-submit">Endirimi qeyd et</button>
+      </div>
+    </form>`;
+  openModal();
+}
+async function submitDiscount(form){
+  const c=byId(state.contracts,form.dataset.contractId);
+  const errEl=document.getElementById('disc-err');
+  errEl.style.display='none';
+  if(!c) return;
+  const err=m=>{ errEl.textContent=m; errEl.style.display='block'; };
+  const amount=Math.round(Number(document.getElementById('disc-amount').value)*100)/100;
+  const date=document.getElementById('disc-date').value;
+  const qeyd=(document.getElementById('disc-qeyd').value||'').trim();
+  const debt=Math.round(contractDebt(c)*100)/100;
+  if(!amount || amount<=0) return err('Məbləği düzgün daxil edin.');
+  if(amount>debt+0.009) return err('Endirim qalıq borcdan ('+fmtMoney(debt)+') çox ola bilməz.');
+  if(!date) return err('Tarixi seçin.');
+  if(date>bakuDateIso()) return err('Endirimin tarixi gələcək ola bilməz.');
+  if(!qeyd) return err('Endirimin səbəbini yazın.');
+  const curIdx=currentScheduleIndex(c);
+  const curMonth=scheduleMonths(c).find(m=>m.index===curIdx);
+  try{
+    const saved=await apiAdd('payments', {contractId:c.id, meblag:amount, odemeTarixi:date, emeliyyatNovu:'Endirim', qeyd,
+      qrafikAyIndex:curIdx, qrafikAyLabel:curMonth?curMonth.label:''});
+    if(saved._contract){ upsertInState('contracts', saved._contract); delete saved._contract; }   // tam silinibsə → avtomatik «Bağlı»
+    upsertInState('payments', saved);
+    recalcContractPaymentAggregates(saved.contractId);
+    if(inDashPeriod(date)){ dashRet.discMonthCount=(dashRet.discMonthCount||0)+1; dashRet.discMonthTotal=(dashRet.discMonthTotal||0)+amount; }
+    dashRet.discCount=(dashRet.discCount||0)+1; dashRet.discTotal=(dashRet.discTotal||0)+amount;
+    closeModal();
+    renderScreen();
+  }catch(e){ err('Yadda saxlanmadı: '+e.message); }
 }
 
 // Serverdəki PAYMENT_NO_COLLECTOR_MSG ilə eyni mətn (permissions.php)
@@ -2427,6 +2498,10 @@ function renderReports(){
       ${can('report-closing',1)?`<div class="card" data-action="nav" data-screen="report-closing" style="padding:18px 20px;cursor:pointer;">
         <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Bağlanan müqavilələr</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">Borcunun bağlanmasına N ay qalan və son N ayda borcunu bağlamış problemsiz müştərilər</div>
+      </div>`:''}
+      ${can('report-discounts',1)?`<div class="card" data-action="nav" data-screen="report-discounts" style="padding:18px 20px;cursor:pointer;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Endirimlər</div>
+        <div class="muted" style="font-size:13px;line-height:1.5;">Seçilmiş dövrdə edilmiş endirimlər və silinmiş borclar — səbəbi və edən əməkdaşla</div>
       </div>`:''}
     </div>
   `);
@@ -4153,6 +4228,95 @@ function renderReportDebtPayments(){
   refreshDp();
 }
 
+/* ============ HESABAT: ENDİRİMLƏR (report-api.php?report=discounts) ============
+   Sətir = «Endirim» əməliyyatı (borcun silinməsi). Əhatə serverdə; əməkdaş = logda həmin sətri yaradan istifadəçi. */
+const EN_PAGE_SIZE=50;
+let enFilters={};
+let enR={applied:null, rows:[], loading:false, err:'', req:0};
+function resetEnFilters(){ const t=bakuDateIso(); enFilters={from:t.slice(0,8)+'01', to:t, collector:''}; }
+resetEnFilters();
+const EN_COLUMNS=[
+  {th:'<th>Tarix</th>', xl:'Tarix', type:'date', width:13, td:r=>`<td>${fmtDate(r.date)}</td>`, val:r=>r.date},
+  {th:'<th>Müqavilə №</th>', xl:'Müqavilə №', type:'text', width:14, td:r=>`<td>${esc(r.no)}</td>`, val:r=>r.no},
+  {th:'<th>Müştəri</th>', xl:'Müştəri', type:'text', width:30, td:r=>`<td>${esc(r.customer)}</td>`, val:r=>r.customer},
+  {th:'<th>Status</th>', xl:'Status', type:'text', width:14, td:r=>`<td>${statusTagHtml(r.status)}</td>`, val:r=>{ const x=statusById(r.status); return x?x.ad:''; }},
+  {th:'<th>Təhsilatçı</th>', xl:'Təhsilatçı', type:'text', width:24, td:r=>`<td class="muted">${r.collector?esc(collectorName(r.collector)):'—'}</td>`, val:r=>r.collector?collectorName(r.collector):''},
+  {th:'<th class="num">Məbləğ</th>', xl:'Məbləğ', type:'money', width:15, td:r=>`<td class="num">${fmtMoney(r.amt)}</td>`, val:r=>r.amt},
+  {th:'<th>Səbəb</th>', xl:'Səbəb', type:'text', width:40, td:r=>`<td class="muted" style="font-size:12px;white-space:normal;">${esc(r.qeyd)}</td>`, val:r=>r.qeyd},
+  {th:'<th>Əməkdaş</th>', xl:'Əməkdaş', type:'text', width:16, td:r=>`<td class="muted">${esc(r.user||'—')}</td>`, val:r=>r.user||''},
+];
+function enFilterDescription(f){
+  f=f||enR.applied||enFilters;
+  const out=[{l:'Tarix (dan)',v:fmtDate(f.from)},{l:'Tarix (dək)',v:fmtDate(f.to)}];
+  if(f.collector) out.push({l:'Təhsilatçı',v:f.collector==='__none__'?'Təyin olunmayıb':collectorName(f.collector)});
+  return out;
+}
+async function searchDiscounts(){
+  const f=enFilters;
+  if(!f.from || !f.to){ enR.err='Hər iki tarixi seçin.'; enR.applied=null; refreshEn(); return; }
+  if(f.from>f.to){ enR.err='Başlanğıc tarixi son tarixdən böyük ola bilməz.'; enR.applied=null; refreshEn(); return; }
+  enR.applied=JSON.parse(JSON.stringify(f));
+  const my=++enR.req; enR.loading=true; enR.err=''; pageNum['report-discounts']=1; refreshEn();
+  try{
+    const r=await fetch('report-api.php?report=discounts&from='+encodeURIComponent(f.from)+'&to='+encodeURIComponent(f.to));
+    if(!r.ok) throw new Error(await readErr(r,'Server cavabı: '+r.status));
+    const j=await r.json();
+    if(my!==enR.req) return;
+    enR.rows=j.rows||[];
+  }catch(err){ if(my!==enR.req) return; enR.rows=[]; enR.err='Məlumat yüklənmədi: '+err.message; enR.applied=null; }
+  finally{ if(my===enR.req) enR.loading=false; }
+  if(currentScreen==='report-discounts') refreshEn();
+}
+// təhsilatçı filtri brauzerdə (serverdən gələn sətirlər onsuz da əhatədən keçib)
+function enResultRows(){
+  if(!enR.applied || enR.loading || enR.err) return [];
+  const c=enR.applied.collector;
+  return c?enR.rows.filter(r=>c==='__none__'?!r.collector:r.collector===c):enR.rows;
+}
+function refreshEn(){
+  const box=document.getElementById('en-body'); if(!box) return;
+  const eb=document.getElementById('export-btn'), sumEl=document.getElementById('en-summary');
+  const rows=enResultRows();
+  if(eb){ eb.disabled=!rows.length; eb.textContent=rows.length?('Excelə yüklə — '+rows.length+' sətir'):'Excelə yüklə'; }
+  if(enR.err){ sumEl.innerHTML=''; box.innerHTML=`<div class="banner">${esc(enR.err)}</div>`; return; }
+  if(!enR.applied){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">${REPORT_PROMPT}</div>`; return; }
+  if(enR.loading){ sumEl.innerHTML=''; box.innerHTML=`<div class="card muted" style="padding:40px;text-align:center;">Yüklənir…</div>`; return; }
+  const tot=rows.reduce((a,r)=>a+(Number(r.amt)||0),0);
+  sumEl.innerHTML=`${fmtDate(enR.applied.from)} — ${fmtDate(enR.applied.to)} &nbsp;·&nbsp; <strong>${rows.length}</strong> endirim &nbsp;·&nbsp; Cəmi: <strong>${fmtMoney(tot)}</strong>`;
+  const {pageRows, totalPages, total}=paginateArr(rows,'report-discounts',EN_PAGE_SIZE);
+  box.innerHTML=`<div class="card"><div class="table-scroll"><table class="table-compact" id="en-table">
+    <thead><tr>${EN_COLUMNS.map(c=>c.th).join('')}</tr></thead><tbody>${pageRows.length
+      ? pageRows.map(r=>`<tr>${EN_COLUMNS.map(c=>c.td(r)).join('')}</tr>`).join('')
+      : `<tr><td colspan="${EN_COLUMNS.length}" class="empty" style="padding:40px;">Seçilmiş dövrdə endirim yoxdur</td></tr>`}</tbody></table></div>
+    <div id="pagination-report-discounts" style="padding:0 14px 14px;">${paginationHtml('report-discounts',totalPages,total)}</div></div>`;
+}
+function renderReportDiscounts(){
+  enR.applied=null; enR.rows=[]; enR.err=''; enR.loading=false; enR.req++;
+  const f=enFilters, o=(v,l,sel)=>`<option value="${esc(v)}"${sel===v?' selected':''}>${esc(l)}</option>`;
+  const cols=state.collectors.slice().sort((a,b)=>fullName(a).localeCompare(fullName(b),'az'));
+  setContent(`
+    <div class="topbar">
+      <div><h1>Endirimlər</h1><div class="sub">Seçilmiş dövrdə edilmiş endirimlər və silinmiş borclar (pul daxil olmayıb — təhsilata düşmür)</div></div>
+      <div style="display:flex;gap:8px;">
+        ${canExtra('export')?`<button class="btn btn-primary" id="export-btn" data-action="export-report" data-report="discounts" disabled>Excelə yüklə</button>`:''}
+        <button class="btn btn-ghost" data-action="nav" data-screen="reports">← Hesabatlar</button>
+      </div>
+    </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:14px;">
+      <div class="filters">
+        <div class="field"><label>Tarixdən</label><input type="date" data-enfilter="from" value="${esc(f.from)}"></div>
+        <div class="field"><label>Tarixədək</label><input type="date" data-enfilter="to" value="${esc(f.to)}"></div>
+        <div class="field"><label>Təhsilatçı (hazırkı)</label><select data-enfilter="collector">${o('','Hamısı',f.collector)}${o('__none__','Təyin olunmayıb',f.collector)}${cols.map(c=>o(c.id,fullName(c),f.collector)).join('')}</select></div>
+      </div>
+      ${reportFilterButtonsHtml('discounts','en-reset')}
+    </div>
+    ${reportDirtyHtml('discounts')}
+    <div id="en-summary" class="muted" style="font-size:13px;margin:0 2px 10px;"></div>
+    <div id="en-body"></div>
+  `);
+  refreshEn();
+}
+
 /* ============ EXCEL (.xlsx) EXPORT — brauzerdə, kənar kitabxanasız ============
    Qaydalar (QAYDALAR.md): hər hesabat REPORT_EXPORTS-da elan olunur və export düyməsini avtomatik alır;
    fayl yaradılmazdan ƏVVƏL export loga yazılır — loga yazılmasa fayl yaradılmır. */
@@ -4360,6 +4524,13 @@ const REPORT_EXPORTS={
       ];
     },
   },
+  discounts:{
+    title:'Endirimlər', file:'Endirimler',
+    columns:()=>EN_COLUMNS,
+    rows:()=>enResultRows(),
+    filters:()=>enFilterDescription(),
+    totals:(rows)=>[['Cəmi endirim',rows.reduce((a,r)=>a+(Number(r.amt)||0),0)]],
+  },
   calls:{
     title:'Zənglər', file:'Zengler',
     rows:()=>clResultRows(),
@@ -4458,6 +4629,7 @@ const REPORT_SEARCH={
   'calls-history':{filters:()=>clHF, applied:()=>clR.history.applied, search:()=>clSearch('history')},
   'report-calls':{filters:()=>rcFilters, applied:()=>rcR.applied, search:searchCallsReport},
   closing:{filters:()=>bcFilters, applied:()=>bcR.applied, search:searchClosingReport},
+  discounts:{filters:()=>enFilters, applied:()=>enR.applied, search:searchDiscounts},
 };
 
 // Export hadisəsini loga yazdır; yazılmasa istisna atılır və fayl YARADILMIR
@@ -4758,9 +4930,9 @@ function renderHistory(){
 /* ============ SƏLAHİYYƏTLƏR EKRANI (yalnız admin) ============
    Hər istifadəçi üçün: ekran hüquqları (Baxış/Dəyişiklik/Silmə), ayrıca hüquqlar və hansı müqavilələri görə biləcəyi
    (satıcı / təhsilatçı / kurator əhatəsi). Yadda saxlama serverdə yoxlanılır və loga yazılır. */
-const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'report-closing':1,'reassign-collector':2,'reassign-curator':2,'sales-import':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
+const UA_MAX={dashboard:1,payments:2,'collector-mobile':2,'debt-inquiry':1,'report-overdue':1,'report-collections':1,'report-contracts':1,'report-debtor-sales':1,'report-monthly-plan':1,'report-debt-payments':1,'report-calls':1,'report-closing':1,'report-discounts':1,'reassign-collector':2,'reassign-curator':2}; // bu ekranlarda yuxarı səviyyə mənasızdır
 const UA_LEVELS=[[1,'Baxış'],[2,'Dəyişiklik'],[3,'Silmə']];
-const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək','contract-status':'müqavilənin statusunu əllə dəyişmək (Normal, Gecikmə, Məhkəmə, İcra…); ödəniş zamanı avtomatik dəyişiklik bu hüquqdan asılı deyil'};
+const UA_EXTRA_HINT={'goods-return':'ödəniş ekranında "Mal qaytarılması" qeydi','court-notes':'müqavilədə məhkəmə qeydi əlavə etmək / silmək','export':'hesabatları Excelə yükləmək (hər export logda qalır)','payment-edit':'qeyd olunmuş ödənişin məbləğini/tarixini dəyişmək','payment-delete':'qeyd olunmuş ödənişi silmək','discount':'ödəniş ekranında endirim etmək və ya qalan borcu silmək (səbəb məcburi; pul sayılmır)','contract-status':'müqavilənin statusunu əllə dəyişmək (Normal, Gecikmə, Məhkəmə, İcra…); ödəniş zamanı avtomatik dəyişiklik bu hüquqdan asılı deyil'};
 const UA_SCOPE_TYPES=[['salespeople','Satıcılar'],['collectors','Təhsilatçılar'],['curators','Kuratorlar']];
 let ua={loaded:false,users:[],people:{},screens:[],extras:[],selectedId:null,orig:null,draft:null,preview:null,msg:'',msgOk:true};
 let uaPreviewTimer=null, uaPreviewReq=0;
@@ -5012,6 +5184,7 @@ document.addEventListener('click', async (e)=>{
   if(action==='cl-h-reset'){ resetClHF(); renderCalls(); return; }
   if(action==='rc-reset'){ resetRcFilters(); renderReportCalls(); return; }
   if(action==='bc-reset'){ resetBcFilters(); renderReportClosing(); return; }
+  if(action==='en-reset'){ resetEnFilters(); renderReportDiscounts(); return; }
   if(action==='bc-tab'){ bcR.tab=btn.dataset.tab==='closed'?'closed':'soon'; pageNum['report-closing']=1; refreshBc(); return; }
   if(action==='rc-tab'){ rcR.tab=btn.dataset.tab==='detail'?'detail':'summary'; pageNum['report-calls']=1;
     document.querySelectorAll('[data-action="rc-tab"]').forEach(b=>b.classList.toggle('active',b.dataset.tab===rcR.tab)); refreshRc(); return; }
@@ -5031,6 +5204,8 @@ document.addEventListener('click', async (e)=>{
   if(action==='edit-contracts'){ openContractForm(id); return; }
   if(action==='delete-contracts'){ await withButtonLoading(btn, ()=>deleteRecord('contracts', id, 'müqavilə')); return; }
   if(action==='pay-change-contract'){ paymentsContractId=null; renderPayments(); return; }
+  if(action==='open-discount'){ await withButtonLoading(btn, async ()=>{ await ensureContractPayments(btn.dataset.contractId); openDiscountModal(btn.dataset.contractId); }); return; }
+  if(action==='discount-full'){ const i=document.getElementById('disc-amount'); if(i) i.value=btn.dataset.amount; return; }
   if(action==='record-payment'){ await withButtonLoading(btn, ()=>recordQuickPayment(btn.dataset.contractId)); return; }
   if(action==='edit-payment'){ openPaymentEdit(id); return; }
   if(action==='delete-payment'){ await withButtonLoading(btn, ()=>deletePayment(id)); return; }
@@ -5048,6 +5223,7 @@ document.addEventListener('click', async (e)=>{
     if(key==='calls'){ refreshCl(); return; }
     if(key==='report-calls'){ refreshRc(); return; }
     if(key==='report-closing'){ refreshBc(); return; }
+    if(key==='report-discounts'){ refreshEn(); return; }
     if(key==='collector-reports-f'){ refreshCrFilter(); return; }
     if(key==='collector-reports'){ const sv=document.getElementById('search-collector-reports'); const q=sv&&sv.value.length>=3?sv.value:''; const {pageRows,totalPages,total}=paginateArr(crListFiltered(q),key);
       document.getElementById('tbody-collector-reports').innerHTML=crRowsHtml(pageRows); document.getElementById('pagination-collector-reports').innerHTML=paginationHtml(key,totalPages,total); return; }
@@ -5168,6 +5344,7 @@ document.addEventListener('submit', async (e)=>{
   if(e.target.id==='password-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitChangePassword(e.target)); }
   if(e.target.id==='creport-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCollectorReportForm(e.target)); }
   if(e.target.id==='payment-edit-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitPaymentEdit(e.target)); }
+  if(e.target.id==='discount-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitDiscount(e.target)); }
   if(e.target.id==='call-form'){ e.preventDefault(); await withButtonLoading(submitBtn, ()=>submitCallForm(e.target)); }
 });
 // "Mal qaytarılması" işarəsi dəyişəndə ödəniş blokunun görünüşünü yenilə
@@ -5185,6 +5362,7 @@ document.addEventListener('change', (e)=>{
   if(ds.clhfilter){ clHF[ds.clhfilter]=t.value; updateReportDirty('calls-history'); return; }
   if(ds.rcfilter){ rcFilters[ds.rcfilter]=t.value; updateReportDirty('report-calls'); return; }
   if(ds.bcfilter){ bcFilters[ds.bcfilter]=t.value; updateReportDirty('closing'); return; }
+  if(ds.enfilter){ enFilters[ds.enfilter]=t.value; updateReportDirty('discounts'); return; }
   if(t.form && t.form.id==='call-form' && (t.name==='elaqeNeticeId' || t.name==='danisiqNeticeId')){ clFormSync(t.form, true); return; }
   if(ds.cdfilter){ cdFilters[ds.cdfilter]=(t.type==='checkbox')?(t.checked?'1':''):t.value; refreshCompanyDebts(); return; }   // siyahı ekranı — dərhal
   if(ds.crfilter){ crFilters[ds.crfilter]=t.value; updateReportDirty('collector-reports'); return; }
@@ -5206,7 +5384,7 @@ document.addEventListener('click', (e)=>{
 document.addEventListener('keydown', (e)=>{
   if(e.key!=='Enter') return;
   const ds=(e.target && e.target.dataset)||{};
-  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':(ds.dpfilter!==undefined?'debt-payments':(ds.clofilter!==undefined?'calls-overdue':(ds.clhfilter!==undefined?'calls-history':(ds.rcfilter!==undefined?'report-calls':(ds.bcfilter!==undefined?'closing':null))))))))));
+  const key=ds.ofilter!==undefined?'overdue':(ds.cfilter!==undefined?'collections':(ds.csfilter!==undefined?'contracts':(ds.crfilter!==undefined?'collector-reports':(ds.dsfilter!==undefined?'debtor-sales':(ds.mpfilter!==undefined?'monthly-plan':(ds.dpfilter!==undefined?'debt-payments':(ds.clofilter!==undefined?'calls-overdue':(ds.clhfilter!==undefined?'calls-history':(ds.rcfilter!==undefined?'report-calls':(ds.bcfilter!==undefined?'closing':(ds.enfilter!==undefined?'discounts':null)))))))))));
   if(!key) return;
   e.preventDefault();
   if(ds.dpfilter!==undefined) dpFilters[ds.dpfilter]=e.target.value;
@@ -5214,6 +5392,7 @@ document.addEventListener('keydown', (e)=>{
   if(ds.clhfilter!==undefined) clHF[ds.clhfilter]=e.target.value;
   if(ds.rcfilter!==undefined) rcFilters[ds.rcfilter]=e.target.value;
   if(ds.bcfilter!==undefined) bcFilters[ds.bcfilter]=e.target.value;
+  if(ds.enfilter!==undefined) enFilters[ds.enfilter]=e.target.value;
   if(ds.cfilter!==undefined) collFilters[ds.cfilter]=e.target.value;   // tarix sahəsi "change" verməmiş ola bilər
   if(ds.csfilter!==undefined && e.target.type!=='checkbox' && e.target.type!=='radio') csFilters[ds.csfilter]=e.target.value;
   const b=document.getElementById('report-search-'+key);
@@ -5345,7 +5524,6 @@ function applyMe(u){
   currentUsername=me.username;
   document.getElementById('user-info').textContent=me.username+' ('+(isAdmin()?'Admin':'İstifadəçi')+')';
   if(isAdmin()) document.body.classList.add('is-admin');
-  if(!isAdmin() && can('sales-import',1)) document.body.classList.add('can-sales-import');
 }
 setContent(`<div class="topbar"><div><h1>Yüklənir…</h1><div class="sub">Serverə qoşulur</div></div></div>`);
 (async function boot(){

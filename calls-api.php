@@ -78,7 +78,7 @@ function base_rows($pdo, $ctx, $today, $onlyIds = null) {
     $st = $pdo->prepare("SELECT p.contractId,
             SUM(CASE WHEN p.emeliyyatNovu = 'Geri qaytarma' THEN 0 ELSE p.meblag END) AS paid,
             SUM(CASE WHEN p.emeliyyatNovu = 'Geri qaytarma' THEN -p.meblag ELSE 0 END) AS ret,
-            MAX(CASE WHEN p.meblag > 0 AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu <> 'Geri qaytarma') THEN p.odemeTarixi END) AS lastDate
+            MAX(CASE WHEN p.meblag > 0 AND (p.emeliyyatNovu IS NULL OR p.emeliyyatNovu NOT IN ('Geri qaytarma', 'Endirim')) THEN p.odemeTarixi END) AS lastDate
         FROM payments p WHERE p.contractId IN ($sub2) GROUP BY p.contractId");
     $st->execute($p2);
     $sums = [];

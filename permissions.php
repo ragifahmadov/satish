@@ -39,7 +39,7 @@ function perm_screens() {
         'report-debt-payments' => 'Hesabat: Borc ödənişləri',
         'report-calls' => 'Hesabat: Zənglər',
         'report-closing' => 'Hesabat: Bağlanan müqavilələr',
-        'sales-import' => 'Aylıq satış idxalı',
+        'report-discounts' => 'Hesabat: Endirimlər',
     ];
 }
 
@@ -52,6 +52,7 @@ function perm_extras() {
         'payment-edit' => 'Ödənişi dəyişmək',
         'payment-delete' => 'Ödənişi silmək',
         'contract-status' => 'Müqavilə statusunu dəyişmək',
+        'discount' => 'Endirim / borcun silinməsi',
     ];
 }
 
@@ -98,9 +99,8 @@ function perm_screen_needs() {
         'report-calls' => ['lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Bağlanan müqavilələr: sətirlər report-api.php-dən; burada yalnız filtr siyahıları
         'report-closing' => ['salespeople' => 'ref', 'collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
-        // Aylıq satış idxalı: ayrıca səhifə (sales-import.php + sales-import-api.php) öz API-si ilə işləyir — ümumi siyahılara ehtiyac yoxdur.
-        // Baxış = faylı yoxlamaq; Dəyişiklik = idxal etmək (api.php-dən keçmir: yazma və log sales-import-api.php-dədir)
-        'sales-import' => [],
+        // Endirimlər: sətirlər report-api.php-dən; burada yalnız ad/status siyahıları
+        'report-discounts' => ['collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
     ];
 }
 
@@ -380,6 +380,8 @@ function authz_write_needs($col, $method, $body) {
         // Qəbul: Ödənişlər → Dəyişiklik. Mövcud ödənişi dəyişmək / silmək: ekrana baxış + ayrıca hüquq
         // ("Ödənişi dəyişmək" / "Ödənişi silmək"); ödəniş qəbul edən hər kəs avtomatik redaktə/silmə hüququ almır.
         // Qəbul: Ödənişlər → Dəyişiklik VƏ YA Təhsilat (mobil) → Dəyişiklik
+        // Endirim (borcun bir hissəsinin / qalanının silinməsi — pul deyil): Ödənişlər → Baxış + «Endirim / borcun silinməsi»
+        if ($method === 'POST' && is_array($body) && (($body['emeliyyatNovu'] ?? '') === 'Endirim')) { $needs[] = ['screen' => 'payments', 'level' => 1]; $needs[] = ['extra' => 'discount']; return $needs; }
         if ($method === 'POST') { $needs[] = ['any' => [['screen' => 'payments', 'level' => 2], ['screen' => 'collector-mobile', 'level' => 2]]]; }
         elseif ($method === 'PUT') { $needs[] = ['screen' => 'payments', 'level' => 1]; $needs[] = ['extra' => 'payment-edit']; }
         else { $needs[] = ['screen' => 'payments', 'level' => 1]; $needs[] = ['extra' => 'payment-delete']; }
@@ -568,6 +570,9 @@ function authz_payment_row_denied($pdo, $ctx, $id) {
     $st = $pdo->prepare("SELECT emeliyyatNovu FROM payments WHERE id = ?");
     $st->execute([(string) $id]);
     $nov = $st->fetchColumn();
+    if ($nov === 'Endirim' && !authz_extra($ctx, 'discount')) {
+        return 'İcazə yoxdur: "' . perm_extras()['discount'] . '" hüququ lazımdır.';
+    }
     if ($nov === 'Geri qaytarma' && !authz_extra($ctx, 'goods-return')) {
         return 'İcazə yoxdur: "' . perm_extras()['goods-return'] . '" hüququ lazımdır.';
     }
@@ -597,8 +602,28 @@ function collector_reassign_list($list, $newCollectorId, $today) {
 function authz_collector_payment_denied($ctx, $body) {
     if (empty($ctx['collectorId'])) return '';
     if ((string) ($body['odemeTarixi'] ?? '') !== baku_today()) return 'Təhsilatçı ödənişi yalnız bugünkü tarixlə qəbul edə bilər.';
-    if ((string) ($body['emeliyyatNovu'] ?? '') === 'Geri qaytarma' || (float) ($body['meblag'] ?? 0) <= 0) return 'Təhsilatçı yalnız müsbət məbləğli ödəniş qəbul edə bilər.';
+    if (in_array((string) ($body['emeliyyatNovu'] ?? ''), ['Geri qaytarma', 'Endirim'], true) || (float) ($body['meblag'] ?? 0) <= 0) return 'Təhsilatçı yalnız müsbət məbləğli ödəniş qəbul edə bilər.';
     if ((string) ($body['reassignCollectorId'] ?? '') !== '') return 'Təhsilatçı müqavilənin təhsilatçısını dəyişə bilməz.';
+    return '';
+}
+
+// Endirim / borcun silinməsi (emeliyyatNovu = 'Endirim'): borcu ödəniş kimi azaldır, amma PUL DEYİL (təhsilat, toplanan, yığılan,
+// son ödəniş tarixi, vədin icrasında sayılmır). Yoxlama: məbləğ > 0, qalıq borcdan çox deyil (redaktədə köhnə məbləğ geri qaytarılıb),
+// tarix düzgün və gələcək deyil, səbəb (qeyd) məcburi. Boş sətir = olar.
+function discount_prepare($pdo, $contractId, $body, $old) {
+    $m = (float) ($body['meblag'] ?? 0);
+    if (!($m > 0)) return 'Endirim məbləği müsbət olmalıdır.';
+    $d = (string) ($body['odemeTarixi'] ?? '');
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $d, $x) || !checkdate((int) $x[2], (int) $x[3], (int) $x[1])) return 'Endirimin tarixi düzgün deyil.';
+    if ($d > baku_today()) return 'Endirimin tarixi gələcək ola bilməz.';
+    if (trim((string) ($body['qeyd'] ?? '')) === '') return 'Endirimin səbəbini yazın.';
+    $st = $pdo->prepare("SELECT meblag, ilkinOdenis FROM contracts WHERE id = ?");
+    $st->execute([(string) $contractId]);
+    $c = $st->fetch();
+    if (!$c) return 'Müqavilə tapılmadı.';
+    [$paid, $ret] = contract_status_sums($pdo, $contractId);
+    $debt = (float) $c['meblag'] - $ret - (float) $c['ilkinOdenis'] - $paid + (is_array($old) ? (float) $old['meblag'] : 0);
+    if ($m > round($debt, 2) + 0.009) return 'Endirim qalıq borcdan (' . number_format(max(0, $debt), 2, '.', ' ') . ' ₼) çox ola bilməz.';
     return '';
 }
 

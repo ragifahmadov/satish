@@ -50,7 +50,7 @@ header('Content-Type: text/html; charset=utf-8');
   .st{display:inline-block;padding:3px 9px;border-radius:10px;font-size:12px;font-weight:600;margin-left:6px;vertical-align:middle;background:rgba(120,110,95,.14);color:var(--muted);}
   .st-green{background:var(--green-bg);color:var(--green);} .st-amber{background:#F6EBD3;color:#8A6530;} .st-red{background:var(--red-bg);color:var(--red);}
   .st-blue{background:#E0EAF5;color:#2F5D8A;} .st-purple{background:#ECE3F3;color:#6A4A86;}
-  .t-ok{background:var(--green-bg);color:var(--green);} .t-no{background:var(--red-bg);color:var(--red);} .t-cur{background:var(--accent);color:#2A1D08;} .t-fut{color:var(--muted);}
+  .t-ok{background:var(--green-bg);color:var(--green);} .t-no{background:var(--red-bg);color:var(--red);} .t-warn{background:#FFF1D0;color:#8A5A00;} .t-cur{background:var(--accent);color:#2A1D08;} .t-fut{color:var(--muted);}
   .err{background:var(--red-bg);color:var(--red);padding:12px 14px;border-radius:12px;margin:10px 0;font-size:15px;}
   .warn{background:#FBEFD5;color:#7A5410;padding:12px 14px;border-radius:12px;margin:10px 0;font-size:15px;}
   .big{font-size:40px;font-weight:800;text-align:center;margin:8px 0;}
@@ -185,7 +185,7 @@ function renderContract(){
       :(m.index===curIdx?'<span class="tag t-cur">Cari ay</span>':'<span class="tag t-fut">Gələcək</span>');
     return `<tr${m.index===curIdx?' style="background:rgba(184,134,63,.10);font-weight:600;"':''}><td>${esc(m.label)}</td><td class="r">${m.index>curIdx?'—':fmtMoney(f)}</td><td class="r">${tag}</td></tr>`;
   }).join('');
-  const pays=d.payments.map(p=>`<tr><td>${fmtDate(p.odemeTarixi)}</td><td>${isRet(p)?'<span class="tag t-no">Geri qaytarma</span>':'<span class="tag t-ok">Ödəniş</span>'}<div style="font-size:12px;color:var(--muted);margin-top:3px;">${esc(p.collector||'')}</div></td><td class="r"${p.meblag<0?' style="color:var(--red)"':''}>${fmtMoney(p.meblag)}</td></tr>`).join('');
+  const pays=d.payments.map(p=>`<tr><td>${fmtDate(p.odemeTarixi)}</td><td>${isRet(p)?'<span class="tag t-no">Geri qaytarma</span>':(p.emeliyyatNovu==='Endirim'?'<span class="tag t-warn">Endirim</span>':'<span class="tag t-ok">Ödəniş</span>')}<div style="font-size:12px;color:var(--muted);margin-top:3px;">${esc(p.collector||'')}</div></td><td class="r"${p.meblag<0?' style="color:var(--red)"':''}>${fmtMoney(p.meblag)}</td></tr>`).join('');
   const payBlock=!CAN_PAY?'':(!c.collectorId
     ?`<div class="err">Bu müqaviləyə təhsilatçı təyin olunmayıb — ödəniş qəbul edilə bilməz.</div>`
     :`<div class="card"><div style="font-size:14px;color:var(--muted);margin-bottom:8px;">Ödəniş qəbulu · ${fmtDate(d.today)} · ${esc(c.collector)}</div>

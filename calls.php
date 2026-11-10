@@ -69,7 +69,7 @@ function call_contract_metrics($pdo, $contractId, $today) {
     $c = $st->fetch();
     if (!$c) return null;
     [$paid, $ret] = contract_status_sums($pdo, $contractId);
-    $st = $pdo->prepare("SELECT MAX(odemeTarixi) FROM payments WHERE contractId = ? AND meblag > 0 AND (emeliyyatNovu IS NULL OR emeliyyatNovu <> 'Geri qaytarma')");
+    $st = $pdo->prepare("SELECT MAX(odemeTarixi) FROM payments WHERE contractId = ? AND meblag > 0 AND (emeliyyatNovu IS NULL OR emeliyyatNovu NOT IN ('Geri qaytarma', 'Endirim'))");
     $st->execute([(string) $contractId]);
     return call_metrics($c, $paid, $ret, (string) $st->fetchColumn(), $today) + ['statusId' => (string) ($c['statusId'] ?? '')];
 }
@@ -158,7 +158,7 @@ function call_promise_payments($pdo, $contractIds) {
     foreach (array_chunk($ids, 400) as $chunk) {
         $ph = implode(',', array_fill(0, count($chunk), '?'));
         $st = $pdo->prepare("SELECT contractId, odemeTarixi, meblag FROM payments WHERE contractId IN ($ph) AND meblag > 0
-            AND (emeliyyatNovu IS NULL OR emeliyyatNovu <> 'Geri qaytarma')");
+            AND (emeliyyatNovu IS NULL OR emeliyyatNovu NOT IN ('Geri qaytarma', 'Endirim'))");   // vəd yalnız pulla yerinə yetirilir (endirim yox)
         $st->execute($chunk);
         foreach ($st->fetchAll() as $r) { $out[(string) $r['contractId']][] = [(string) $r['odemeTarixi'], (float) $r['meblag']]; }
     }

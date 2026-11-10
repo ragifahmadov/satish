@@ -337,8 +337,9 @@ function audit_summary_create($col, $rowOut, $entityLabel) {
         return 'Yeni müqavilə, satış ' . audit_money($rowOut['meblag'] ?? 0) . ' ₼';
     }
     if ($col === 'payments') {
-        $isRet = (audit_str($rowOut['emeliyyatNovu'] ?? '') === 'Geri qaytarma');
-        return ($isRet ? 'Geri qaytarma: ' : 'Ödəniş: ') . audit_money($rowOut['meblag'] ?? 0)
+        $nov = audit_str($rowOut['emeliyyatNovu'] ?? '');
+        $isRet = ($nov === 'Geri qaytarma');
+        return ($isRet ? 'Geri qaytarma: ' : ($nov === 'Endirim' ? 'Endirim: ' : 'Ödəniş: ')) . audit_money($rowOut['meblag'] ?? 0)
             . ' ₼ (' . audit_date($rowOut['odemeTarixi'] ?? '') . ')';
     }
     return 'Yeni ' . mb_strtolower(audit_entity_name($col)) . ': ' . $entityLabel;
@@ -349,8 +350,9 @@ function audit_summary_delete($col, $rowOut) {
         return 'Silindi: satış ' . audit_money($rowOut['meblag'] ?? 0) . ' ₼, tarix ' . audit_date($rowOut['tarix'] ?? '');
     }
     if ($col === 'payments') {
-        $isRet = (audit_str($rowOut['emeliyyatNovu'] ?? '') === 'Geri qaytarma');
-        return 'Silindi: ' . ($isRet ? 'geri qaytarma ' : 'ödəniş ') . audit_money($rowOut['meblag'] ?? 0)
+        $nov = audit_str($rowOut['emeliyyatNovu'] ?? '');
+        $isRet = ($nov === 'Geri qaytarma');
+        return 'Silindi: ' . ($isRet ? 'geri qaytarma ' : ($nov === 'Endirim' ? 'endirim ' : 'ödəniş ')) . audit_money($rowOut['meblag'] ?? 0)
             . ' ₼ (' . audit_date($rowOut['odemeTarixi'] ?? '') . ')';
     }
     return 'Silindi';

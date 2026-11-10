@@ -39,6 +39,7 @@ $REPORTS = [
     'report-calls' => ['Zəng hesabatı', 'report-calls'],
     'closing' => ['Bağlanan müqavilələr', 'report-closing'],
     'collector-plan' => ['Təhsilatçılar üzrə (cari ay)', 'collector-reports'],
+    'sales-import' => ['Aylıq satış idxalı — yoxlama', 'sales-import'],   // fayl sales-import-api.php-də yaradılır (logu orada strikt yazılır)
 ];
 
 $in = json_decode(file_get_contents('php://input'), true);

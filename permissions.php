@@ -39,6 +39,7 @@ function perm_screens() {
         'report-debt-payments' => 'Hesabat: Borc ödənişləri',
         'report-calls' => 'Hesabat: Zənglər',
         'report-closing' => 'Hesabat: Bağlanan müqavilələr',
+        'sales-import' => 'Aylıq satış idxalı',
     ];
 }
 
@@ -97,6 +98,9 @@ function perm_screen_needs() {
         'report-calls' => ['lookup_types' => 'ref', 'lookup_values' => 'ref'],
         // Bağlanan müqavilələr: sətirlər report-api.php-dən; burada yalnız filtr siyahıları
         'report-closing' => ['salespeople' => 'ref', 'collectors' => 'ref', 'lookup_types' => 'ref', 'lookup_values' => 'ref'],
+        // Aylıq satış idxalı: ayrıca səhifə (sales-import.php + sales-import-api.php) öz API-si ilə işləyir — ümumi siyahılara ehtiyac yoxdur.
+        // Baxış = faylı yoxlamaq; Dəyişiklik = idxal etmək (api.php-dən keçmir: yazma və log sales-import-api.php-dədir)
+        'sales-import' => [],
     ];
 }
 

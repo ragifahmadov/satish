@@ -142,7 +142,7 @@ if ($action === 'start') {
     $job['plan'] = $plan; $job['offset'] = 0; $job['custMap'] = [];
     $job['month'] = $a['month']; $job['aliases'] = $newAliases;
     $job['opId'] = make_uuid();
-    $job['stats'] = ['contracts' => 0, 'newCustomers' => 0, 'existingCustomers' => 0, 'skipped' => 0, 'sum' => 0.0];
+    $job['stats'] = ['contracts' => 0, 'newCustomers' => 0, 'existingCustomers' => 0, 'skipped' => 0, 'sum' => 0.0, 'finAdded' => 0, 'finSkipped' => 0];
     $job['excludedErrors'] = $a['summary']['error'];
     $job['totalRows'] = $a['summary']['total'];
     si_job_save($jobId, $job);
@@ -187,6 +187,20 @@ if ($action === 'step') {
                 $custOk->execute([$p['customerId']]);
                 if (!$custOk->fetchColumn()) { $stats['skipped']++; continue; }
                 $cid = $p['customerId']; $stats['existingCustomers']++;
+                // Mövcud müştərinin FIN-i boşdursa fayldakı FIN yazılır — yalnız hələ də boşdursa və bazada başqa müştəridə yoxdursa
+                // (yoxlama ilə idxal arasında dəyişmiş ola bilər); eyni tranzaksiyada loga «Dəyişiklik»
+                if (($p['setFin'] ?? '') !== '') {
+                    $cur = $pdo->prepare("SELECT * FROM customers WHERE id = ?"); $cur->execute([$cid]); $oldC = $cur->fetch();
+                    $dup = $pdo->prepare("SELECT 1 FROM customers WHERE UPPER(finKod) = ? AND id <> ?"); $dup->execute([$p['setFin'], $cid]);
+                    if ($oldC && trim((string) $oldC['finKod']) === '' && !$dup->fetchColumn()) {
+                        $pdo->prepare("UPDATE customers SET finKod = ? WHERE id = ? AND (finKod IS NULL OR finKod = '')")->execute([$p['setFin'], $cid]);
+                        $cur->execute([$cid]);
+                        audit_log_update($pdo, 'customers', $cs, row_out($oldC, $cs), row_out($cur->fetch(), $cs));
+                        $stats['finAdded'] = ($stats['finAdded'] ?? 0) + 1;
+                    } elseif ($oldC && strtoupper(trim((string) $oldC['finKod'])) !== $p['setFin']) {
+                        $stats['finSkipped'] = ($stats['finSkipped'] ?? 0) + 1;
+                    }
+                }
             } elseif (isset($custMap[$p['group']])) {
                 $cid = $custMap[$p['group']];      // eyni şəxsin əvvəlki sətirdə yaradılmış müştərisi
             } else {
@@ -223,6 +237,8 @@ if ($action === 'step') {
             ['f' => 'contracts', 'l' => 'Müqavilə', 'o' => '', 'n' => (string) $stats['contracts']],
             ['f' => 'customers', 'l' => 'Yeni müştəri', 'o' => '', 'n' => (string) $stats['newCustomers']],
             ['f' => 'existing', 'l' => 'Mövcud müştəriyə bağlandı (müqavilə)', 'o' => '', 'n' => (string) $stats['existingCustomers']],
+            ['f' => 'finAdded', 'l' => 'Mövcud müştəriyə FIN əlavə olundu', 'o' => '', 'n' => (string) ($stats['finAdded'] ?? 0)],
+            ['f' => 'finSkipped', 'l' => 'FIN əlavə olunmadı (artıq dolu / başqasında var)', 'o' => '', 'n' => (string) ($stats['finSkipped'] ?? 0)],
             ['f' => 'sum', 'l' => 'Cəmi satış məbləği', 'o' => '', 'n' => number_format($stats['sum'], 2, '.', '')],
             ['f' => 'skipped', 'l' => 'Keçilən (təkrar)', 'o' => '', 'n' => (string) $stats['skipped']],
             ['f' => 'excluded', 'l' => 'Xətalı / seçilməyən sətir', 'o' => '', 'n' => (string) ($job['totalRows'] - $stats['contracts'] - $stats['skipped'])],

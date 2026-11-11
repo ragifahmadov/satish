@@ -189,7 +189,9 @@ Bu fayl brauzerdən açılmır (`.htaccess`). Yeni ekran/hesabat/skript əlavə 
    brauzer yalnız seçilmiş sətir nömrələrini və satıcı uyğunluğunu göndərir, xətalı sətir heç vaxt yazılmır). Xəta: təkrar/boş/bazada olan №,
    ad boş, tarix gələcək, məbləğ düzgün deyil, nağd satış, satıcı tanınmayıb, eyni FIN-də fərqli ad, bazada birmənalı olmayan müştəri.
    Xəbərdarlıq: FIN yox/səhv, telefon, tam olmayan ad, müddət > 12 ay, ehtimal olunan təkrar (defolt seçilmir). Müştəri: FIN → ad üzrə mövcud
-   tapılır, yoxsa yeni (mövcud müştəri DƏYİŞDİRİLMİR). Müddət = ⌈(dəyər − ilkin) ÷ aylıq − 0,05⌉; faylın aylığı sistemdəkindən >0,5 ₼ fərqlənirsə
+   tapılır, yoxsa yeni (mövcud müştəri DƏYİŞDİRİLMİR — yeganə istisna: ad üzrə tapılan müştərinin FIN-i bazada BOŞDURSA və fayldakı
+   düzgün FIN bazada başqa müştəridə yoxdursa, idxalda bu FIN müştəriyə yazılır; yoxlamada xəbərdarlıq kimi göstərilir, logda müştərinin
+   «Dəyişiklik»i + xülasədə say; eyni FIN-siz müştəriyə faylda fərqli FIN-lər düşürsə — xəta; dolu FIN heç vaxt üzərinə yazılmır). Müddət = ⌈(dəyər − ilkin) ÷ aylıq − 0,05⌉; faylın aylığı sistemdəkindən >0,5 ₼ fərqlənirsə
    müqavilənin qeydinə yazılır. Yazma: 30 sətirlik dəstələr, hər dəstə bir tranzaksiya; hər müştəri/müqavilə `audit_log_create` ilə eyni
    tranzaksiyada, eyni opId ilə loga düşür + sonda bir xülasə (IMPORT). Təkrar işə salmaq təhlükəsizdir (№ bazada varsa keçilir). Satıcı
    uyğunluğu (`sales_import_aliases`, $SCHEMA-da deyil) yalnız idxal tamamlananda yazılır. Təhsilatçı TƏYİN OLUNMUR (faylda yoxdur) —

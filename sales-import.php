@@ -296,6 +296,7 @@ function finish(st){
     +'<div class="tiles"><div class="tile ok"><span>Yazılan müqavilə</span><b>'+st.contracts+'</b></div>'
     +'<div class="tile"><span>Yeni müştəri</span><b>'+st.newCustomers+'</b></div>'
     +'<div class="tile"><span>Mövcud müştəriyə bağlanan müqavilə</span><b>'+st.existingCustomers+'</b></div>'
+    +'<div class="tile"><span>Mövcud müştəriyə FIN əlavə olundu</span><b>'+(st.finAdded||0)+'</b></div>'
     +'<div class="tile"><span>Cəmi satış məbləği</span><b>'+money(st.sum)+' ₼</b></div>'
     +'<div class="tile"><span>Keçilən (təkrar)</span><b>'+st.skipped+'</b></div></div>'
     +'<div class="hint">Hər müştəri və müqavilə «Dəyişiklik logu»nda eyni əməliyyat altında görünür. Təhsilatçılar müqavilələrə hələ təyin olunmayıb — «Təhsilatçı dəyişikliyi» ekranından təyin edin (təhsilatçısız müqaviləyə ödəniş qəbul edilmir).</div>'

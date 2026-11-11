@@ -353,12 +353,27 @@ function si_analyze(array $rows, array $db, array $opts) {
                 $dbFin = si_upper($c['finKod'] ?? '');
                 if ($fin !== '' && $dbFin !== '' && $dbFin !== $fin) {
                     $plan = ['mode' => 'error', 'id' => '', 'how' => 'name', 'msg' => 'Ad bazadakı müştəri ilə eynidir, FIN fərqlidir (faylda ' . $fin . ', bazada ' . $dbFin . ') — əl ilə baxılmalıdır.'];
+                } elseif ($fin !== '' && $dbFin === '') {
+                    // Bazadakı müştərinin FIN-i boşdur, faylda düzgün FIN var (bazada başqa müştəridə yoxdur — yoxsa yuxarıda FIN üzrə tapılardı):
+                    // idxalda bu FIN müştəriyə YAZILIR (yalnız boş FIN doldurulur; logda «Dəyişiklik»)
+                    $plan = ['mode' => 'existing', 'id' => $c['id'], 'how' => 'name', 'setFin' => $fin,
+                        'msg' => 'Mövcud müştəri ad üzrə tapıldı; bazada FIN yoxdur — idxalda müştəriyə FIN əlavə olunacaq: ' . $fin . '.'];
                 } else {
-                    $plan = ['mode' => 'existing', 'id' => $c['id'], 'how' => 'name', 'msg' => 'Mövcud müştəri ad üzrə tapıldı' . ($fin === '' ? ' (FIN yoxdur, yoxlamaq olmur)' : ' (bazada FIN yoxdur)') . '.'];
+                    $plan = ['mode' => 'existing', 'id' => $c['id'], 'how' => 'name', 'msg' => 'Mövcud müştəri ad üzrə tapıldı (FIN yoxdur, yoxlamaq olmur).'];
                 }
             }
         }
         $custPlan[$gk] = $plan;
+    }
+    // Eyni (FIN-siz) bazadakı müştəriyə faylda FƏRQLİ FIN-lər yazılmaq istənirsə — hansının doğru olduğu bilinmir: xəta
+    $finTargets = [];
+    foreach ($custPlan as $gk => $p) { if (!empty($p['setFin'])) $finTargets[$p['id']][$p['setFin']][] = $gk; }
+    foreach ($finTargets as $cid => $fins) {
+        if (count($fins) < 2) continue;
+        foreach ($fins as $gks) foreach ($gks as $gk) {
+            $custPlan[$gk] = ['mode' => 'error', 'id' => '', 'how' => 'name',
+                'msg' => 'Bazadakı eyni adlı (FIN-siz) müştəriyə faylda fərqli FIN-lər düşür (' . implode(', ', array_keys($fins)) . ') — əl ilə baxılmalıdır.'];
+        }
     }
     foreach ($items as $i => &$it) {
         $p = $custPlan[$it['group']] ?? ['mode' => 'new', 'id' => '', 'how' => '', 'msg' => ''];
@@ -440,6 +455,7 @@ function si_build_plan(array $analysis, array $selected) {
         $plan[] = [
             'row' => $it['row'], 'nomre' => $it['nomre'], 'group' => $it['group'],
             'customerMode' => $it['customer']['mode'], 'customerId' => $it['customer']['id'], 'customer' => $cust,
+            'setFin' => (string) ($it['customer']['setFin'] ?? ''),   // mövcud müştərinin boş FIN-i bu dəyərlə doldurulur
             'contract' => [
                 'nomre' => $it['nomre'], 'tarix' => $it['tarix'], 'salespersonId' => $it['sellerId'],
                 'meblag' => $it['deyer'], 'ilkinOdenis' => $it['ilkin'], 'muddet' => $it['muddet'], 'qeyd' => $qeyd,
